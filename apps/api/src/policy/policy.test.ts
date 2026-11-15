@@ -3,6 +3,7 @@ import { AppError } from '../lib/app-error';
 import { authorize, can, decide, type Action, type Actor, type Resource } from './policy';
 
 // Every action against every kind of caller, as data (TRD §7.2). The expected lists come from PRD §5.1.
+// One gap on purpose: the PRD lets approved students view classes, but that half arrives with the join tickets.
 // All scenarios are about one class owned by instructor "i1" and one submission made by student "s1".
 
 type Caller = { actor: Actor; resource: Resource };
@@ -28,6 +29,8 @@ const everyone = Object.keys(callers) as CallerName[];
 /** Who may do each action. Adding an action to the policy without adding it here is a type error. */
 const allowed: Record<Action, CallerName[]> = {
   'class.create': ['ownerInstructor', 'otherInstructor'],
+  'class.view': ['ownerInstructor'], // approved students are added with the join tickets
+  'class.list': ['ownerInstructor', 'otherInstructor'], // students are added with the join tickets
   'class.join': [...approvedStudents, 'pendingStudent', 'declinedStudent', 'removedStudent', 'nonMemberStudent'],
   'class.manageMembers': ['ownerInstructor'],
   'class.regenerateCode': ['ownerInstructor'],

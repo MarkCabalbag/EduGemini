@@ -22,6 +22,8 @@ describe('rate limits (API Spec A12)', () => {
     expect(RULES.authByIp).toEqual({ windowMs: 15 * 60_000, limit: 20 });
     expect(RULES.signUpByIp).toEqual({ windowMs: 60 * 60_000, limit: 60 });
     expect(RULES.signInByEmailAndIp).toEqual({ windowMs: 15 * 60_000, limit: 5 });
+    expect(RULES.classCreateByUser).toEqual({ windowMs: 60 * 60_000, limit: 20 });
+    expect(RULES.everythingElseByUser).toEqual({ windowMs: 60_000, limit: 120 });
   });
 
   it('answers 429 RATE_LIMITED with Retry-After and RateLimit headers once the limit is passed', async () => {
@@ -82,5 +84,19 @@ describe('rate limits (API Spec A12)', () => {
     for (let i = 0; i < RULES.signInByEmailAndIp.limit * 2; i++) {
       expect((await post(app, '/api/signin', { email: 'ada@example.com' })).status).toBe(200);
     }
+  });
+
+  // The per-user limits are tested on the real routes with real sessions: see services/class.int.test.ts.
+  it('covers routes added through `routers` too, counting a caller with no session by IP', async () => {
+    const router = Router();
+    router.get('/added-later', (_req, res) => void res.json({ ok: true }));
+    const app = appWith(router);
+    const get = () => request(app).get('/api/added-later');
+
+    for (let i = 0; i < RULES.everythingElseByUser.limit; i++) expect((await get()).status).toBe(200);
+    const res = await get();
+
+    expect(res.status).toBe(429);
+    expect(res.body.error.code).toBe('RATE_LIMITED');
   });
 });

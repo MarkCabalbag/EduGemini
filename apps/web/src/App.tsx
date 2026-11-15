@@ -1,6 +1,8 @@
 import { Route, Routes } from 'react-router';
 import { PublicOnly, RequireAuth } from './components/RouteGuards';
 import { Layout } from './components/Layout';
+import { ClassOverview } from './pages/ClassOverview';
+import { CreateClass } from './pages/CreateClass';
 import { Dashboard } from './pages/Dashboard';
 import { Landing } from './pages/Landing';
 import { Privacy, Terms } from './pages/Legal';
@@ -22,6 +24,8 @@ export function App() {
         <Route path="/privacy" element={<Privacy />} />
         <Route element={<RequireAuth />}>
           <Route path="/classes" element={<Dashboard />} />
+          <Route path="/classes/new" element={<CreateClass />} />
+          <Route path="/classes/:classId" element={<ClassOverview />} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Route>

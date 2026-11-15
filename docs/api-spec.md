@@ -33,7 +33,7 @@ There are **no inbound webhooks**. There are no external callbacks. Gemini resul
 | Scores | JSON numbers with at most two decimal places. Never strings |
 | Single resource | The object itself, no wrapper |
 | List | `{ "items": [...], "nextCursor": "string or null" }` |
-| Pagination | Cursor based. `limit` query parameter, default 25, maximum 100. Cursors are opaque and expire when the underlying data changes order; a stale cursor returns `VALIDATION` |
+| Pagination | Cursor based. `limit` query parameter, default 25, maximum 100. Cursors are opaque and do not expire (a cursor marks a position, not a snapshot, so a list that changes between pages never breaks); a cursor the server did not issue returns `VALIDATION` |
 | Sorting and filtering | Documented per endpoint as query parameters. Unknown parameters are rejected with `VALIDATION` |
 | Empty body | `204 No Content` for actions with no response body |
 | Request IDs | Every response carries `X-Request-Id`. Clients quote it in support messages |
@@ -375,10 +375,10 @@ The breaking-change check compares the previous `openapi.yaml` with the new one 
 | Uploads (PUT), per user | 60 per minute | |
 | Grading triggers, per user | 30 per minute | Pacing per instructor key is separate (TRD §10.2) |
 | Bulk actions, per instructor | 10 per minute | |
-| Class creation, per user | 20 per hour | |
+| Class creation, per user | 20 per hour | Counted after validation, so a request with errors does not use it up |
 | Notifications read and count, per user | 300 per minute | Polling-friendly |
 | Admin, per admin | 60 per minute | |
-| Everything else, per user | 120 per minute | |
+| Everything else, per user | 120 per minute | One shared counter per user across every route that has no row of its own above |
 
 ### A13. Polling contract
 
@@ -409,6 +409,7 @@ This table maps the PRD §5.1 matrix onto endpoint IDs. Each row has a test in t
 | Action (PRD §5.1) | Endpoints | Student | Instructor (own class) | Super Admin |
 |---|---|---|---|---|
 | Create class | CLS-02 | — | ✓ | — |
+| View own classes and class details | CLS-01, CLS-03 | ✓ (approved) | ✓ | — |
 | Join via code | JOIN-01 | ✓ | — | — |
 | Approve, decline, remove joins | PPL-02, PPL-03 | — | ✓ | — |
 | Regenerate or disable code | CLS-08, CLS-09 | — | ✓ | — |
@@ -652,7 +653,7 @@ Each endpoint has the same fields:
 - **Request:** `{ name, description?, section?, subject?, room?, attestation: { confirmed: true } }`. `attestation.confirmed` must be `true` (FR-CLS-09). The name is 1 to 120 characters.
 - **Response:** `201` `ClassSummary` including `joinCode` and `joinLink`.
 - **Errors:** `VALIDATION`, `RATE_LIMITED` (20 per hour).
-- **Effects:** generates a join code from the 32-character alphabet (Backend Schema §4.7). On a collision, it retries up to five times. Sets `attested_at`.
+- **Effects:** generates a join code from the 32-character alphabet (Backend Schema §4.7). On a collision, it retries up to five times (six tries in all). Sets `attested_at`.
 - **Test:** `class.spec`.
 
 #### CLS-03 · Get class

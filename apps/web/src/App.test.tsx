@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router';
 import { TERMS_VERSION } from '@edugemini/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { App } from './App';
+import { failure, renderAt } from './test/helpers';
 
 // The real components and routing run. Only the API, which is outside the web app, is replaced by a fake that
 // remembers who is signed in.
@@ -19,9 +17,6 @@ const ADA = {
   emailVerified: false,
   suspended: false,
 };
-
-const failure = (status: number, code: string, fields?: object) =>
-  Response.json({ error: { code, message: code, requestId: 'r', ...(fields ? { fields } : {}) } }, { status });
 
 type Call = { path: string; method: string; body?: unknown };
 let calls: Call[];
@@ -68,18 +63,6 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-
-function renderAt(path: string) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
-        <App />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
-  return queryClient;
-}
 
 const posts = (path: string) => calls.filter((c) => c.method === 'POST' && c.path === path);
 

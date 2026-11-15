@@ -1,0 +1,347 @@
+// @vitest-environment jsdom
+import { cleanup, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ClassSummary, Me } from '@edugemini/shared';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { failure, renderAt } from '../test/helpers';
+
+// The real pages and routing run. Only the API, which is outside the web app, is replaced by a fake.
+
+const signedInAs = (role: Me['role']): Me => ({
+  id: '3f6c1c52-8a0e-4c57-9d5c-0d3f4a9f7b11',
+  email: 'maya@example.com',
+  firstName: 'Maya',
+  lastName: 'Cruz',
+  role,
+  emailVerified: true,
+  suspended: false,
+});
+
+const aClass = (overrides: Partial<ClassSummary> = {}): ClassSummary => ({
+  id: crypto.randomUUID(),
+  name: 'Biology 101',
+  description: null,
+  section: null,
+  subject: null,
+  room: null,
+  status: 'ACTIVE',
+  joinCode: 'K7M2PQ9X',
+  joinLink: 'http://localhost:5173/join/K7M2PQ9X',
+  joinCodeActive: true,
+  requireApproval: false,
+  ...overrides,
+});
+
+type CreateBody = { name: string; description?: string; section?: string; subject?: string; room?: string };
+type Call = { path: string; method: string; body?: unknown };
+
+let calls: Call[];
+let me: Me;
+let classes: ClassSummary[];
+let listResult: (cursor: string | null) => Response;
+let getResult: (classId: string) => Response;
+let createResult: (body: CreateBody) => Response;
+
+beforeEach(() => {
+  calls = [];
+  me = signedInAs('INSTRUCTOR');
+  classes = [];
+  listResult = () => Response.json({ items: classes, nextCursor: null });
+  getResult = (classId) => {
+    const found = classes.find((c) => c.id === classId);
+    return found ? Response.json(found) : failure(404, 'NOT_FOUND');
+  };
+  createResult = (body) => {
+    const created = aClass({ name: body.name, section: body.section || null });
+    classes.push(created);
+    return Response.json(created, { status: 201 });
+  };
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const path = url.replace('/api', '');
+      const method = init?.method ?? 'GET';
+      const body: unknown = init?.body ? JSON.parse(init.body as string) : undefined;
+      calls.push({ path, method, body });
+
+      if (path === '/me') return Response.json(me);
+      if (method === 'POST' && path === '/classes') return createResult(body as CreateBody);
+      if (method === 'GET' && (path === '/classes' || path.startsWith('/classes?'))) {
+        return listResult(new URL(path, 'http://x').searchParams.get('cursor'));
+      }
+      const one = /^\/classes\/([^/?]+)$/.exec(path);
+      if (method === 'GET' && one) return getResult(one[1] ?? '');
+      return failure(404, 'NOT_FOUND');
+    }),
+  );
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+const callsTo = (method: string, path: string) => calls.filter((c) => c.method === method && c.path === path);
+
+describe('instructor dashboard', () => {
+  it('invites an instructor with no classes to create one, with a single Create class action', async () => {
+    renderAt('/classes');
+
+    expect(await screen.findByText('No classes yet. Create one to share a code with your students.')).toBeTruthy();
+    const links = screen.getAllByRole('link', { name: 'Create class' });
+    expect(links).toHaveLength(1);
+    expect(links[0]?.getAttribute('href')).toBe('/classes/new');
+  });
+
+  it('shows each class as one card that links to it, with the details that were filled in', async () => {
+    classes = [aClass({ name: 'Biology 101', section: 'B', subject: 'Biology', room: '4' }), aClass({ name: 'Essays' })];
+    renderAt('/classes');
+
+    const card = await screen.findByRole('link', { name: /Biology 101/ });
+    expect(card.getAttribute('href')).toBe(`/classes/${classes[0]?.id}`);
+    expect(card.textContent).toContain('Section B · Biology · Room 4');
+    expect(screen.getByRole('link', { name: 'Essays' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Create class' })).toBeTruthy(); // in the header once there are classes
+  });
+
+  it('shows more classes on request, following the cursor', async () => {
+    const first = aClass({ name: 'First class' });
+    const second = aClass({ name: 'Second class' });
+    listResult = (cursor) =>
+      cursor === 'next-page'
+        ? Response.json({ items: [second], nextCursor: null })
+        : Response.json({ items: [first], nextCursor: 'next-page' });
+    const user = userEvent.setup();
+    renderAt('/classes');
+
+    expect(await screen.findByRole('link', { name: 'First class' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Second class' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Show more classes' }));
+
+    expect(await screen.findByRole('link', { name: 'Second class' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'First class' })).toBeTruthy();
+    expect(callsTo('GET', '/classes?cursor=next-page')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Show more classes' })).toBeNull();
+  });
+
+  it('keeps the classes on screen when "Show more" fails, and Retry asks for that page only', async () => {
+    const first = aClass({ name: 'First class' });
+    const second = aClass({ name: 'Second class' });
+    let secondPageWorks = false;
+    listResult = (cursor) => {
+      if (!cursor) return Response.json({ items: [first], nextCursor: 'next-page' });
+      return secondPageWorks ? Response.json({ items: [second], nextCursor: null }) : failure(500, 'INTERNAL');
+    };
+    const user = userEvent.setup();
+    renderAt('/classes');
+
+    await user.click(await screen.findByRole('button', { name: 'Show more classes' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Something went wrong on our side.');
+    expect(screen.getByRole('link', { name: 'First class' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull(); // that would reload every page
+
+    secondPageWorks = true;
+    await user.click(screen.getByRole('button', { name: 'Show more classes' }));
+
+    expect(await screen.findByRole('link', { name: 'Second class' })).toBeTruthy();
+    expect(callsTo('GET', '/classes')).toHaveLength(1); // the first page was not asked for again
+    expect(callsTo('GET', '/classes?cursor=next-page')).toHaveLength(2);
+  });
+
+  it('says what went wrong and lets the instructor try again', async () => {
+    listResult = () => failure(500, 'INTERNAL');
+    const user = userEvent.setup();
+    renderAt('/classes');
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Something went wrong on our side.');
+    classes = [aClass({ name: 'Back again' })];
+    listResult = () => Response.json({ items: classes, nextCursor: null });
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByRole('link', { name: 'Back again' })).toBeTruthy();
+  });
+
+  it('leaves a student on the placeholder and never asks for classes', async () => {
+    me = signedInAs('STUDENT');
+    renderAt('/classes');
+
+    expect(await screen.findByRole('heading', { name: 'Welcome, Maya' })).toBeTruthy();
+    expect(calls.filter((c) => c.path.startsWith('/classes'))).toHaveLength(0);
+  });
+});
+
+describe('create class', () => {
+  it('shows the attestation in full and keeps Create class disabled until it is ticked', async () => {
+    const user = userEvent.setup();
+    renderAt('/classes/new');
+
+    const button = await screen.findByRole<HTMLButtonElement>('button', { name: 'Create class' });
+    expect(screen.getByText(/I have the authority to collect and upload my students' work/)).toBeTruthy();
+    expect(button.disabled).toBe(true);
+
+    await user.click(screen.getByRole('checkbox'));
+    expect(button.disabled).toBe(false);
+    await user.click(screen.getByRole('checkbox'));
+    expect(button.disabled).toBe(true);
+  });
+
+  it('says why the button is off, and stops saying it once the attestation is ticked', async () => {
+    const user = userEvent.setup();
+    renderAt('/classes/new');
+
+    const button = await screen.findByRole('button', { name: 'Create class' });
+    const hint = screen.getByText('Confirm the statement above to create the class.');
+    expect(button.getAttribute('aria-describedby')).toBe(hint.id);
+
+    await user.click(screen.getByRole('checkbox'));
+    expect(screen.queryByText('Confirm the statement above to create the class.')).toBeNull();
+    expect(button.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('sends the details and the attestation, then opens the new class with its code and link', async () => {
+    const user = userEvent.setup();
+    renderAt('/classes/new');
+
+    await user.type(await screen.findByLabelText('Class name'), 'Biology 101');
+    await user.type(screen.getByLabelText('Section (optional)'), 'B');
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: 'Create class' }));
+
+    expect(await screen.findByRole('heading', { name: 'Biology 101' })).toBeTruthy();
+    expect((screen.getByLabelText('Class code') as HTMLInputElement).value).toBe('K7M2PQ9X');
+    expect((screen.getByLabelText('Join link') as HTMLInputElement).value).toBe('http://localhost:5173/join/K7M2PQ9X');
+    expect(callsTo('POST', '/classes')[0]?.body).toMatchObject({
+      name: 'Biology 101',
+      section: 'B',
+      attestation: { confirmed: true },
+    });
+  });
+
+  it('names a missing class name and sends nothing', async () => {
+    const user = userEvent.setup();
+    renderAt('/classes/new');
+
+    await user.click(await screen.findByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: 'Create class' }));
+
+    expect(await screen.findByText('Required')).toBeTruthy();
+    expect(callsTo('POST', '/classes')).toHaveLength(0);
+  });
+
+  it('puts a problem the server found under its field and stays on the form', async () => {
+    createResult = () => failure(400, 'VALIDATION', { name: 'That name is not allowed' });
+    const user = userEvent.setup();
+    renderAt('/classes/new');
+
+    await user.type(await screen.findByLabelText('Class name'), 'Biology 101');
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: 'Create class' }));
+
+    expect(await screen.findByText('That name is not allowed')).toBeTruthy();
+    expect(screen.getByLabelText('Class name').getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByRole('heading', { name: 'Create class' })).toBeTruthy();
+  });
+
+  it('shows the rate limit above the form', async () => {
+    createResult = () => failure(429, 'RATE_LIMITED');
+    const user = userEvent.setup();
+    renderAt('/classes/new');
+
+    await user.type(await screen.findByLabelText('Class name'), 'Biology 101');
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: 'Create class' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Too many attempts');
+  });
+
+  it('is not found for a student, who has no form and sends nothing', async () => {
+    me = signedInAs('STUDENT');
+    renderAt('/classes/new');
+
+    expect(await screen.findByRole('heading', { name: /couldn.t find that page/i })).toBeTruthy();
+    expect(screen.queryByLabelText('Class name')).toBeNull();
+  });
+});
+
+describe('class page', () => {
+  it('shows the details, the class code and the join link', async () => {
+    const cls = aClass({ name: 'Physics', description: 'Forces and motion', section: 'A', subject: 'Science', room: '12' });
+    classes = [cls];
+    renderAt(`/classes/${cls.id}`);
+
+    expect(await screen.findByRole('heading', { name: 'Physics' })).toBeTruthy();
+    expect(screen.getByText('Section A · Science · Room 12')).toBeTruthy();
+    expect(screen.getByText('Forces and motion')).toBeTruthy();
+    expect((screen.getByLabelText('Class code') as HTMLInputElement).value).toBe('K7M2PQ9X');
+    expect(screen.getByRole('link', { name: 'My classes' }).getAttribute('href')).toBe('/classes');
+  });
+
+  it('copies the code and the link, and says so', async () => {
+    const cls = aClass();
+    classes = [cls];
+    const user = userEvent.setup();
+    renderAt(`/classes/${cls.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Copy class code' }));
+    expect(await screen.findByText('Copied')).toBeTruthy();
+    expect(await navigator.clipboard.readText()).toBe('K7M2PQ9X');
+
+    await user.click(screen.getByRole('button', { name: 'Copy join link' }));
+    expect(await navigator.clipboard.readText()).toBe('http://localhost:5173/join/K7M2PQ9X');
+  });
+
+  it('announces a second press of Copy again, as a new message', async () => {
+    const cls = aClass();
+    classes = [cls];
+    const user = userEvent.setup();
+    renderAt(`/classes/${cls.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Copy class code' }));
+    const first = await screen.findByText('Copied');
+    await user.click(screen.getByRole('button', { name: 'Copy class code' }));
+
+    const second = await screen.findByText('Copied');
+    expect(second).not.toBe(first); // a new element is what a screen reader announces
+    expect(first.isConnected).toBe(false);
+  });
+
+  it('tells the user when the browser would not copy', async () => {
+    const cls = aClass();
+    classes = [cls];
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('blocked'));
+    renderAt(`/classes/${cls.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Copy class code' }));
+
+    expect(await screen.findByText(/Could not copy/)).toBeTruthy();
+  });
+
+  it('is not found for a class the API does not show, whoever asks', async () => {
+    renderAt(`/classes/${crypto.randomUUID()}`);
+    expect(await screen.findByRole('heading', { name: /couldn.t find that page/i })).toBeTruthy();
+  });
+
+  it('is not found for an address that is not a class id, not a Retry screen', async () => {
+    getResult = () => failure(400, 'VALIDATION', { 'params.classId': 'Invalid UUID' });
+    renderAt('/classes/abc');
+
+    expect(await screen.findByRole('heading', { name: /couldn.t find that page/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('says what went wrong and lets the user try again', async () => {
+    const cls = aClass({ name: 'Chemistry' });
+    classes = [cls];
+    getResult = () => failure(500, 'INTERNAL');
+    const user = userEvent.setup();
+    renderAt(`/classes/${cls.id}`);
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Something went wrong on our side.');
+    getResult = () => Response.json(cls);
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByRole('heading', { name: 'Chemistry' })).toBeTruthy();
+  });
+});
