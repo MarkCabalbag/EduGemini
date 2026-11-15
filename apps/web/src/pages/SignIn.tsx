@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { SignInSchema } from '@edugemini/shared';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
@@ -11,6 +11,7 @@ import { showApiError } from '../lib/form-errors';
 
 export function SignIn() {
   const signIn = useSignIn();
+  const location = useLocation(); // where to go after signing in; handed on when the visitor switches to sign-up
   const [formError, setFormError] = useState<string>();
   const { register, handleSubmit, setError, formState } = useForm({
     resolver: zodResolver(SignInSchema),
@@ -42,7 +43,7 @@ export function SignIn() {
       </form>
       <p>
         New here?{' '}
-        <Link to="/signup" className="font-semibold text-primary underline">
+        <Link to="/signup" state={location.state} className="font-semibold text-primary underline">
           Create an account
         </Link>
       </p>

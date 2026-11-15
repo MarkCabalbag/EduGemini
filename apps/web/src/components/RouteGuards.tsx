@@ -25,6 +25,9 @@ export function PublicOnly() {
   const location = useLocation();
 
   if (me.isPending) return <PageLoading />;
-  if (me.data) return <Navigate to={safeReturnPath((location.state as { from?: unknown } | null)?.from)} replace />;
+  // `afterSignIn` tells the join page that this visitor has just signed in or signed up, so the join can go on by itself.
+  if (me.data) {
+    return <Navigate to={safeReturnPath((location.state as { from?: unknown } | null)?.from)} replace state={{ afterSignIn: true }} />;
+  }
   return <Outlet />;
 }

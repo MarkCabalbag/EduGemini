@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { ClassOverview } from './pages/ClassOverview';
 import { CreateClass } from './pages/CreateClass';
 import { Dashboard } from './pages/Dashboard';
+import { JoinLink } from './pages/JoinLink';
 import { Landing } from './pages/Landing';
 import { Privacy, Terms } from './pages/Legal';
 import { NotFound } from './pages/NotFound';
@@ -20,6 +21,7 @@ export function App() {
           <Route path="/signin" element={<SignIn />} />
           <Route path="/signup" element={<SignUp />} />
         </Route>
+        <Route path="/join/:code" element={<JoinLink />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route element={<RequireAuth />}>
