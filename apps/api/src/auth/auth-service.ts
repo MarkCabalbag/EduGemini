@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
+import type { Logger } from 'pino';
 import type { Me, SignIn, SignUp } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import { isCommonPassword } from './common-passwords';
@@ -40,12 +41,12 @@ export async function signUp(db: PrismaClient, input: SignUp): Promise<SignedIn>
   }
 }
 
-export async function signIn(db: PrismaClient, input: SignIn): Promise<SignedIn> {
+export async function signIn(db: PrismaClient, input: SignIn, log: Logger): Promise<SignedIn> {
   const user = await db.user.findUnique({ where: { email: input.email }, select: ME_SELECT });
 
   // An unknown email costs the same time as a wrong password and gets the same answer (TRD §14).
   const passwordOk = user?.passwordHash
-    ? await verifyPassword(user.passwordHash, input.password)
+    ? await verifyPassword(user.passwordHash, input.password, log)
     : await verifyAgainstDummy(input.password);
   if (!user || !passwordOk) throw new AppError('INVALID_CREDENTIALS');
 

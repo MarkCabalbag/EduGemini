@@ -50,6 +50,7 @@ export default tseslint.config(
     },
   },
   { files: ['apps/web/src/lib/api.ts'], rules: { 'no-restricted-globals': 'off' } },
+  { files: ['apps/web/public/**/*.js'], languageOptions: { globals: { ...globals.browser } } },
   // Admin area: only the adminQueries repository, no content models (TRD §7.3).
   {
     files: ['apps/api/src/admin/**/*.ts'],

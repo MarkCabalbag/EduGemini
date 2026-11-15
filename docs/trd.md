@@ -50,11 +50,11 @@ These were proposed and approved in the planning step.
 | ORM and migrations | Prisma | Chosen stack; typed queries and migrations |
 | Job queue and scheduler | pg-boss (MIT, free) on the same Postgres | Durable jobs, retries with backoff, delayed jobs, cron, singleton keys; no Redis to host |
 | File storage | Supabase Storage, private buckets; accessed only by the API with the service-role key | Chosen stack; signed URLs; no public access |
-| Authentication | Custom: argon2id passwords, database sessions, Google OAuth via Arctic | PRD rules (role at sign-up, Google link clears password, generic errors) are easier to enforce in our own code |
+| Authentication | Custom: argon2id passwords, database sessions | PRD rules (role at sign-up, generic errors) are easier to enforce in our own code |
 | Email | nodemailer over SMTP to a free transactional provider (Brevo is the candidate); an in-memory fake mailer in development and tests (Section 13.5) | Free; no domain required (T-D3) |
 | AI | `@google/genai` with a Gemini model | Chosen stack |
 | Image and PDF | `sharp` (HEIC support, to be confirmed in spike S4) or `heic-convert` (pure JS fallback); `pdf-lib` for page count and encryption detection | Works in a 512 MB container |
-| Tests | Vitest (unit), Supertest (API integration), Playwright (end-to-end UI and API), `@axe-core/playwright` (accessibility), `eslint-plugin-playwright` (lint rules) | Standard and free; Playwright covers four browser engines and mobile viewports (Section 16.2a) |
+| Tests | Vitest (unit), Testing Library with jsdom (web screens), Supertest (API integration), Playwright (end-to-end UI and API), `@axe-core/playwright` (accessibility), `eslint-plugin-playwright` (lint rules) | Standard and free; Playwright covers four browser engines and mobile viewports (Section 16.2a) |
 | CI | GitHub Actions | Free for public repos; ample minutes for a small project |
 
 Exact versions are pinned in the lockfile, not in this document. Two are held back on purpose: Prisma stays on 6.x, because the schema uses `url` and `directUrl` in the datasource, which Prisma 7 and later replace with `prisma.config.ts`; and TypeScript stays on 6.0.x until typescript-eslint supports 7.
@@ -174,8 +174,8 @@ Storing none of these means a due-date edit recomputes Late for every submission
 
 | Event | What is removed | What is kept |
 |---|---|---|
-| Student deletes account or Super Admin deletes it (A14) | Sessions, auth identities, email tokens, notifications, preferences, all submission files in storage, feedback text, instructor comments | Submission row with score, letter, state, timestamps, and the tombstone User row (name "Deleted student", email replaced with `deleted-<id>@tombstone.invalid`, no password) so the gradebook shows "Deleted student" |
-| Instructor deletes account (FR-AUTH-10) | Instructor sessions, identities, tokens, the encrypted key | Classes are archived (`archivedAt`), students are notified. Tombstone User row. Class data follows the retention job (Section 12) |
+| Student deletes account or Super Admin deletes it (A14) | Sessions, email tokens, notifications, preferences, all submission files in storage, feedback text, instructor comments | Submission row with score, letter, state, timestamps, and the tombstone User row (name "Deleted student", email replaced with `deleted-<id>@tombstone.invalid`, no password) so the gradebook shows "Deleted student" |
+| Instructor deletes account (FR-AUTH-10) | Instructor sessions, tokens, the encrypted key | Classes are archived (`archivedAt`), students are notified. Tombstone User row. Class data follows the retention job (Section 12) |
 | Instructor or Super Admin deletes a class (FR-CLS-11) | All enrollments, assignments, submissions, grades, announcements, and their DB rows, in one transaction | Nothing. A `storage.cleanup` job removes the files after commit. Access is already revoked because the rows are gone |
 | Assignment deleted (FR-ASG-09) | Submissions and grades for that assignment, files | Nothing |
 | Announcement deleted (FR-ANN-03) | The row and its attachment rows, at once; files removed by job | Nothing. Notification links show "This item is no longer available" |
@@ -203,14 +203,6 @@ Storing none of these means a due-date edit recomputes Late for every submission
 - Each authenticated request checks `User.suspendedAt` against the database. There is no cache, so a suspension takes effect on the next request (app-flow Section 11).
 - "Sign out of all devices" deletes every session for the user. Password reset and suspension do the same.
 
-### 6.3 Google sign-in (FR-AUTH-02, D13)
-- Authorization Code flow with PKCE via Arctic. Scopes: `openid email profile`. The issuer is configurable (`GOOGLE_ISSUER`, default Google); the E2E environment points it at a local OIDC mock (Section 16.2a).
-- The Google ID token must have `email_verified = true`, or sign-in is refused.
-- Rules when the email matches an existing account:
-  - Already verified: add the Google identity and keep the password.
-  - Unverified: mark verified, clear `passwordHash`, add the identity, and end the account's existing sessions.
-- No match: a short role-and-terms step runs first (F3). The unfinished account sits in a signed `eg_pending` cookie (10 minutes) and is created only after the step is submitted.
-
 ### 6.4 Return-to and join codes
 - "Signed out, protected page" (app-flow Access Rules 1): the requested path is stored in a signed `eg_return` cookie (10 minutes) and restored after sign-in.
 - The same cookie holds a pending join code, so a join link survives sign-up (F2).
@@ -229,15 +221,6 @@ Storing none of these means a due-date edit recomputes Late for every submission
 
 ### 6.7 Rate limits (in memory, one instance)
 The limits and their numbers are in [API Spec A12](api-spec.md). Counters live in API memory, so they are correct for one instance only (Section 3). Gemini calls use per-instructor pacing (Section 10), not these limits.
-
----|---|
-| Sign-in per IP | 20 failed attempts per 15 minutes (successes do not count) |
-| Sign-up per IP | 60 per hour (API Spec AUTH-01; sized for a class on one network) |
-| Sign-in per email | 5 failed attempts per 15 minutes, then "try again later" (app-flow Section 1, step 4) |
-| Password reset request per email | 3 per hour |
-| Join-code attempts per user | 10 per hour (FR-CLS-03) |
-| Uploads per user | 60 per minute |
-| Gemini calls | Per-instructor pacing (Section 10), not this table |
 
 ---
 
@@ -516,7 +499,7 @@ Routes follow the App Flow screen inventory.
 | Route | Screen (app-flow) | Guard |
 |---|---|---|
 | `/` | Landing | Public; signed-in users go to `/classes` |
-| `/signup`, `/signup/role` | Sign up; first Google role step | Public |
+| `/signup` | Sign up | Public |
 | `/signin`, `/forgot`, `/reset/:token`, `/verify/:token` | Auth screens | Public |
 | `/join/:code` | Join-link landing | Public (preserves code) |
 | `/terms`, `/privacy` | Legal | Public |
@@ -559,7 +542,7 @@ Routes follow the App Flow screen inventory.
 - Mobile-first layout; tested at 360 px width with no horizontal scroll.
 - Keyboard-operable file reorder, tabs, and dialogs. Colour is never the only status signal (chips include text).
 - Target WCAG 2.1 AA for core flows (PRD Section 12).
-- **Theming:** light and dark themes (PRD D14). Tailwind `darkMode: 'class'` with tokens as CSS variables; default follows the system setting; manual choice stored in `localStorage` (non-sensitive, with a fallback to the system setting on read failure); an inline head script prevents a flash of the wrong theme. Component files may not use literal colors (lint rule). Token values and contrast results are in the UX Brief (Section 5). The accessibility suite in Section 16.2a runs in both themes.
+- **Theming:** light and dark themes (PRD D14). Tailwind v4 `@custom-variant dark` (a `dark` class on the root) with tokens as CSS variables; default follows the system setting; manual choice stored in `localStorage` (non-sensitive, with a fallback to the system setting on read failure); a small same-origin script (`public/theme-init.js`, not inline, because the CSP allows `script-src 'self'` only) sets the theme before the first paint. Component files may not use literal colors (lint rule). Token values and contrast results are in the UX Brief (Section 5). The accessibility suite in Section 16.2a runs in both themes.
 
 ---
 
@@ -585,7 +568,7 @@ Routes follow the App Flow screen inventory.
 **Purpose.** Prove the PRD journeys work through a real browser and the real HTTP API, on the same stack as production: same-origin routing, cookies, file upload, polling, downloads, and email links. Unit and integration tests cover logic; E2E covers the seams between them.
 
 **Principles (non-negotiable)**
-1. **No mocks of our own code.** The app runs for real. Only external services are replaced: Gemini (fake adapter), SMTP (fake mailer, Section 13.5), and Google sign-in (a local OIDC mock).
+1. **No mocks of our own code.** The app runs for real. Only external services are replaced: Gemini (fake adapter) and SMTP (fake mailer, Section 13.5).
 2. **Independent tests.** Each test creates its own users, classes, and files with a unique suffix. No test depends on order or on another test's data.
 3. **No fixed sleeps.** Assertions use web-first `expect` with explicit timeouts. `waitForTimeout` is banned by lint.
 4. **Accessible selectors first.** `getByRole`, `getByLabel`, and visible text from the App Flow. `data-testid` is used only when no accessible name exists, and each one is listed in a single registry file.
@@ -631,7 +614,6 @@ Tags: `@smoke` (fast core paths, under 5 minutes per project), `@auth`, `@upload
 **Authentication in tests**
 - Global setup signs in through the real sign-in endpoint, not by writing cookies directly. It saves storage state for `student`, `student2` (cross-student isolation), `instructor`, and `admin` for each project, under `.auth/`.
 - Tests that cover sign-in itself use fresh contexts.
-- Google sign-in runs against a local OIDC mock. The issuer is configurable (`GOOGLE_ISSUER`, Section 6.3). The production code path is otherwise unchanged.
 
 **Email.** The E2E environment sets `MAIL_DRIVER=fake`. Each test uses a unique recipient address, waits for the message through the outbox endpoint, and extracts verification and reset links. No test ever sends to a real mailbox.
 
@@ -679,7 +661,7 @@ Tags: `@smoke` (fast core paths, under 5 minutes per project), `@auth`, `@upload
 
 | Spec | Journeys | Requirements | Projects |
 |---|---|---|---|
-| `auth.spec` | Sign up, duplicate email, generic sign-in error, reset request that never reveals the account, reset link expiry and single use, verification, Google link rule, first-Google role step | FR-AUTH-01 to 05, 09 | All (`@auth` on WebKit) |
+| `auth.spec` | Sign up, duplicate email, generic sign-in error, reset request that never reveals the account, reset link expiry and single use, verification | FR-AUTH-01 to 05, 09 | All (`@auth` on WebKit) |
 | `account.spec` | Change name and password, delete own account, instructor delete consequences | FR-AUTH-07, 10; A14 | Chromium, WebKit |
 | `key.spec` | Disclosure acknowledgement, invalid-key message, masked key, remove key | FR-KEY-01 to 07 | Chromium, WebKit |
 | `class.spec` | Create class with attestation, copy code and link, join with approval on and off, pending screen, approve, decline, remove, archive, edit, delete with typed name | FR-CLS-01 to 11 | All |
@@ -725,7 +707,7 @@ Page objects expose user actions (`signIn`, `uploadFiles`, `approve`), not selec
 - `eslint-plugin-playwright` rules enforced: `no-wait-for-timeout`, `no-force-option`, `no-focused-test`, `no-conditional-in-test`, `prefer-web-first-assertions`, `no-element-handle`.
 
 **Environments**
-- **Local:** the API and web app start against the test project with `MAIL_DRIVER=fake` and `GEMINI_MODE=fake`, and global setup starts the OIDC mock (a small Node script). Run `pnpm --filter e2e test` (all projects) or `--project=<name>`.
+- **Local:** the API and web app start against the test project with `MAIL_DRIVER=fake` and `GEMINI_MODE=fake`. Run `pnpm --filter e2e test` (all projects) or `--project=<name>`.
 - **CI:** Postgres service container, API and web built and started in the job, browsers installed with `--with-deps`, `e2e` job sharded per project with Playwright `--shard`. Pull requests run the smoke set on all projects plus the full Chromium suite. Main and nightly run everything. Superseded PR runs are cancelled.
 - **Production smoke (post-deploy, read-only):** `E2E_MODE=prod-smoke` runs `@smoke` sign-in and dashboard checks against the production URL with a dedicated demo account. It performs no writes.
 
@@ -767,7 +749,7 @@ These run before the features that depend on them. Each has a pass criterion. Fa
 
 | Milestone (PRD Section 18) | Technical scope |
 |---|---|
-| M0 Foundations | Monorepo scaffold; Prisma schema for auth, classes, enrollments, assignments; sessions; Google OAuth; storage adapter; spikes S1 and S2 |
+| M0 Foundations | Monorepo scaffold; Prisma schema for auth, classes, enrollments, assignments; sessions; storage adapter; spikes S1 and S2 |
 | M1 AI grading and keys | Instructor key storage and test call; pg-boss queues; `grade.submission` pipeline; retry classes; pacing; submission upload pipeline (Section 9); student result view; spikes S3 and S4 |
 | M2 Review, tracker, gradebook | Review queue API and Submission screen; approve, reopen, overrides; re-grade flow and debounce; tracker and gradebook; CSV export |
 | M3 Notifications and admin | `notify` email channel (the in-app half ships in M1); `send.email` and digests; account deletion and tombstones; retention sweep; admin area and audit log; spike S5 |
@@ -828,9 +810,7 @@ None open. The PRD and this document agree. A future deviation is recorded here 
 | `STORAGE_LOCAL_DIR` | API (development) | Folder used by the `local` storage driver |
 | `ENCRYPTION_KEY` | API only | 32 bytes, base64; AES-256-GCM for instructor keys |
 | `ENCRYPTION_KEY_VERSION` | API | Integer; increments on rotation |
-| `SESSION_SECRET` | API only | Signs the pending-role and return-to cookies |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | API | Google OAuth |
-| `GOOGLE_REDIRECT_URI` | API | `<APP_URL>/api/auth/google/callback` |
+| `SESSION_SECRET` | API only | Signs the return-to cookie |
 | `MAIL_DRIVER` | API | `smtp` or `fake`. Production is always `smtp` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | API | Email provider (required when `MAIL_DRIVER=smtp`) |
 | `MAIL_FROM` | API | Sender address |
@@ -838,14 +818,12 @@ None open. The PRD and this document agree. A future deviation is recorded here 
 | `GEMINI_MODEL` | API | Model ID (Section 11) |
 | `GEMINI_EVAL_KEY` | Owner's machine only | Gold-set eval; never set in CI or production |
 | `LOG_LEVEL` | API | pino level |
-| `GOOGLE_ISSUER` | API | OIDC issuer; default Google, local mock in E2E |
 | `REGRADE_DEBOUNCE_SECONDS` | API | Re-grade debounce; default 120, E2E 2 |
 | `E2E_BASE_URL` | E2E runner | Web origin under test; must pass the safety guard (Section 16.2a) |
 | `E2E_API_URL` | E2E runner | API origin (same as the web origin through the rewrite, unless testing direct) |
 | `E2E_DATABASE_URL` | E2E runner | Test database (the `edugemini-test` project, session pooler) |
 | `E2E_PROJECT_REF` | E2E runner | Supabase project ref of the test project; the safety guard compares it with `E2E_DATABASE_URL` |
 | `E2E_MODE` | E2E runner | `full` (default) or `prod-smoke` (read-only, production URL) |
-| `OIDC_MOCK_URL` | E2E runner | Local OIDC mock for Google sign-in tests |
 
 Web build (Vercel): no secrets. The rewrite target is set in `vercel.json`.
 
@@ -856,7 +834,7 @@ Web build (Vercel): no secrets. The rewrite target is set in `vercel.json`.
 | ID | TRD section | ID | TRD section | ID | TRD section |
 |---|---|---|---|---|---|
 | FR-AUTH-01 | 6 | FR-SUB-01 | 9 | FR-REV-01 | 8 |
-| FR-AUTH-02 | 6 | FR-SUB-02 | 9, 11 | FR-REV-02 | 15 |
+|  |  | FR-SUB-02 | 9, 11 | FR-REV-02 | 15 |
 | FR-AUTH-03 | 5, 6 | FR-SUB-03 | 9 | FR-REV-03 | 5, 8 |
 | FR-AUTH-04 | 6, 13 | FR-SUB-04 | 5 | FR-REV-04 | 5 |
 | FR-AUTH-05 | 6 | FR-SUB-05 | 5, 10 | FR-REV-05 | 5, 8 |

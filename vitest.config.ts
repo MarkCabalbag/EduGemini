@@ -1,14 +1,6 @@
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-// Integration tests read E2E_DATABASE_URL from the root .env. CI sets the variables directly, so a missing file is fine.
-try {
-  process.loadEnvFile(resolve(dirname(fileURLToPath(import.meta.url)), '.env'));
-} catch (error) {
-  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-}
-
+// Unit tests never read .env. The database tests load it themselves (apps/api/src/test/global-setup.ts).
 export default defineConfig({
   test: {
     projects: [

@@ -25,6 +25,11 @@ describe('SignUpSchema', () => {
     expect(SignUpSchema.safeParse({ ...valid, acceptTerms: undefined }).success).toBe(false);
   });
 
+  it('asks for a role in plain words when none is chosen', () => {
+    const result = SignUpSchema.safeParse({ ...valid, role: undefined });
+    expect(result.success ? '' : result.error.issues[0]?.message).toBe('Choose a role');
+  });
+
   it('rejects a Terms version that is not the current one', () => {
     expect(SignUpSchema.safeParse({ ...valid, termsVersion: 'x' }).success).toBe(false);
   });

@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import type { Me } from '@edugemini/shared';
 
-/** The user columns needed to build `Me`. The password hash is read only to learn whether one exists. */
+/** The user columns needed to build `Me`. The password hash is included so sign-in can check the password; it is never part of `Me`. */
 export const ME_SELECT = {
   id: true,
   email: true,
@@ -23,7 +23,6 @@ export function toMe(user: UserRow): Me {
     lastName: user.lastName,
     role: user.role,
     emailVerified: user.emailVerifiedAt !== null,
-    hasPassword: user.passwordHash !== null,
     suspended: user.suspendedAt !== null,
   };
 }

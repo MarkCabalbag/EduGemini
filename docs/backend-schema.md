@@ -47,7 +47,6 @@ Three diagrams, one per area, so each stays readable. Column detail is in Sectio
 
 ```mermaid
 erDiagram
-  users ||--o{ auth_identities : "signs in with"
   users ||--o{ sessions : "holds"
   users ||--o{ email_tokens : "receives"
   users ||--o{ notification_preferences : "sets"
@@ -104,7 +103,7 @@ Accounts for students, instructors, and Super Admins. Accounts are never hard-de
 |---|---|---|
 | id | Uuid | Primary key |
 | email | text | Login email, stored lowercase |
-| password_hash | text? | argon2id hash; null for Google-only accounts and tombstones |
+| password_hash | text? | argon2id hash; null for tombstones |
 | first_name | text | Display name part (rosters, gradebooks) |
 | last_name | text | Display name part |
 | role | role | `STUDENT`, `INSTRUCTOR`, or `SUPER_ADMIN` (A6: one role per account) |
@@ -120,22 +119,6 @@ Accounts for students, instructors, and Super Admins. Accounts are never hard-de
 - **CK:** `email = lower(email)`; `position('@' in email) > 1`; tombstone consistency (Appendix B).
 - **FK in:** none.
 - **Serves:** FR-AUTH-01, 03, 07, 09, 10; FR-ADM-01; A1, A6, A14, A16.
-
-### 4.2 `auth_identities`
-
-Linked sign-in providers (Google).
-
-| Column | Type | Purpose |
-|---|---|---|
-| id | Uuid | |
-| user_id | Uuid | FK `users` ON DELETE CASCADE |
-| provider | text | `google` (CK: allowed values) |
-| provider_subject | text | The provider's stable user ID (the `sub` claim) |
-| created_at | timestamptz | |
-
-- **UQ:** `(provider, provider_subject)`.
-- **IX:** `user_id` (leading column of the FK).
-- **Serves:** FR-AUTH-02, D13.
 
 ### 4.3 `sessions`
 
@@ -875,7 +858,6 @@ Postgres does not index foreign-key columns automatically, and deleting a parent
 
 | Foreign key | Leading index |
 |---|---|
-| `auth_identities.user_id` | `auth_identities_user_id_idx` |
 | `sessions.user_id` | `sessions_user_id_idx` |
 | `email_tokens.user_id` | `email_tokens_user_id_idx` |
 | `notification_preferences.user_id` | Primary key |
@@ -1010,7 +992,7 @@ UPDATE submissions
  WHERE student_id = $1;
 ```
 
-4. Delete the student's sessions, `auth_identities`, `email_tokens`, `notification_preferences`, and `notifications`.
+4. Delete the student's sessions, `email_tokens`, `notification_preferences`, and `notifications`.
 5. Tombstone the user row (below).
 
 The `submission_versions` rows are kept (number, status, timestamps only). The `submissions.current_version_id` pointer stays valid, so the constraints still hold. `enrollments` rows are kept so the gradebook can show "Deleted student".
@@ -1036,7 +1018,7 @@ In one transaction:
 1. Delete the `instructor_keys` row (the ciphertext goes at once).
 2. Set `archived_at = now()` on the instructor's classes that are not already archived. The retention clock starts here (A10).
 3. Insert `INSTRUCTOR_ACCOUNT_DELETED` notifications for each approved student of those classes.
-4. Delete sessions, identities, tokens, preferences, and notifications for the instructor.
+4. Delete sessions, tokens, preferences, and notifications for the instructor.
 5. Tombstone the user row, as in Section 10.3.
 
 Queued grading jobs for these classes stop on their next run. The worker finds no key and the instructor is a tombstone, so it records `KEY_MISSING` and exits without calling Gemini (TRD §10.3, step 2).
@@ -1124,7 +1106,7 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'users','auth_identities','sessions','email_tokens','notification_preferences',
+    'users','sessions','email_tokens','notification_preferences',
     'instructor_keys','classes','enrollments','assignment_labels','assignments',
     'reference_files','submissions','submission_versions','submission_files',
     'grade_results','review_actions','grading_attempts','announcements',
@@ -1521,7 +1503,6 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  identities    AuthIdentity[]
   sessions      Session[]
   emailTokens   EmailToken[]
   preferences   NotificationPreference[]
@@ -1533,19 +1514,6 @@ model User {
   announcements Announcement[]
 
   @@map("users")
-}
-
-model AuthIdentity {
-  id              String   @id @default(uuid()) @db.Uuid
-  userId          String   @map("user_id") @db.Uuid
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider        String   @db.VarChar(32)
-  providerSubject String   @map("provider_subject")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-
-  @@unique([provider, providerSubject])
-  @@index([userId])
-  @@map("auth_identities")
 }
 
 model Session {
@@ -1935,9 +1903,6 @@ ALTER TABLE users ADD CONSTRAINT users_terms_required
 ALTER TABLE users ADD CONSTRAINT users_tombstone_consistent
   CHECK (NOT tombstone OR (password_hash IS NULL AND email LIKE 'deleted-%@tombstone.invalid'));
 
-ALTER TABLE auth_identities ADD CONSTRAINT auth_identities_provider
-  CHECK (provider IN ('google'));
-
 ALTER TABLE sessions ADD CONSTRAINT sessions_expiry_after_create
   CHECK (expires_at > created_at);
 ALTER TABLE email_tokens ADD CONSTRAINT email_tokens_expiry_after_create
@@ -2172,7 +2137,7 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'users','auth_identities','sessions','email_tokens','notification_preferences',
+    'users','sessions','email_tokens','notification_preferences',
     'instructor_keys','classes','enrollments','assignment_labels','assignments',
     'reference_files','submissions','submission_versions','submission_files',
     'grade_results','review_actions','grading_attempts','announcements',
@@ -2208,7 +2173,6 @@ Every PRD requirement ID, the tables and columns that carry it, and the database
 | ID | Tables and columns | Database rule |
 |---|---|---|
 | FR-AUTH-01 | `users` (email, password_hash, first_name, last_name) | `users_email_lower` |
-| FR-AUTH-02 | `auth_identities` (provider, provider_subject); `users.email_verified_at`, `password_hash` cleared | Unique `(provider, provider_subject)` |
 | FR-AUTH-03 | `users.role` | Enum |
 | FR-AUTH-04 | `users.email_verified_at`; `email_tokens` (purpose `VERIFY_EMAIL`) | Token expiry check |
 | FR-AUTH-05 | `email_tokens` (purpose `RESET_PASSWORD`, expires_at, used_at) | `email_tokens_expiry_after_create` |

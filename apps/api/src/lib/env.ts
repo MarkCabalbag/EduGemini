@@ -32,12 +32,6 @@ const EnvSchema = z
     ENCRYPTION_KEY_VERSION: z.coerce.number().int().min(1).default(1),
     SESSION_SECRET: z.string().min(32, 'must be at least 32 characters'),
 
-    // Google sign-in (optional: the button is hidden when unset)
-    GOOGLE_CLIENT_ID: z.string().min(1).optional(),
-    GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
-    GOOGLE_REDIRECT_URI: url.optional(),
-    GOOGLE_ISSUER: url.default('https://accounts.google.com'),
-
     // Email (TRD §13.5)
     MAIL_DRIVER: z.enum(['smtp', 'fake']).default('fake'),
     MAIL_FROM: z.string().min(3).default('EduGemini <no-reply@edugemini.local>'),
@@ -62,9 +56,6 @@ const EnvSchema = z
     };
     if (e.STORAGE_DRIVER === 'supabase') need(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'], 'STORAGE_DRIVER=supabase');
     if (e.MAIL_DRIVER === 'smtp') need(['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'], 'MAIL_DRIVER=smtp');
-    if (e.GOOGLE_CLIENT_ID || e.GOOGLE_CLIENT_SECRET) {
-      need(['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REDIRECT_URI'], 'Google sign-in is configured');
-    }
     if (e.NODE_ENV === 'production') {
       const forbid = (bad: boolean, name: keyof typeof e, message: string) => {
         if (bad) ctx.addIssue({ code: 'custom', path: [name], message });

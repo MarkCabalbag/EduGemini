@@ -1,17 +1,19 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-// Applies the committed migration to an in-memory Postgres (PGlite), so schema and SQL mistakes
+// Applies the committed migrations, in order, to an in-memory Postgres (PGlite), so schema and SQL mistakes
 // fail in `pnpm test` without a Supabase project. The real databases are covered by the integration project.
-const MIGRATION = resolve(__dirname, '../../prisma/migrations/20261115000000_init/migration.sql');
+const MIGRATIONS = resolve(__dirname, '../../prisma/migrations');
 
 let db: PGlite;
 
 beforeAll(async () => {
   db = new PGlite();
-  await db.exec(readFileSync(MIGRATION, 'utf8'));
+  for (const folder of readdirSync(MIGRATIONS).filter((name) => /^\d/.test(name)).sort()) {
+    await db.exec(readFileSync(resolve(MIGRATIONS, folder, 'migration.sql'), 'utf8'));
+  }
 }, 60_000);
 
 afterAll(async () => {
@@ -22,12 +24,12 @@ async function rejects(sql: string, pattern: RegExp) {
   await expect(db.exec(sql)).rejects.toThrow(pattern);
 }
 
-describe('init migration', () => {
-  it('creates all 22 tables with row-level security on', async () => {
+describe('migrations', () => {
+  it('creates all 21 tables with row-level security on', async () => {
     const { rows } = await db.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'public' AND rowsecurity`,
     );
-    expect(rows[0]?.n).toBe(22);
+    expect(rows[0]?.n).toBe(21);
   });
 
   it('keeps audit rows for 12 months: no updates, no early deletes, old rows can go', async () => {

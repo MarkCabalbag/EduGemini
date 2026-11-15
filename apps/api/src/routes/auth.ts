@@ -13,10 +13,18 @@ export function authRouter({ db, appUrl }: AuthDeps): Router {
   const router = Router();
   const cookie = cookieOptions(appUrl);
 
-  /** A new sign-in replaces the session the browser already holds, so the old token stops working. */
+  /**
+   * A new sign-in replaces the session the browser already holds, so the old token stops working.
+   * Best effort: the sign-in has already succeeded, and a failed cleanup must not turn it into an error.
+   */
   const dropHeldSession = async (req: Request) => {
     const held = readSessionToken(req);
-    if (held) await deleteSession(db, held);
+    if (!held) return;
+    try {
+      await deleteSession(db, held);
+    } catch (error) {
+      req.log.warn({ event: 'session.drop_failed', err: error });
+    }
   };
 
   router.post('/auth/signup', limiters.signUpByIp(), validate({ body: SignUpSchema }), async (req, res) => {
@@ -30,17 +38,18 @@ export function authRouter({ db, appUrl }: AuthDeps): Router {
     '/auth/signin',
     limiters.signInFloodByIp(),
     limiters.authByIp(),
-    limiters.signInByEmail(),
+    limiters.signInByEmailAndIp(),
     validate({ body: SignInSchema }),
     async (req, res) => {
       const { body } = validated(res, { body: SignInSchema });
-      const { me, token } = await signIn(db, body);
+      const { me, token } = await signIn(db, body, req.log);
       await dropHeldSession(req);
       res.cookie(SESSION_COOKIE, token, cookie).json(me);
     },
   );
 
-  // Always 204, even with no session or an expired one.
+  // 204 even with no session or an expired one. If the database fails, the error is returned (not hidden), so the user
+  // knows the session may still be open and can sign out again.
   router.post('/auth/signout', async (req, res) => {
     const token = readSessionToken(req);
     if (token) await deleteSession(db, token);

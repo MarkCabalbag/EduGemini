@@ -59,7 +59,7 @@ describe('sign up', () => {
     const res = await post(app, '/api/auth/signup', signUpBody('new'));
 
     expect(res.status).toBe(201);
-    expect(MeSchema.parse(res.body)).toMatchObject({ email: email('new'), role: 'STUDENT', emailVerified: false, hasPassword: true });
+    expect(MeSchema.parse(res.body)).toMatchObject({ email: email('new'), role: 'STUDENT', emailVerified: false });
     expect(res.body).not.toHaveProperty('passwordHash');
 
     const cookie = (res.headers['set-cookie'] as unknown as string[])[0]!;
@@ -142,16 +142,16 @@ describe('sign in', () => {
     expect(unknownEmail.headers['set-cookie']).toBeUndefined();
   });
 
-  it('treats an account with no password (Google-only) as invalid credentials', async () => {
+  it('treats an account with no password as invalid credentials', async () => {
     await db.user.create({
-      data: { email: email('google-only'), firstName: 'G', lastName: 'O', role: 'STUDENT', termsAcceptedAt: new Date() },
+      data: { email: email('no-password'), firstName: 'G', lastName: 'O', role: 'STUDENT', termsAcceptedAt: new Date() },
     });
-    const res = await post(build(), '/api/auth/signin', { email: email('google-only'), password: PASSWORD });
+    const res = await post(build(), '/api/auth/signin', { email: email('no-password'), password: PASSWORD });
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('INVALID_CREDENTIALS');
   });
 
-  it('is limited to 5 attempts per email in 15 minutes', async () => {
+  it('is limited to 5 failed attempts per email and IP in 15 minutes', async () => {
     const app = build();
     for (let i = 0; i < 5; i++) await post(app, '/api/auth/signin', { email: email('locked'), password: 'x' });
     const res = await post(app, '/api/auth/signin', { email: email('locked'), password: 'x' });

@@ -72,7 +72,7 @@ Body text never goes below 16 px on phones. Feedback text uses `text-body` with 
 
 ## 5. Design tokens
 
-Tokens are CSS variables following the shadcn/ui pattern. Light values are on `:root`. Dark values are on `.dark` (Tailwind `darkMode: 'class'`, Section 15).
+Tokens are CSS variables following the shadcn/ui pattern. Light values are on `:root`. Dark values are on `.dark` (Tailwind `@custom-variant dark`, Section 15).
 
 ### 5.1 Surface, text, and interaction
 
@@ -187,7 +187,7 @@ Minimum supported width is 360 px. No horizontal page scroll at any width. Table
 
 ## 7. Component inventory
 
-Components marked **shadcn** come from shadcn/ui (Radix primitives, styled with these tokens). Components marked **custom** are built for EduGemini.
+Components marked **shadcn** come from shadcn/ui (Radix primitives, styled with these tokens). Components marked **custom** are built for EduGemini. Until a screen needs Radix behavior (Dialog, Sheet, Tabs, Select), Button, Input, Checkbox and the like are small plain components that follow the same rules; shadcn/ui is added with the first screen that needs it.
 
 | Component | Source | Rules |
 |---|---|---|
@@ -284,9 +284,8 @@ Each screen lists its purpose, the App Flow section it comes from, the primary a
 | Screen | Purpose | Primary action | Layout notes |
 |---|---|---|---|
 | Landing | Explain the product in one screen | Sign up | Headline (what it does in one line), three short points (AI-assisted first pass, instructor always decides, free with your own Gemini key), two buttons: Sign up, Sign in. No carousel |
-| Sign up | Create an account (App Flow 1) | Create account | Single column form: first name, last name, email, password (with "at least 10 characters" helper), role radio group ("I am a Student" / "I am an Instructor"), terms checkbox with links. "Continue with Google" above the form, separated by an "or" line |
-| First Google sign-in step | Role and terms (F3) | Continue | Shows the Google name prefilled and editable; the same role radio group and terms checkbox |
-| Sign in | Return users (App Flow 1, step 4) | Sign in | Email, password, "Forgot password?" link, Google button. Generic error ("Email or password is incorrect") shown above the form |
+| Sign up | Create an account (App Flow 1) | Create account | Single column form: first name, last name, email, password (with "at least 10 characters" helper), role radio group ("I am a Student" / "I am an Instructor"), terms checkbox with links |
+| Sign in | Return users (App Flow 1, step 4) | Sign in | Email, password, "Forgot password?" link. Generic error ("Email or password is incorrect") shown above the form |
 | Forgot password | Request a reset (App Flow 1, step 5) | Send link | Email field. After submit, the same message regardless of account: "If that email has an account, we sent a link" |
 | Reset password | From email link | Set new password | Two fields with show/hide toggles; password rules listed as a checklist that ticks off as the user types. Expired link: "This link is no longer valid" with "Send a new link" |
 | Verify email | From email link | — (automatic) | Shows "Email verified" with Continue. Expired link: same pattern as reset |
@@ -639,7 +638,7 @@ Layout notes:
 | Not found | "We couldn't find that page." | Go to dashboard |
 | Something went wrong | "Something went wrong on our side. Your work is saved." (only where true) | Retry; go to dashboard |
 | Maintenance | "EduGemini is down for maintenance. We'll be back soon." | None (refresh) |
-| Connection lost (inline) | "You're offline. We'll retry when you're back online." | Retry |
+| Connection lost (inline) | "You're offline. Check your connection and try again." | Retry |
 
 Error pages never show stack traces, error codes, or the names of internal services.
 
@@ -814,10 +813,10 @@ Target: **WCAG 2.1 AA** for every core flow (PRD Section 12). This checklist is 
 
 ## 15. Theming implementation
 
-- Tailwind `darkMode: 'class'`. A `dark` class on the root element switches the tokens in Section 5.
+- Tailwind v4 `@custom-variant dark`. A `dark` class on the root element switches the tokens in Section 5.
 - **Default:** follows the operating system setting (`prefers-color-scheme`).
 - **Manual override:** Settings > Account > Appearance offers System, Light, and Dark. The choice is stored in `localStorage` (a per-browser preference; it is not sensitive, and a failed read falls back to System).
-- **No flash of the wrong theme:** a small inline script in the document head reads the stored choice and sets the class before the first paint.
+- **No flash of the wrong theme:** a small same-origin script in the document head (`public/theme-init.js`, not inline, because the CSP allows `script-src 'self'` only) reads the stored choice and sets the class before the first paint.
 - Every component uses tokens, never literal colors. A lint rule forbids hex values in component files.
 - Images and the PDF viewer keep their own backgrounds; the viewer frame uses `--surface` so the page edge is visible in dark mode.
 

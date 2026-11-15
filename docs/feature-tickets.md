@@ -19,7 +19,7 @@ Built from: `prd.md` (v2.2) and `trd.md` (v1.0). The PRD and TRD remain the sour
 |---|---|---|
 | FND | Foundations, scaffolding, deployment | M0 |
 | SPK | Day-one spikes S1 to S6 | M0, M1, M3, M5 |
-| AUTH | Accounts, sessions, Google sign-in, account deletion | M0, M3 |
+| AUTH | Accounts, sessions, account deletion | M0, M3 |
 | KEY | Instructor Gemini key | M1 |
 | CLS | Classes, join codes, join approval, roster, archive, delete | M0 |
 | ASG | Assignments, scoring, due dates, reference files, labels | M0, M1, M2, M4 |
@@ -70,14 +70,13 @@ Each spike has a pass criterion and a fallback (TRD §17.1). Run a spike before 
 |---|---|---|---|---|---|---|
 | EG-AUTH-02 | **Sessions and password hashing.** argon2id hashing. Database sessions in cookies. CSRF protection. Idle and absolute timeouts (TQ2: 7 days idle, 30 days absolute). | TRD §6.1, §6.2, §6.5; TQ2 | Infra | M | M0 | FND-03, FND-04 |
 | EG-AUTH-01 | **Email and password sign-up and sign-in.** Role chosen once at sign-up. First and last name collected. Password of at least 10 characters with a strength check. Duplicate emails get a clear message. | FR-AUTH-01, FR-AUTH-03; A6 | Must | M | M0 | AUTH-02 |
-| EG-AUTH-03 | **Google sign-in.** OAuth via Arctic. One account per email. When Google signs in to an unverified password account, mark it verified and clear the password. | FR-AUTH-02; TRD §6.3, D13 | Must | M | M0 | AUTH-02 |
 | EG-AUTH-04 | **Terms and privacy acceptance.** Required tick at sign-up. Text says submissions go to Google Gemini and are reviewed by the instructor. Placeholder wording until DEMO-05. | FR-AUTH-09; PRD §11 | Must | S | M0 | AUTH-01 |
 | EG-AUTH-05 | **Email verification.** Verification link (24-hour lifetime, TQ1 proposal). Unverified users can use the app. A banner offers to resend. | FR-AUTH-04; A2; TRD §6.6 | Should | M | M3 | AUTH-01, NTF-02 |
 | EG-AUTH-06 | **Password reset.** Link expires after 60 minutes and is single use. Pri is Must, but it needs email, so it is in M3 unless the mailer moves earlier. | FR-AUTH-05; TRD §6.6 | Must | S | M3 | AUTH-01, NTF-02 |
 | EG-AUTH-07 | **Session management.** Idle expiry shown to the user. Sign out of all devices. | FR-AUTH-06 | Should | S | M3 | AUTH-02 |
-| EG-AUTH-08 | **Account settings.** Change display name. Change password (current password required). Google-only accounts can set a password to enable email sign-in. Manual theme choice goes here (see FE-02). | FR-AUTH-07 | Should | S | M3 | AUTH-03 |
+| EG-AUTH-08 | **Account settings.** Change display name. Change password (current password required). Manual theme choice goes here (see FE-02). | FR-AUTH-07 | Should | S | M3 | AUTH-03 |
 | EG-AUTH-09 | **First-run guidance.** Short, role-specific "how to get started" steps on the home page. Dismissible. | FR-AUTH-08 | Could | S | M3 | AUTH-01 |
-| EG-AUTH-10 | **Delete own account.** Consequence screen first. Re-enter password or sign in with Google again, then type DELETE. Instructor: classes archived, key deleted, students notified. Student: personal data and files deleted, gradebook keeps an anonymized "Deleted student" row. | FR-AUTH-10; TRD §5.5; A14 | Must | L | M3 | AUTH-02, CLS-10, NTF-03 |
+| EG-AUTH-10 | **Delete own account.** Consequence screen first. Re-enter password, then type DELETE. Instructor: classes archived, key deleted, students notified. Student: personal data and files deleted, gradebook keeps an anonymized "Deleted student" row. | FR-AUTH-10; TRD §5.5; A14 | Must | L | M3 | AUTH-02, CLS-10, NTF-03 |
 
 ## KEY: Instructor Gemini key
 
@@ -255,7 +254,7 @@ Each spike has a pass criterion and a fallback (TRD §17.1). Run a spike before 
 
 ## Build order (critical path)
 
-1. **M0:** FND-01 to FND-04, then FND-10 with SPK-01 and SPK-02. Then AUTH-02, AUTH-01, AUTH-03, and CLS-01 to CLS-05. Then ASG-01, ASG-02, SUB-01, SUB-02, SUB-05, and the rest of M0.
+1. **M0:** FND-01 to FND-04, then FND-10 with SPK-01 and SPK-02. Then AUTH-02, AUTH-01, and CLS-01 to CLS-05. Then ASG-01, ASG-02, SUB-01, SUB-02, SUB-05, and the rest of M0.
 2. **M1:** NTF-01 (in-app notifications) and SPK-03 (sets pacing), then KEY-01 to KEY-03, then AI-01 to AI-03, then AI-04 to AI-08. SPK-04 runs before SUB-03. FE-04 and AI-11 close out M1.
 3. **M2:** REV-01 to REV-05, then SUB-08 and SUB-10, then GB-01 to GB-04. Then AI-09 and ASG-04 (criteria re-grade).
 4. **M3:** NTF-02 to NTF-05, ADM-01 to ADM-06, AUTH-05 to AUTH-10. SPK-05 runs before NTF-02.

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { MAX_EMAIL_LENGTH } from '@edugemini/shared';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../app';
@@ -20,7 +21,7 @@ describe('rate limits (API Spec A12)', () => {
     expect(RULES.signInFloodByIp).toEqual({ windowMs: 15 * 60_000, limit: 300 });
     expect(RULES.authByIp).toEqual({ windowMs: 15 * 60_000, limit: 20 });
     expect(RULES.signUpByIp).toEqual({ windowMs: 60 * 60_000, limit: 60 });
-    expect(RULES.signInByEmail).toEqual({ windowMs: 15 * 60_000, limit: 5 });
+    expect(RULES.signInByEmailAndIp).toEqual({ windowMs: 15 * 60_000, limit: 5 });
   });
 
   it('answers 429 RATE_LIMITED with Retry-After and RateLimit headers once the limit is passed', async () => {
@@ -41,10 +42,10 @@ describe('rate limits (API Spec A12)', () => {
 
   it('counts failed sign-ins per email, ignoring case, and keeps other emails independent', async () => {
     const router = Router();
-    router.post('/signin', limiters.signInByEmail(), (_req, res) => void res.status(401).json({}));
+    router.post('/signin', limiters.signInByEmailAndIp(), (_req, res) => void res.status(401).json({}));
     const app = appWith(router);
 
-    for (let i = 0; i < RULES.signInByEmail.limit; i++) {
+    for (let i = 0; i < RULES.signInByEmailAndIp.limit; i++) {
       const email = i % 2 ? 'Ada@Example.com' : 'ada@example.com';
       expect((await post(app, '/api/signin', { email })).status).toBe(401);
     }
@@ -52,12 +53,33 @@ describe('rate limits (API Spec A12)', () => {
     expect((await post(app, '/api/signin', { email: 'grace@example.com' })).status).toBe(401);
   });
 
+  it('does not let a stranger lock the real owner out: another IP is counted separately', async () => {
+    const router = Router();
+    router.post('/signin', limiters.signInByEmailAndIp(), (_req, res) => void res.status(401).json({}));
+    const app = appWith(router);
+    const from = (ip: string) => request(app).post('/api/signin').set('Origin', APP_URL).set('X-Forwarded-For', ip).send({ email: 'ada@example.com' });
+
+    for (let i = 0; i < RULES.signInByEmailAndIp.limit; i++) await from('203.0.113.5');
+    expect((await from('203.0.113.5')).status).toBe(429); // the attacker's network is blocked
+    expect((await from('198.51.100.7')).status).toBe(401); // the owner's network is not
+  });
+
+  it('cuts an oversized email to the longest valid length, so it cannot be used to fill memory', async () => {
+    const router = Router();
+    router.post('/signin', limiters.signInByEmailAndIp(), (_req, res) => void res.status(401).json({}));
+    const app = appWith(router);
+    const longEmail = (ending: string) => 'a'.repeat(MAX_EMAIL_LENGTH) + ending;
+
+    for (let i = 0; i < RULES.signInByEmailAndIp.limit; i++) await post(app, '/api/signin', { email: longEmail(`${i}`) });
+    expect((await post(app, '/api/signin', { email: longEmail('different') })).status).toBe(429);
+  });
+
   it('does not count successful sign-ins against the email', async () => {
     const router = Router();
-    router.post('/signin', limiters.signInByEmail(), (_req, res) => void res.json({ ok: true }));
+    router.post('/signin', limiters.signInByEmailAndIp(), (_req, res) => void res.json({ ok: true }));
     const app = appWith(router);
 
-    for (let i = 0; i < RULES.signInByEmail.limit * 2; i++) {
+    for (let i = 0; i < RULES.signInByEmailAndIp.limit * 2; i++) {
       expect((await post(app, '/api/signin', { email: 'ada@example.com' })).status).toBe(200);
     }
   });

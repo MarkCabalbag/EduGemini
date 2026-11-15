@@ -6,8 +6,9 @@ export const MIN_PASSWORD_LENGTH = 10;
 /** The Terms version users accept. Change it whenever the Terms text changes (placeholder until EG-DEMO-05). */
 export const TERMS_VERSION = '2026-11-draft';
 const MAX_PASSWORD_LENGTH = 128;
+export const MAX_EMAIL_LENGTH = 320;
 
-const email = z.string().trim().toLowerCase().pipe(z.email().max(320));
+const email = z.string().trim().toLowerCase().pipe(z.email().max(MAX_EMAIL_LENGTH));
 const name = z.string().trim().min(1, 'Required').max(100);
 
 /** Sign-up (API Spec AUTH-01). Role is chosen once and cannot change (PRD A6). */
@@ -16,7 +17,7 @@ export const SignUpSchema = z.object({
   password: z.string().min(MIN_PASSWORD_LENGTH, `Use at least ${MIN_PASSWORD_LENGTH} characters`).max(MAX_PASSWORD_LENGTH),
   firstName: name,
   lastName: name,
-  role: z.enum(['STUDENT', 'INSTRUCTOR']),
+  role: z.enum(['STUDENT', 'INSTRUCTOR'], { error: 'Choose a role' }),
   acceptTerms: z.literal(true, { error: 'You must accept the Terms to continue' }),
   termsVersion: z.literal(TERMS_VERSION, { error: 'The Terms have changed. Reload the page and try again.' }),
 });
@@ -37,7 +38,6 @@ export const MeSchema = z.object({
   lastName: z.string(),
   role: RoleSchema,
   emailVerified: z.boolean(),
-  hasPassword: z.boolean(),
   suspended: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;

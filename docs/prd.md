@@ -150,15 +150,14 @@ Each requirement has an ID for traceability, a priority, and testable acceptance
 | ID | Priority | Requirement | Acceptance criteria |
 |---|---|---|---|
 | FR-AUTH-01 | Must | Email/password sign-up and sign-in for both roles | Password of at least 10 characters with a basic strength check; duplicate emails rejected with a clear message; sign-up collects first and last name (used as the display name in rosters and gradebooks) |
-| FR-AUTH-02 | Must | Google OAuth for both roles | A user who signs in with Google and later with the same email via password is linked to a single account, not duplicated. If the existing account's email was never verified, Google sign-in marks it verified and clears the existing password (the user can set a new one in Settings) |
 | FR-AUTH-03 | Must | Role selection at sign-up | Role is chosen once; one role per account in v1 (A6) |
 | FR-AUTH-04 | Should | Email verification | Unverified accounts can use the app but receive no email notifications until verified; a banner offers to resend the verification email (A2) |
 | FR-AUTH-05 | Must | Password reset | Reset link expires after 60 minutes and is single-use |
 | FR-AUTH-06 | Should | Session management | Sessions expire after inactivity; the user can sign out of all devices |
-| FR-AUTH-07 | Should | Account settings | Any signed-in user can update their display name and change their password (current password required); Google-only accounts can set a password to enable email sign-in |
+| FR-AUTH-07 | Should | Account settings | Any signed-in user can update their display name and change their password (current password required) |
 | FR-AUTH-08 | Could | First-run guidance | The home page shows short, role-specific "how to get started" steps (instructor: add key, create a class, create an assignment, share the code; student: join a class, submit) and can be dismissed |
 | FR-AUTH-09 | Must | Terms and privacy acceptance | Sign-up requires accepting the Terms and Privacy Notice, which state that submissions are processed by Google Gemini and reviewed by the instructor |
-| FR-AUTH-10 | Must | Delete own account | Students and instructors can delete their own account in Settings. The user re-enters their password (or signs in with Google again) and types DELETE to confirm. Instructors are told the consequences first: their classes are archived and later deleted, their Gemini key is deleted, and their students are notified. For a student, personal data and uploaded files are deleted and the instructor's gradebook keeps an anonymized "Deleted student" row (A14) |
+| FR-AUTH-10 | Must | Delete own account | Students and instructors can delete their own account in Settings. The user re-enters their password and types DELETE to confirm. Instructors are told the consequences first: their classes are archived and later deleted, their Gemini key is deleted, and their students are notified. For a student, personal data and uploaded files are deleted and the instructor's gradebook keeps an anonymized "Deleted student" row (A14) |
 
 ### 7.2 Instructor Gemini Key (FR-KEY)
 
@@ -470,7 +469,6 @@ Emails go only to verified addresses (FR-AUTH-04). The exceptions are the verifi
 | Student removed, then re-enters the code | Stays Removed; the student sees "You can't join this class right now. Contact the instructor." |
 | Student enters the code of an archived class, or a disabled or regenerated code | Treated as an invalid code; no class information is shown |
 | Instructor deletes a class | Everything in it is deleted immediately after confirmation; approved students are notified (FR-CLS-11) |
-| Google sign-in with an email that has an unverified password account | Accounts link, the email becomes verified, and the old password is cleared (FR-AUTH-02) |
 | Student removed from class | Submissions retained, hidden from the active gradebook, review queue, and tracker; restored if the student is reinstated (FR-CLS-05) |
 | Assignment archived | Hidden from students; grades retained and restorable; excluded from the default gradebook view with a "Show archived" toggle |
 | Assignment deleted | Permanent removal after confirmation; the gradebook and exports no longer include it |
@@ -545,7 +543,6 @@ Adoption and retention targets are not set while the project is a portfolio piec
 | D10 | Users can delete their own account in Settings (self-service) |
 | D11 | Students are notified when a new assignment is published and when its due date changes |
 | D12 | Instructors can permanently delete their own classes, not only archive them |
-| D13 | Google sign-in on an unverified password account links it, verifies it, and clears the old password |
 | D14 | Light and dark themes in v1; the UX Brief specifies both, with a manual choice in Settings > Account |
 | D15 | v1 sends email from a configured sender address, with no custom domain |
 | D16 | Total upload size per submission is 15 MB, with reference files counted in the same total when grading |

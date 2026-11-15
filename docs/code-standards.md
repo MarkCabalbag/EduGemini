@@ -124,7 +124,7 @@ Each rule is enforced in CI (TRD §16.3 step 3).
 
 Levels and what each covers: [TRD §16.2](trd.md). Rules for writing tests:
 - Vitest for unit and worker tests, Supertest for API integration, Playwright for end to end.
-- **Real database, no mocks of our own code.** Only outside services are replaced: Gemini (fake adapter), SMTP (fake mailer), Google sign-in (OIDC mock).
+- **Real database, no mocks of our own code.** Only outside services are replaced: Gemini (fake adapter), SMTP (fake mailer).
 - Destructive database commands (`prisma migrate reset`, the e2e global setup, demo seeding) run only against the test project, checked by the safety guard (TRD §16.2a; Backend Schema §13.1).
 - Each test creates its own data with a unique suffix and does not depend on order.
 - A permission change comes with a row in the authorization matrix test (TRD §7.2).

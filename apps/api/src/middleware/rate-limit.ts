@@ -1,5 +1,6 @@
 import type { Request, RequestHandler } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
+import { MAX_EMAIL_LENGTH } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 
 // Rate limits (numbers: API Spec A12). Counters live in this process's memory, so they are correct for ONE API instance only
@@ -18,8 +19,8 @@ export const RULES = {
   authByIp: { windowMs: 15 * MINUTE, limit: 20 },
   /** Sign-up, per IP (API Spec AUTH-01). Sized for a class signing up together. */
   signUpByIp: { windowMs: HOUR, limit: 60 },
-  /** Failed sign-ins, per email. Successful sign-ins do not count. */
-  signInByEmail: { windowMs: 15 * MINUTE, limit: 5 },
+  /** Failed sign-ins, per email and IP together, so a stranger cannot lock the real owner out. */
+  signInByEmailAndIp: { windowMs: 15 * MINUTE, limit: 5 },
 } as const satisfies Record<string, Rule>;
 
 type KeyOf = (req: Request) => string;
@@ -39,15 +40,19 @@ export function limit(rule: Rule, keyOf: KeyOf, options: { countOnlyFailures?: b
 
 const byIp: KeyOf = (req) => ipKeyGenerator(req.ip ?? '');
 
-/** The email in a JSON body, lower-cased. Falls back to the IP so a missing email is still limited. */
-const byEmail: KeyOf = (req) => {
+/**
+ * The email in a JSON body (lower-cased, cut to the longest email the schema accepts so a huge value cannot fill memory)
+ * together with the IP. Falls back to the IP so a missing email is still limited.
+ */
+const byEmailAndIp: KeyOf = (req) => {
   const email: unknown = (req.body as { email?: unknown } | undefined)?.email;
-  return typeof email === 'string' && email.trim() ? `email:${email.trim().toLowerCase()}` : byIp(req);
+  const clean = typeof email === 'string' ? email.slice(0, MAX_EMAIL_LENGTH).trim().toLowerCase() : '';
+  return clean ? `${clean}|${byIp(req)}` : byIp(req);
 };
 
 export const limiters = {
   signInFloodByIp: () => limit(RULES.signInFloodByIp, byIp),
   authByIp: () => limit(RULES.authByIp, byIp, { countOnlyFailures: true }),
   signUpByIp: () => limit(RULES.signUpByIp, byIp),
-  signInByEmail: () => limit(RULES.signInByEmail, byEmail, { countOnlyFailures: true }),
+  signInByEmailAndIp: () => limit(RULES.signInByEmailAndIp, byEmailAndIp, { countOnlyFailures: true }),
 };
