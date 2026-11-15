@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { createApp } from './app';
 import { AppError } from './lib/app-error';
 import { createLogger } from './lib/logger';
+import { unusedDb } from './test/unused-db';
 import { validate, validated } from './middleware/validate';
 
 const APP_URL = 'http://localhost:5173';
@@ -32,7 +33,7 @@ testRouter.get('/boom', () => {
 });
 
 function build(checkDb: () => Promise<void> = async () => {}) {
-  return createApp({ env: { APP_URL }, logger: silent, checkDb, routers: [testRouter] });
+  return createApp({ env: { APP_URL }, logger: silent, db: unusedDb, checkDb, routers: [testRouter] });
 }
 
 describe('GET /healthz', () => {
@@ -87,6 +88,11 @@ describe('request parsing', () => {
     expect(res.body.error.code).toBe('PAYLOAD_TOO_LARGE');
   });
 
+  it('accepts a POST with an empty body and no content type', async () => {
+    const res = await request(build()).post('/api/nope').set('Origin', APP_URL).set('Content-Length', '0');
+    expect(res.status).toBe(404); // reached routing, so the body check let it through
+  });
+
   it('rejects malformed JSON as VALIDATION', async () => {
     const res = await request(build())
       .post('/api/echo')
@@ -95,6 +101,19 @@ describe('request parsing', () => {
       .send('{"title":');
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
+  });
+});
+
+describe('session cookie', () => {
+  it('treats a malformed cookie as no session, not a server error', async () => {
+    const res = await request(build()).get('/api/me').set('Cookie', 'eg_session=%E0%A4%A');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('still lets that user sign out to clear it', async () => {
+    const res = await request(build()).post('/api/auth/signout').set('Origin', APP_URL).set('Cookie', 'eg_session=%E0%A4%A');
+    expect(res.status).toBe(204);
   });
 });
 

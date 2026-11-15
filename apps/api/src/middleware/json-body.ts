@@ -7,8 +7,9 @@ export const JSON_BODY_LIMIT = '100kb';
 /** JSON endpoints require application/json and a body of at most 100 KB (API Spec A2). */
 export function jsonBody(): RequestHandler[] {
   const requireJson: RequestHandler = (req, _res, next) => {
-    // req.is() is null when there is no body, false when the type does not match.
-    if (BODY_METHODS.has(req.method) && req.is('application/json') === false) {
+    // An empty body (Content-Length: 0, as sent by a plain POST with no data) needs no content type.
+    const hasBody = req.headers['transfer-encoding'] !== undefined || Number(req.headers['content-length'] ?? 0) > 0;
+    if (BODY_METHODS.has(req.method) && hasBody && !req.is('application/json')) {
       return next(new AppError('UNSUPPORTED_MEDIA_TYPE', { message: 'Content-Type must be application/json' }));
     }
     next();

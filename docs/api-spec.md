@@ -368,9 +368,10 @@ The breaking-change check compares the previous `openapi.yaml` with the new one 
 
 | Scope | Limit | Notes |
 |---|---|---|
-| Sign-in, per IP | 20 per 15 minutes | TRD §6.7 |
-| Sign-in, per email | 5 per 15 minutes | Returns `RATE_LIMITED` with the same copy for known and unknown emails |
-| Sign-up, per IP | 10 per hour | |
+| Sign-in, per IP | 20 failed attempts per 15 minutes | Successful sign-ins do not count, so a class sharing one network is not blocked |
+| Sign-in, per IP, all attempts | 300 per 15 minutes | Caps the CPU spent on password checks |
+| Sign-in, per email | 5 failed attempts per 15 minutes | Returns `RATE_LIMITED` with the same copy for known and unknown emails |
+| Sign-up, per IP | 60 per hour | Sized for a class signing up together on one school network |
 | Password reset request, per email | 3 per hour | Same response for known and unknown emails |
 | Join code attempts, per user | 10 per hour | `INVALID_JOIN_CODE` counts as an attempt |
 | Uploads (PUT), per user | 60 per minute | |
@@ -458,8 +459,8 @@ Each endpoint has the same fields:
 - **Request:** `{ email, password, firstName, lastName, role: "STUDENT" | "INSTRUCTOR", acceptTerms: true, termsVersion }`. Password 10 or more characters, checked against a common-password list. `acceptTerms` must be `true`.
 - **Response:** `201` `Me`, and sets `eg_session`. The new account is signed in at once; verification is a banner, not a gate (PRD A2; FR-AUTH-04).
 - **Errors:** `EMAIL_TAKEN`, `VALIDATION` (field messages in `fields`), `RATE_LIMITED`.
-- **Effects:** queues a `VERIFY_EMAIL` token (24 hours) and the verification email.
-- **Limit:** 10 per hour per IP.
+- **Effects:** queues a `VERIFY_EMAIL` token (24 hours) and the verification email. Added with EG-AUTH-05 (M3); until then sign-up sends nothing.
+- **Limit:** see A12.
 - **Test:** `auth.spec` (FR-AUTH-01, 03, 09).
 
 #### AUTH-02 · Sign in
@@ -470,7 +471,7 @@ Each endpoint has the same fields:
 - **Response:** `200` `Me`, and sets `eg_session`. Redirects are the client's job; the return path is restored from the `eg_return` cookie (AUTH-10 and TRD §6.4).
 - **Errors:** `INVALID_CREDENTIALS` (the same body for a wrong password and an unknown email), `ACCOUNT_SUSPENDED` (403, only after the password is verified, so suspension is not revealed to strangers), `RATE_LIMITED`.
 - **Effects:** creates a session row. Google-only accounts get `INVALID_CREDENTIALS` with the same copy; the UI points to Google sign-in from the reset page.
-- **Limit:** 20 per 15 minutes per IP, 5 per 15 minutes per email (A12).
+- **Limit:** see A12.
 - **Test:** `auth.spec` (generic error, lockout).
 
 #### AUTH-03 · Sign out

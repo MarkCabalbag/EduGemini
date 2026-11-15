@@ -57,7 +57,7 @@ These were proposed and approved in the planning step.
 | Tests | Vitest (unit), Supertest (API integration), Playwright (end-to-end UI and API), `@axe-core/playwright` (accessibility), `eslint-plugin-playwright` (lint rules) | Standard and free; Playwright covers four browser engines and mobile viewports (Section 16.2a) |
 | CI | GitHub Actions | Free for public repos; ample minutes for a small project |
 
-Exact versions are pinned in the lockfile when the project is scaffolded, not in this document.
+Exact versions are pinned in the lockfile, not in this document. Two are held back on purpose: Prisma stays on 6.x, because the schema uses `url` and `directUrl` in the datasource, which Prisma 7 and later replace with `prisma.config.ts`; and TypeScript stays on 6.0.x until typescript-eslint supports 7.
 
 ---
 
@@ -228,11 +228,12 @@ Storing none of these means a due-date edit recomputes Late for every submission
 - On a successful reset, all sessions are deleted.
 
 ### 6.7 Rate limits (in memory, one instance)
+The limits and their numbers are in [API Spec A12](api-spec.md). Counters live in API memory, so they are correct for one instance only (Section 3). Gemini calls use per-instructor pacing (Section 10), not these limits.
 
-| Action | Limit (proposed) |
-|---|---|
-| Sign-in per IP | 20 per 15 minutes |
-| Sign-in per email | 5 per 15 minutes, then "try again later" (app-flow Section 1, step 4) |
+---|---|
+| Sign-in per IP | 20 failed attempts per 15 minutes (successes do not count) |
+| Sign-up per IP | 60 per hour (API Spec AUTH-01; sized for a class on one network) |
+| Sign-in per email | 5 failed attempts per 15 minutes, then "try again later" (app-flow Section 1, step 4) |
 | Password reset request per email | 3 per hour |
 | Join-code attempts per user | 10 per hour (FR-CLS-03) |
 | Uploads per user | 60 per minute |

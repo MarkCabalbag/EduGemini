@@ -1325,7 +1325,7 @@ Neither decision changes the schema beyond the `status = REPLACED` value defined
 | 4 | Retention period for `audit_logs` | 12 months. The daily retention sweep deletes older rows (Section 10.9) | Decided 2026-11-15 |
 | 5 | Does Supabase's free tier include backups? | Unknown. Plan a scripted `pg_dump` (Section 13.4) either way | Verify at scaffold |
 | 6 | Does the pinned Prisma version drop SQL-owned objects on `migrate dev`? | Assume yes until tested. Test at scaffold on the test project (Section 13.3) | Verify at scaffold |
-| 7 | Can the project create a runtime role on the free tier? | Assume yes. Fallback in Section 12.4 | Verify (spike S2) |
+| 7 | Can the project create a runtime role on the free tier? | Yes. The init migration created `app_runtime` on the free tier, and the API connects as it | Verified 2026-11-15 |
 | 8 | What happens to a deleted announcement? | It is deleted completely, with its attachment rows and files. No tombstone (Section 10.6) | Decided 2026-11-15 |
 
 ---

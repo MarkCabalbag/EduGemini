@@ -1,3 +1,4 @@
+import type { AuthSession } from '../auth/session';
 import type { Logger } from '../lib/logger';
 
 declare global {
@@ -9,6 +10,8 @@ declare global {
       id: string;
       /** Logger bound to the request ID. */
       log: Logger;
+      /** The signed-in user, set by loadSession when the request carries a valid session. */
+      auth?: AuthSession;
     }
   }
 }

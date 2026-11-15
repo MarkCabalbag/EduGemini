@@ -32,7 +32,7 @@ export default tseslint.config(
   },
   // The env module and tool configs may read process.env.
   {
-    files: ['apps/api/src/lib/env.ts', '**/*.config.{js,ts}', 'apps/e2e/**', 'scripts/**'],
+    files: ['apps/api/src/lib/env.ts', 'apps/api/src/test/**', '**/*.config.{js,ts}', 'apps/e2e/**', 'scripts/**'],
     rules: { 'no-restricted-syntax': ['error', RAW_SQL] },
   },
   // The row-lock helper may use raw SQL.
