@@ -5,15 +5,29 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "dev": "tsx watch --env-file=../../.env src/main.ts"
+    "dev": "tsx watch --env-file=../../.env src/main.ts",
+    "db:validate": "node --env-file=../../.env.example ./node_modules/prisma/build/index.js validate",
+    "db:generate": "node --env-file=../../.env.example ./node_modules/prisma/build/index.js generate"
   },
   "dependencies": {
     "@edugemini/ai": "workspace:*",
     "@edugemini/shared": "workspace:*",
+    "@node-rs/argon2": "^2.2.2",
+    "@prisma/client": "6.19.3",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
+    "helmet": "^8.3.0",
+    "pino": "^10.4.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@types/express": "^5.0.6",
     "@types/node": "^26.6.6",
+    "@types/supertest": "^7.2.1",
+    "pino-pretty": "^13.2.0",
+    "prisma": "6.19.3",
+    "supertest": "^7.3.2",
     "tsx": "^4.23.15"
   }
 }

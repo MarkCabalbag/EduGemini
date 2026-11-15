@@ -46,22 +46,19 @@
 
 ## 1. Authentication & Onboarding
 
-1. **Landing/Signup**: user signs up with email/password or Google OAuth. Sign-up collects first and last name (display name in rosters and gradebooks) and requires accepting the Terms and Privacy Notice, which say submissions are processed by Google Gemini and reviewed by the instructor. `[FR-AUTH-01, 02, 09]`
+1. **Landing/Signup**: user signs up with email and password. Sign-up collects first and last name (display name in rosters and gradebooks) and requires accepting the Terms and Privacy Notice, which say submissions are processed by Google Gemini and reviewed by the instructor. `[FR-AUTH-01, 09]`
    - Password of at least 10 characters; duplicate email rejected with a clear message.
-   - Google and password sign-in with the same email link to one account. If the existing account's email was never verified, Google sign-in marks it verified and clears the existing password; the user can set a new one in Settings.
-   - First-time Google sign-in: after Google consent, a short step asks for the role and the Terms acceptance. The name is prefilled from the Google profile and can be edited.
 2. **Role selection**: user explicitly picks "I am a Student" or "I am an Instructor". The role is set once; one role per account in v1 (A6). There is no role switching: a user who picked the wrong role deletes the account (step 8) and signs up again, and the email becomes available again. `[FR-AUTH-03]`
 3. **Email verification**: a banner offers to resend the verification email. Unverified users can use the app but get no email notifications until verified (A2). `[FR-AUTH-04]`
    - Opening the link shows "Email verified" and removes the banner. If the user is signed out, it then prompts sign-in.
    - An expired or already-used link shows "This link is no longer valid" with a "Send a new link" action.
-4. **Login**: returning users log in via email/password or Google and land on their role-appropriate dashboard. A wrong email or password shows one generic message ("Email or password is incorrect") that does not reveal whether the email has an account; repeated failures are rate-limited with a "try again later" message. Sessions expire after inactivity; users can sign out of all devices. `[FR-AUTH-06]`
+4. **Login**: returning users log in with email and password and land on their role-appropriate dashboard. A wrong email or password shows one generic message ("Email or password is incorrect") that does not reveal whether the email has an account; repeated failures are rate-limited with a "try again later" message. Sessions expire after inactivity; users can sign out of all devices. `[FR-AUTH-06]`
 5. **Password reset** `[FR-AUTH-05]`:
    - The user enters their email. The screen always says "If that email has an account, we sent a link", whether or not it does.
    - The link opens a "Set new password" form (at least 10 characters). It expires after 60 minutes and works once. On success the user's other sessions are signed out and they sign in with the new password.
-   - If the account only uses Google, the email explains that and points to Google sign-in (a password can be added in Settings).
 6. **First-run guidance (Could)**: the dashboard shows a dismissible "how to get started" panel. Instructor steps: add your Gemini key, create a class, create an assignment, share the code. Student steps: join a class, submit. `[FR-AUTH-08]`
-7. **Account settings** (all roles): update display name; change password (current password required); Google-only accounts can set a password to enable email sign-in. `[FR-AUTH-07]`
-8. **Delete account** (students and instructors): Settings > Account > Delete account. The user re-enters their password (or signs in with Google again) and types DELETE to confirm, then is signed out. `[FR-AUTH-10]`
+7. **Account settings** (all roles): update display name; change password (current password required). `[FR-AUTH-07]`
+8. **Delete account** (students and instructors): Settings > Account > Delete account. The user re-enters their password and types DELETE to confirm, then is signed out. `[FR-AUTH-10]`
    - **Instructors** first see the consequences: their classes are archived and later deleted, their Gemini key is deleted, and their students are notified.
    - **Students** are told their personal data and uploaded files are deleted, and that their instructor keeps only an anonymized "Deleted student" row with score and status (A14).
 
@@ -276,7 +273,6 @@ These fill gaps the PRD does not cover. They affect screens and behavior only, n
 |---|---|---|
 | F1 | Drafts live in a Drafts section on the class Assignments tab, instructor-only, with Resume and Delete | 5.1 |
 | F2 | A join link keeps the code through sign-in or sign-up; sign-up preselects Student; a signed-in instructor sees "Instructor accounts can't join classes" | 6 step 1 |
-| F3 | First Google sign-in adds a short role and terms step; the name is prefilled from the Google profile | 1 |
 | F4 | Before submitting, students see thumbnails and can reorder, remove, and add files; afterwards they can view and download their own files | 6 step 4 |
 | F5 | Archived classes stay visible to students, read-only; removed students' classes disappear; a suspended instructor's classes show "Temporarily unavailable" | 3, 6, 11 |
 | F6 | The review queue lists reviewable items only; Queued and Grading show as "Grading in progress" in the tracker | 7, 8.1 |

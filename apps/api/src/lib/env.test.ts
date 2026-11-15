@@ -43,10 +43,6 @@ describe('env', () => {
     expect(() => parseEnv({ ...example, STORAGE_DRIVER: 'supabase' })).toThrowError(/SUPABASE_URL/);
   });
 
-  it('requires all three Google values once one is set', () => {
-    expect(() => parseEnv({ ...example, GOOGLE_CLIENT_ID: 'id' })).toThrowError(/GOOGLE_CLIENT_SECRET/);
-  });
-
   it('refuses fakes and local storage in production', () => {
     expect(() => parseEnv({ ...example, NODE_ENV: 'production' })).toThrowError(
       /MAIL_DRIVER[\s\S]*GEMINI_MODE[\s\S]*STORAGE_DRIVER/,

@@ -69,7 +69,7 @@ Folder names inside each app are set by this file. Imports go one way: apps impo
 - **Race-prone writes** (approve, reopen, grant, finalize, re-grade, the worker's grade write) lock the submission row with the one shared lock helper (`SELECT ... FOR UPDATE`) and rely on state checks for idempotency (API Spec A11).
 - **Adapters** for outside services (`Mailer`, `StorageAdapter`, the Gemini adapter) are interfaces with a real and a fake implementation, chosen by environment (`STORAGE_DRIVER`, `GEMINI_MODE`).
 
-**Middleware order** (set by this file; the checks themselves are in TRD §6 and §14): request ID, helmet, `trust proxy`, JSON body (100 KB limit), `Origin` check on non-GET, session load (suspension checked on every request), rate limit, routes, 404, error handler.
+**Middleware order** (set by this file; the checks themselves are in TRD §6 and §14): request ID, helmet, `trust proxy`, `Origin` check on non-GET (before the body is read, API Spec A3), JSON body (100 KB limit), session load (suspension checked on every request), rate limit, routes, 404, error handler.
 
 **Logging:** pino with the redaction list in TRD §14. Never log request bodies, tokens, keys or file contents. Product events are named lines such as `grading.attempt` (TRD §16.1).
 
@@ -124,7 +124,7 @@ Each rule is enforced in CI (TRD §16.3 step 3).
 
 Levels and what each covers: [TRD §16.2](trd.md). Rules for writing tests:
 - Vitest for unit and worker tests, Supertest for API integration, Playwright for end to end.
-- **Real database, no mocks of our own code.** Only outside services are replaced: Gemini (fake adapter), SMTP (fake mailer), Google sign-in (OIDC mock).
+- **Real database, no mocks of our own code.** Only outside services are replaced: Gemini (fake adapter), SMTP (fake mailer).
 - Destructive database commands (`prisma migrate reset`, the e2e global setup, demo seeding) run only against the test project, checked by the safety guard (TRD §16.2a; Backend Schema §13.1).
 - Each test creates its own data with a unique suffix and does not depend on order.
 - A permission change comes with a row in the authorization matrix test (TRD §7.2).

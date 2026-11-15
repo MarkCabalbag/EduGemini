@@ -1,0 +1,99 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/* Dark mode is a class on <html>, set by public/theme-init.js (TRD §15.6). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens: UX Brief §5. Components use the utilities below, never literal colors. */
+:root {
+  --background: #f8fafc;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --input-border: #64748b;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --primary: #4f46e5;
+  --primary-fg: #ffffff;
+  --primary-hover: #4338ca;
+  --focus-ring: #4f46e5;
+  --danger: #b91c1c;
+  --status-error-bg: #fee2e2;
+  --status-error-fg: #991b1b;
+  --status-info-bg: #e0f2fe;
+  --status-info-fg: #075985;
+  --shadow-raised: 0 1px 2px rgb(15 23 42 / 0.06);
+}
+
+.dark {
+  color-scheme: dark; /* so scrollbars and autofilled fields are dark too */
+  --background: #020617;
+  --surface: #0f172a;
+  --border: #1e293b;
+  --input-border: #64748b;
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+  --primary: #818cf8;
+  --primary-fg: #0f172a;
+  --primary-hover: #a5b4fc;
+  --focus-ring: #a5b4fc;
+  --danger: #f87171;
+  --status-error-bg: #450a0a;
+  --status-error-fg: #fecaca;
+  --status-info-bg: #082f49;
+  --status-info-fg: #bae6fd;
+  --shadow-raised: none;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-input-border: var(--input-border);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-primary: var(--primary);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-hover: var(--primary-hover);
+  --color-focus: var(--focus-ring);
+  --color-danger: var(--danger);
+  --color-error-bg: var(--status-error-bg);
+  --color-error-fg: var(--status-error-fg);
+  --color-info-bg: var(--status-info-bg);
+  --color-info-fg: var(--status-info-fg);
+  --shadow-raised: var(--shadow-raised);
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Type scale: UX Brief §4.1 */
+  --text-display: 1.75rem;
+  --text-display--line-height: 2.125rem;
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.75rem;
+  --text-small: 0.875rem;
+  --text-small--line-height: 1.25rem;
+
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+body {
+  background: var(--background);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+/* Keyboard focus is always visible: 2 px ring with a 2 px offset (UX Brief §12). */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

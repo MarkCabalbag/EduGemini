@@ -32,7 +32,7 @@ export default tseslint.config(
   },
   // The env module and tool configs may read process.env.
   {
-    files: ['apps/api/src/lib/env.ts', '**/*.config.{js,ts}', 'apps/e2e/**', 'scripts/**'],
+    files: ['apps/api/src/lib/env.ts', 'apps/api/src/test/**', '**/*.config.{js,ts}', 'apps/e2e/**', 'scripts/**'],
     rules: { 'no-restricted-syntax': ['error', RAW_SQL] },
   },
   // The row-lock helper may use raw SQL.
@@ -50,6 +50,7 @@ export default tseslint.config(
     },
   },
   { files: ['apps/web/src/lib/api.ts'], rules: { 'no-restricted-globals': 'off' } },
+  { files: ['apps/web/public/**/*.js'], languageOptions: { globals: { ...globals.browser } } },
   // Admin area: only the adminQueries repository, no content models (TRD §7.3).
   {
     files: ['apps/api/src/admin/**/*.ts'],

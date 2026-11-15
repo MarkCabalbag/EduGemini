@@ -169,58 +169,6 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /api/auth/google/start:
-    get:
-      operationId: AUTH-09
-      tags: [Auth]
-      summary: Start Google sign-in (or re-authentication)
-      security: []
-      parameters:
-        - name: purpose
-          in: query
-          required: false
-          schema: { type: string, enum: [signin, reauth], default: signin }
-        - name: next
-          in: query
-          required: false
-          schema: { type: string, maxLength: 512 }
-          description: Relative path only. Dropped when it fails the allowlist.
-      responses:
-        '302': { description: "Redirect to Google's authorization endpoint. Sets eg_oauth." }
-        '400': { $ref: '#/components/responses/Validation' }
-
-  /api/auth/google/callback:
-    get:
-      operationId: AUTH-10
-      tags: [Auth]
-      summary: Google sign-in callback (browser redirect)
-      security: []
-      parameters:
-        - { name: code, in: query, required: true, schema: { type: string } }
-        - { name: state, in: query, required: true, schema: { type: string } }
-      responses:
-        '302': { description: "Redirect to the return path, the dashboard, or /signup/role. On failure, /signin?error=google." }
-
-  /api/auth/pending-role:
-    post:
-      operationId: AUTH-11
-      tags: [Auth]
-      summary: Complete a first-time Google sign-up
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/PendingRoleRequest' }
-      responses:
-        '201':
-          description: Account created and signed in. Clears eg_pending.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Me' }
-        '400': { $ref: '#/components/responses/Validation' }
-        '409': { $ref: '#/components/responses/Conflict' }
-
   /api/me:
     get:
       operationId: ACC-01
@@ -2048,19 +1996,9 @@ components:
       properties:
         emailVerified: { type: boolean, const: true }
 
-    PendingRoleRequest:
-      type: object
-      required: [role, firstName, lastName, acceptTerms, termsVersion]
-      properties:
-        role: { type: string, enum: [STUDENT, INSTRUCTOR] }
-        firstName: { type: string, minLength: 1, maxLength: 100 }
-        lastName: { type: string, minLength: 1, maxLength: 100 }
-        acceptTerms: { type: boolean, const: true }
-        termsVersion: { type: string, maxLength: 32 }
-
     Me:
       type: object
-      required: [id, email, firstName, lastName, role, emailVerified, hasPassword, suspended]
+      required: [id, email, firstName, lastName, role, emailVerified, suspended]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
@@ -2068,7 +2006,6 @@ components:
         lastName: { type: string }
         role: { type: string, enum: [STUDENT, INSTRUCTOR, SUPER_ADMIN] }
         emailVerified: { type: boolean }
-        hasPassword: { type: boolean }
         suspended: { type: boolean, const: false }
         preferences: { $ref: '#/components/schemas/Preferences' }
 

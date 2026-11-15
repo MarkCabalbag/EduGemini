@@ -16,11 +16,11 @@
 
 ### A1. Scope and counts
 
-This part specifies every endpoint the web client exposes. It has **102 endpoints** in 16 groups. `openapi.yaml` uses the same groups as tags, except that FILE-01 has its own `Files` tag. `/healthz` is the only route outside `/api`. Each endpoint has a stable ID (for example `SUB-05`). The same ID is the `operationId` in `openapi.yaml`.
+This part specifies every endpoint the web client exposes. It has **99 endpoints** in 16 groups. `openapi.yaml` uses the same groups as tags, except that FILE-01 has its own `Files` tag. `/healthz` is the only route outside `/api`. Each endpoint has a stable ID (for example `SUB-05`). The same ID is the `operationId` in `openapi.yaml`.
 
 References such as `A4` or `A7` point to sections of this part. The PRD's assumed defaults are written `PRD A1` to `PRD A16`.
 
-There are **no inbound webhooks**. The only external callbacks are the Google OAuth redirect (AUTH-10) and nothing else. Gemini results are read by the worker, not pushed to us.
+There are **no inbound webhooks**. There are no external callbacks. Gemini results are read by the worker, not pushed to us.
 
 ### A2. Conventions
 
@@ -160,7 +160,6 @@ These are the shapes used across endpoints. Each has a matching component in `op
 | `firstName`, `lastName` | string | |
 | `role` | `STUDENT` \| `INSTRUCTOR` \| `SUPER_ADMIN` | One role per account (PRD A6) |
 | `emailVerified` | boolean | Banner when false (FR-AUTH-04) |
-| `hasPassword` | boolean | False for Google-only accounts (FR-AUTH-07) |
 | `suspended` | boolean | Always false on a successful response; present for symmetry with the 403 |
 | `preferences` | `Preferences` | See ACC-05 |
 
@@ -328,7 +327,7 @@ Uploads are a three-step flow so that a retry never loses files and a submission
 
 ### A8. Health and maintenance
 
-`GET /healthz` (SYS-01) runs `SELECT 1` and returns `200 { status: "ok" }` or `503 { status: "degraded" }`. It is outside `/api`, unauthenticated, and returns nothing internal. Maintenance mode returns `503 SERVICE_UNAVAILABLE` from every `/api` route except `/healthz` and returns the maintenance page to browsers (App Flow §11).
+`GET /healthz` (SYS-01) runs a trivial query (a one-row read through Prisma, because raw SQL is limited to three places, code-standards §7) and returns `200 { status: "ok" }` or `503 { status: "degraded" }`. It is outside `/api`, unauthenticated, and returns nothing internal. Maintenance mode returns `503 SERVICE_UNAVAILABLE` from every `/api` route except `/healthz` and returns the maintenance page to browsers (App Flow §11).
 
 ### A9. Change policy
 
@@ -351,7 +350,6 @@ The breaking-change check compares the previous `openapi.yaml` with the new one 
 | API-2 | Reference files show as "Reference file N" and announcement attachments as "Attachment N", because the schema stores no display name for them | ReferenceFileView, Announcement | Proposed; avoids a schema change |
 | API-3 | `impactToken` confirmation for criteria and file changes | A6 | Proposed |
 | API-4 | Raw-byte PUT for each file | A7 | Proposed |
-| API-5 | Student self-deletion asks for a password, or a Google sign-in within 5 minutes | ACC-04 | Proposed |
 | API-6 | `Idempotency-Key` headers are not used; idempotency comes from state checks and client file IDs | A11 | Decided |
 | API-7 | Students get `NOT_FOUND` for draft and archived assignments, with the same copy as a missing item | ASG-03, SUB-02 | Proposed |
 | API-8 | UI copy in the A4 catalog that is not yet in UX Brief §11.2 | A4 | Proposed; add to the UX Brief once approved |
@@ -368,9 +366,10 @@ The breaking-change check compares the previous `openapi.yaml` with the new one 
 
 | Scope | Limit | Notes |
 |---|---|---|
-| Sign-in, per IP | 20 per 15 minutes | TRD §6.7 |
-| Sign-in, per email | 5 per 15 minutes | Returns `RATE_LIMITED` with the same copy for known and unknown emails |
-| Sign-up, per IP | 10 per hour | |
+| Sign-in, per IP | 20 failed attempts per 15 minutes | Successful sign-ins do not count, so a class sharing one network is not blocked |
+| Sign-in, per IP, all attempts | 300 per 15 minutes | Caps the CPU spent on password checks |
+| Sign-in, per email and IP | 5 failed attempts per 15 minutes | Counted per email and IP together, so someone guessing at an email can only lock their own network out of it, not the real owner. Returns `RATE_LIMITED` with the same copy for known and unknown emails |
+| Sign-up, per IP | 60 per hour | Sized for a class signing up together on one school network |
 | Password reset request, per email | 3 per hour | Same response for known and unknown emails |
 | Join code attempts, per user | 10 per hour | `INVALID_JOIN_CODE` counts as an attempt |
 | Uploads (PUT), per user | 60 per minute | |
@@ -449,7 +448,7 @@ Each endpoint has the same fields:
 - **Concurrency** and **Limit:** when they apply.
 - **Test:** the E2E spec (TRD §16.2a) that covers it.
 
-### B.1 Authentication (11 endpoints)
+### B.1 Authentication (8 endpoints)
 
 #### AUTH-01 · Sign up
 `POST /api/auth/signup` · Standard set: `STD-PUBLIC`, `CSRF_ORIGIN`, `UNSUPPORTED_MEDIA_TYPE`, `PAYLOAD_TOO_LARGE`, `VALIDATION`
@@ -458,8 +457,8 @@ Each endpoint has the same fields:
 - **Request:** `{ email, password, firstName, lastName, role: "STUDENT" | "INSTRUCTOR", acceptTerms: true, termsVersion }`. Password 10 or more characters, checked against a common-password list. `acceptTerms` must be `true`.
 - **Response:** `201` `Me`, and sets `eg_session`. The new account is signed in at once; verification is a banner, not a gate (PRD A2; FR-AUTH-04).
 - **Errors:** `EMAIL_TAKEN`, `VALIDATION` (field messages in `fields`), `RATE_LIMITED`.
-- **Effects:** queues a `VERIFY_EMAIL` token (24 hours) and the verification email.
-- **Limit:** 10 per hour per IP.
+- **Effects:** queues a `VERIFY_EMAIL` token (24 hours) and the verification email. Added with EG-AUTH-05 (M3); until then sign-up sends nothing.
+- **Limit:** see A12.
 - **Test:** `auth.spec` (FR-AUTH-01, 03, 09).
 
 #### AUTH-02 · Sign in
@@ -467,10 +466,10 @@ Each endpoint has the same fields:
 - **Access:** anonymous.
 - **FR:** FR-AUTH-01, FR-AUTH-06.
 - **Request:** `{ email, password }`.
-- **Response:** `200` `Me`, and sets `eg_session`. Redirects are the client's job; the return path is restored from the `eg_return` cookie (AUTH-10 and TRD §6.4).
+- **Response:** `200` `Me`, and sets `eg_session`. Redirects are the client's job; the return path is restored from the `eg_return` cookie (TRD §6.4).
 - **Errors:** `INVALID_CREDENTIALS` (the same body for a wrong password and an unknown email), `ACCOUNT_SUSPENDED` (403, only after the password is verified, so suspension is not revealed to strangers), `RATE_LIMITED`.
-- **Effects:** creates a session row. Google-only accounts get `INVALID_CREDENTIALS` with the same copy; the UI points to Google sign-in from the reset page.
-- **Limit:** 20 per 15 minutes per IP, 5 per 15 minutes per email (A12).
+- **Effects:** creates a session row.
+- **Limit:** see A12.
 - **Test:** `auth.spec` (generic error, lockout).
 
 #### AUTH-03 · Sign out
@@ -499,7 +498,7 @@ Each endpoint has the same fields:
 - **Request:** `{ email }`.
 - **Response:** `202` with the same body for every email: `{ message: "If that email has an account, we sent a link." }`. The response time is padded to a fixed minimum so it does not reveal the account either.
 - **Errors:** `RATE_LIMITED` (per email and per IP; the body is still identical).
-- **Effects:** for an existing account, creates a `RESET_PASSWORD` token (60 minutes, single use) and sends the email. For a Google-only account, the email explains that and points to Google sign-in (App Flow §1 step 5).
+- **Effects:** for an existing account, creates a `RESET_PASSWORD` token (60 minutes, single use) and sends the email.
 - **Limit:** 3 per hour per email (A12).
 - **Test:** `auth.spec` (enumeration, FR-AUTH-05).
 
@@ -534,43 +533,6 @@ Each endpoint has the same fields:
 - **Effects:** invalidates earlier unused verification tokens and creates one new token.
 - **Test:** `auth.spec`.
 
-#### AUTH-09 · Start Google sign-in
-`GET /api/auth/google/start?purpose=signin|reauth&next=<path>`
-- **Access:** anonymous (`signin`) or signed in (`reauth`, used by ACC-04 for Google-only accounts).
-- **FR:** FR-AUTH-02.
-- **Request:** query parameters. `next` must be a relative path and match the allowlist (TRD §6.4); otherwise it is dropped.
-- **Response:** `302` to Google's authorization endpoint with `state`, a PKCE `code_challenge`, and `nonce`. Sets the signed `eg_oauth` cookie (10 minutes) holding `state`, `nonce`, the PKCE verifier, `purpose`, and `next`.
-- **Errors:** `VALIDATION` (bad `purpose`), `INTERNAL`.
-- **Effects:** none in the database.
-- **External:** Google OIDC (B2).
-- **Test:** `auth.spec` (Google link rule, against the local OIDC mock).
-
-#### AUTH-10 · Google sign-in callback
-`GET /api/auth/google/callback?code=…&state=…`
-- **Access:** the browser, redirected by Google.
-- **FR:** FR-AUTH-02, FR-AUTH-03, D13.
-- **Request:** query parameters from Google. The server checks `state` against the `eg_oauth` cookie, exchanges the code with the PKCE verifier, and validates the ID token (signature, issuer, audience, `nonce`, expiry, and `email_verified: true`).
-- **Response:** `302` to `next` (or the dashboard). Outcomes:
-  - Existing account, verified: link the identity and keep the password. Sign in.
-  - Existing account, unverified: link, mark verified, clear the password hash, and end its other sessions (D13). Sign in.
-  - No account: store the Google profile in the signed `eg_pending` cookie (10 minutes) and redirect to `/signup/role` (AUTH-11).
-  - `purpose=reauth`: set `session.reauthAt` and redirect back. No new session.
-- **Errors:** on failure, `302` to `/signin?error=google` with no detail. The page shows "Sign-in with Google didn't finish. Try again." These are not JSON responses because the browser is navigating.
-- **Effects:** creates an `auth_identities` row, may change `users.email_verified_at` and `password_hash`, and writes a session row.
-- **Concurrency:** the `(provider, provider_subject)` unique key prevents two links for one Google account.
-- **Test:** `auth.spec` (link rule, mock provider).
-
-#### AUTH-11 · Complete a first-time Google sign-up
-`POST /api/auth/pending-role` · Standard set: `STD-MUT` minus `ACCOUNT_SUSPENDED`
-- **Access:** anonymous with a valid `eg_pending` cookie.
-- **FR:** FR-AUTH-03, FR-AUTH-09, F3.
-- **Request:** `{ role: "STUDENT" | "INSTRUCTOR", firstName, lastName, acceptTerms: true, termsVersion }`. The name is prefilled from Google and editable.
-- **Response:** `201` `Me`, and sets `eg_session`. Clears `eg_pending`.
-- **Errors:** `TOKEN_INVALID` (the pending cookie expired), `VALIDATION`, `EMAIL_TAKEN` (an account appeared with that email in the meantime; the user is sent to sign in).
-- **Effects:** creates the user with `email_verified_at` set (Google verified the email) and the Google identity.
-- **Concurrency:** the email unique key handles a race with another sign-up.
-- **Test:** `auth.spec` (first-Google role step).
-
 ### B.2 Account (7 endpoints)
 
 #### ACC-01 · Get the current user
@@ -594,18 +556,18 @@ Each endpoint has the same fields:
 `POST /api/me/password` · Standard set: `STD-MUT`
 - **Access:** any signed-in user.
 - **FR:** FR-AUTH-07.
-- **Request:** `{ currentPassword?, newPassword }`. `currentPassword` is required when the account has a password. For a Google-only account, it is omitted, and the server accepts the request only when `session.reauthAt` is within 5 minutes (the same rule as ACC-04).
+- **Request:** `{ currentPassword, newPassword }`. `currentPassword` is required.
 - **Response:** `204`. Other sessions stay signed in (the user is changing their own password, not recovering it).
-- **Errors:** `PASSWORD_INCORRECT`, `VALIDATION`, `ACCOUNT_SUSPENDED` (standard), and `UNAUTHENTICATED` when a Google-only user has no recent sign-in (the UI then starts AUTH-09 with `purpose=reauth`).
+- **Errors:** `PASSWORD_INCORRECT`, `VALIDATION` and `ACCOUNT_SUSPENDED` (standard).
 - **Test:** `account.spec`.
 
 #### ACC-04 · Delete own account
 `DELETE /api/me` · Standard set: `STD-MUT`
 - **Access:** any signed-in user (students and instructors).
 - **FR:** FR-AUTH-10, D10.
-- **Request:** `{ password?, confirmation: "DELETE" }`. `password` is required when the account has one. For a Google-only account, the server requires `session.reauthAt` within 5 minutes (API-5). `confirmation` must equal `DELETE` exactly.
+- **Request:** `{ password, confirmation: "DELETE" }`. `confirmation` must equal `DELETE` exactly.
 - **Response:** `204`, and clears `eg_session`.
-- **Errors:** `CONFIRMATION_MISMATCH`, `PASSWORD_INCORRECT`, `UNAUTHENTICATED` (no recent Google sign-in), `VALIDATION`.
+- **Errors:** `CONFIRMATION_MISMATCH`, `PASSWORD_INCORRECT`, `VALIDATION`.
 - **Effects:** runs the deletion path in Backend Schema §10.3 (student) or §10.4 (instructor). Instructors' classes are archived and their students are notified. The response does not wait for the storage cleanup, which runs from the outbox.
 - **Concurrency:** the user row is locked. A second delete request returns `204` (already deleted).
 - **Test:** `account.spec` (both roles).
@@ -1518,7 +1480,7 @@ Every admin endpoint returns metadata only. No response contains submission cont
 - **Access:** anonymous. Used by UptimeRobot and by the platform's health check.
 - **FR:** Operations (TRD §17.1, S6).
 - **Response:** `200` `Health` (`status: "ok"`), or `503` (`status: "degraded"`) when the database check fails. The body never includes version, dependency names, or counts (A8).
-- **Effects:** runs `SELECT 1`, which keeps the free database active (TRD §4.2).
+- **Effects:** runs a trivial query, which keeps the free database active (TRD §4.2).
 - **Headers:** `Cache-Control: no-store`.
 - **Test:** S6 in the TRD; `api` project smoke test.
 ## Part C: External integrations
@@ -1581,29 +1543,6 @@ Provider facts marked "confirmed" were checked against the sources listed at the
 - **Monitoring:** every call writes a `grading_attempts` row (Backend Schema §4.17). The admin health endpoint (ADM-09) reports success rate, manual-review rate by cause, and key or quota error rate.
 - **Spike:** S3 (model, limits, error shapes, inline size), S4 (large payloads and memory).
 
-### C.2 Google sign-in (OpenID Connect)
-
-- **Purpose:** sign-in and sign-up with a Google account (FR-AUTH-02).
-- **Calls:** the OIDC discovery document (`https://accounts.google.com/.well-known/openid-configuration`, **verify**), then the authorization endpoint (redirect), then the token endpoint (server-to-server code exchange).
-- **Auth and secrets:** `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (environment only). PKCE with the S256 method (`code_challenge`), so the client secret is not the only protection.
-- **Redirect URI:** `${APP_URL}/api/auth/google/callback` (AUTH-10). Must be registered exactly in the Google console.
-- **Scopes:** `openid email profile`. These are non-sensitive scopes, so a full app-verification review is not expected for a small project (**verify** in the Google console).
-- **Validation of the ID token:** signature against Google's keys, `iss` equal to the configured issuer, `aud` equal to our client ID, `exp` not passed, `nonce` equal to the cookie value, `email_verified` equal to `true`, and `sub` used as the stable provider identifier.
-- **Issuer:** `GOOGLE_ISSUER` defaults to Google's issuer. The E2E environment points it at a local OIDC mock (TRD §16.2a). No other code path changes.
-- **Account decisions** (D13; AUTH-10):
-
-  | Local account for the same email | Action |
-  |---|---|
-  | None | Store the profile in `eg_pending` and show the role step (AUTH-11) |
-  | Exists, email verified | Link the identity, keep the password, sign in |
-  | Exists, email not verified | Link, mark the email verified, clear `password_hash`, end the other sessions, sign in |
-
-- **State and PKCE storage:** the `state`, `nonce`, PKCE verifier, purpose, and return path live in a signed, short-lived `eg_oauth` cookie (10 minutes), not in server memory, so a restart between the redirect and the callback does not break sign-in.
-- **Timeouts and failures:** if Google is unreachable, the sign-in page shows the Google error and email and password sign-in keeps working. A failed callback redirects to `/signin?error=google` with no detail.
-- **Data received:** `sub`, `email`, `email_verified`, `given_name`, `family_name`. The profile picture and other claims are not requested or stored.
-- **Test substitute:** the local OIDC mock, issuing ID tokens with `email_verified` set per test.
-- **Spike:** covered by the auth tests in the E2E suite; the consent-screen setup is checked once in the Deployment Runbook.
-
 ### C.3 Supabase Postgres and pg-boss
 
 - **Purpose:** the only database, and the job queue (grading, email, cleanup, digests).
@@ -1617,7 +1556,7 @@ Provider facts marked "confirmed" were checked against the sources listed at the
   - Connect timeout 10 seconds.
   - Statement timeout 10 seconds for API requests. Grading and cleanup jobs run with a longer limit set per job.
 - **Retries:** connection-level errors (for example P1001, P1017) retry up to three times with backoff, but never for writes that already committed. Application errors are not retried at this layer.
-- **Health:** `SELECT 1` in SYS-01. A failure returns `503 degraded` and the maintenance behavior in A8.
+- **Health:** a trivial query in SYS-01. A failure returns `503 degraded` and the maintenance behavior in A8.
 - **Limits (verify):** free-tier database size and inactivity pausing (TRD §4.2). Backup availability on the free tier is an open question (Backend Schema §16.2, item 5).
 - **Test substitute:** the `edugemini-test` Supabase project locally and a Postgres service container in CI (TRD §4.1, §16.3).
 - **Spike:** S2.
@@ -1657,7 +1596,6 @@ Provider facts marked "confirmed" were checked against the sources listed at the
   |---|---|---|
   | `verify-email` | AUTH-01, AUTH-08 | Link with a 24-hour token |
   | `reset-password` | AUTH-05 | Link with a 60-minute token |
-  | `google-only-reset` | AUTH-05 | Explanation and link to Google sign-in |
   | `account-status` | ADM-03, ADM-04 | The status change and the optional reason |
   | `retention-notice` | `retention.sweep` | Date of deletion and a link to the gradebook CSV |
   | `notification` | Immediate notifications | Title from the UX copy and a deep link |
@@ -1714,7 +1652,6 @@ Provider facts marked "confirmed" were checked against the sources listed at the
 | Service | Used for | When it fails | What the user sees | Detected by |
 |---|---|---|---|---|
 | Gemini | Grading and key checks | Outage, quota, invalid key | Student: "Submitted, awaiting instructor review". Instructor: banner and cause | `grading_attempts`, ADM-09 |
-| Google sign-in | Google accounts | Google unreachable, or rejected token | Sign-in page error; email and password still work | Callback errors in logs |
 | Supabase Postgres | Everything | Database down | Maintenance page; `/healthz` returns 503 | UptimeRobot; SYS-01 |
 | Supabase Storage | Files | Storage down | Upload shows a retry message; nothing is partly stored | Storage errors; outbox backlog |
 | SMTP provider | Email | Provider down or daily quota reached | In-app notifications still appear; email is deferred | `notifications.email_status`, ADM-09 |
@@ -1736,14 +1673,13 @@ Every PRD v2.2 requirement ID is listed. "UI only" means the requirement has no 
 | FR ID | Endpoints | Note |
 |---|---|---|
 | FR-AUTH-01 | AUTH-01, AUTH-02 | |
-| FR-AUTH-02 | AUTH-09, AUTH-10 | D13 link rule in AUTH-10 |
-| FR-AUTH-03 | AUTH-01, AUTH-11 | |
+| FR-AUTH-03 | AUTH-01 | |
 | FR-AUTH-04 | AUTH-01, AUTH-07, AUTH-08 | Banner is UI; the flag is `Me.emailVerified` |
 | FR-AUTH-05 | AUTH-05, AUTH-06 | |
 | FR-AUTH-06 | AUTH-02, AUTH-03, AUTH-04 | |
 | FR-AUTH-07 | ACC-02, ACC-03 | |
 | FR-AUTH-08 | ACC-01, JOIN-02 | UI only (reads the role and the join preview) |
-| FR-AUTH-09 | AUTH-01, AUTH-11 | |
+| FR-AUTH-09 | AUTH-01 | |
 | FR-AUTH-10 | ACC-04, ACC-07, ADM-05 | |
 | FR-KEY-01 | KEY-01, KEY-02, KEY-03 | |
 | FR-KEY-02 | KEY-02, KEY-04 | |
@@ -1864,9 +1800,6 @@ Generated from the endpoint headings in Part B. The ID is the `operationId` in `
 | AUTH-06 | POST | `/api/auth/reset-password` | Set a new password from a reset link | B.1 Authentication |
 | AUTH-07 | POST | `/api/auth/verify-email` | Verify email | B.1 Authentication |
 | AUTH-08 | POST | `/api/auth/resend-verification` | Resend the verification email | B.1 Authentication |
-| AUTH-09 | GET | `/api/auth/google/start?purpose=signin|reauth&next=<path>` | Start Google sign-in | B.1 Authentication |
-| AUTH-10 | GET | `/api/auth/google/callback?code=…&state=…` | Google sign-in callback | B.1 Authentication |
-| AUTH-11 | POST | `/api/auth/pending-role` | Complete a first-time Google sign-up | B.1 Authentication |
 | ACC-01 | GET | `/api/me` | Get the current user | B.2 Account |
 | ACC-02 | PATCH | `/api/me` | Update name | B.2 Account |
 | ACC-03 | POST | `/api/me/password` | Change password | B.2 Account |
@@ -1946,6 +1879,5 @@ These are the items marked **verify** in Part C. None is needed to write the spe
 | Vercel request-body limit for external rewrites | C.6 | S1 (10 MiB upload) |
 | Brevo SMTP host, port, and daily limit (300 per day, from its help center) | C.5 | S5 |
 | UptimeRobot free-plan interval and monitor count | C.8 | Setup |
-| Google OIDC discovery URL and the consent-screen rules for `openid email profile` | C.2 | Setup, in the Deployment Runbook |
 | Render free-plan terms (RAM, spin-down, instance hours) | C.7 | Before launch |
 | pg-boss option names (`deleteAfterSeconds`, `archiveCompletedAfterSeconds`, graceful stop) | C.7, Backend Schema §11 | Scaffold |
