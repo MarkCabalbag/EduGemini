@@ -1164,6 +1164,13 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
     CREATE ROLE app_runtime NOLOGIN NOINHERIT;
   END IF;
+  -- Supabase provides these roles. Plain Postgres (the CI service container) does not, so create them there.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    CREATE ROLE anon NOLOGIN NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    CREATE ROLE authenticated NOLOGIN NOINHERIT;
+  END IF;
 END $$;
 
 GRANT USAGE ON SCHEMA public TO app_runtime;
@@ -2142,6 +2149,13 @@ DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
     CREATE ROLE app_runtime NOLOGIN NOINHERIT;
+  END IF;
+  -- Supabase provides these roles. Plain Postgres (the CI service container) does not, so create them there.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    CREATE ROLE anon NOLOGIN NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    CREATE ROLE authenticated NOLOGIN NOINHERIT;
   END IF;
 END $$;
 

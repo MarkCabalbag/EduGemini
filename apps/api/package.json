@@ -5,15 +5,20 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "dev": "tsx watch --env-file=../../.env src/main.ts"
+    "dev": "tsx watch --env-file=../../.env src/main.ts",
+    "db:validate": "node --env-file=../../.env.example ./node_modules/prisma/build/index.js validate",
+    "db:generate": "node --env-file=../../.env.example ./node_modules/prisma/build/index.js generate"
   },
   "dependencies": {
     "@edugemini/ai": "workspace:*",
     "@edugemini/shared": "workspace:*",
+    "@prisma/client": "6.19.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@types/node": "^26.6.6",
+    "prisma": "6.19.3",
     "tsx": "^4.23.15"
   }
 }

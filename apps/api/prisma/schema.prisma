@@ -1,0 +1,580 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  STUDENT
+  INSTRUCTOR
+  SUPER_ADMIN
+
+  @@map("role")
+}
+
+enum EnrollmentStatus {
+  PENDING
+  ACTIVE
+  DECLINED
+  REMOVED
+
+  @@map("enrollment_status")
+}
+
+enum AssignmentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@map("assignment_status")
+}
+
+enum ScoringFormat {
+  POINTS
+  PERCENTAGE
+  LETTER_NUMERIC
+
+  @@map("scoring_format")
+}
+
+enum SubmissionState {
+  QUEUED
+  GRADING
+  AI_GENERATED
+  NEEDS_MANUAL_REVIEW
+  INSTRUCTOR_APPROVED
+
+  @@map("submission_state")
+}
+
+enum ManualReviewCause {
+  AI_FAILED
+  KEY_MISSING
+  KEY_INVALID
+  KEY_QUOTA
+  FILE_QUALITY
+
+  @@map("manual_review_cause")
+}
+
+enum VersionStatus {
+  UPLOADING
+  STORED
+  REPLACED
+
+  @@map("version_status")
+}
+
+enum FileStatus {
+  STORED
+  FAILED
+
+  @@map("file_status")
+}
+
+enum GradeSource {
+  AI
+  INSTRUCTOR
+
+  @@map("grade_source")
+}
+
+enum GradeStatus {
+  ACTIVE
+  PENDING_REVIEW
+  SUPERSEDED
+  DISCARDED
+
+  @@map("grade_status")
+}
+
+enum KeyStatus {
+  CONNECTED
+  NEEDS_ATTENTION
+  QUOTA_REACHED
+
+  @@map("key_status")
+}
+
+enum ReviewActionType {
+  APPROVE
+  REOPEN
+  MANUAL_GRADE
+  GRANT_ATTEMPTS
+  ALLOW_LATE
+  REGRADE_REQUEST
+  REGRADE_APPROVE
+  REGRADE_KEEP_PREVIOUS
+
+  @@map("review_action_type")
+}
+
+enum AttemptOutcome {
+  SUCCESS
+  TRANSIENT_ERROR
+  KEY_ERROR
+  QUOTA_ERROR
+  FILE_ERROR
+  STALE_DISCARDED
+
+  @@map("attempt_outcome")
+}
+
+enum TokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+
+  @@map("token_purpose")
+}
+
+enum NotificationType {
+  SUBMISSION_GRADED
+  GRADE_APPROVED
+  SUBMISSION_AWAITING_REVIEW
+  NEEDS_MANUAL_REVIEW_INSTRUCTOR
+  NEEDS_MANUAL_REVIEW_STUDENT
+  KEY_NEEDS_ATTENTION
+  REGRADE_COMPLETE
+  SUBMISSION_REOPENED
+  JOIN_REQUEST_RECEIVED
+  JOIN_DECIDED
+  ATTEMPTS_GRANTED
+  LATE_ALLOWED
+  ASSIGNMENT_PUBLISHED
+  DUE_DATE_CHANGED
+  CLASS_DELETED
+  INSTRUCTOR_ACCOUNT_DELETED
+  ACCOUNT_STATUS_CHANGED
+  RETENTION_NOTICE
+  ANNOUNCEMENT_POSTED
+
+  @@map("notification_type")
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+
+  @@map("email_status")
+}
+
+// ---------- Identity ----------
+
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  email           String    @unique @db.VarChar(320)
+  passwordHash    String?   @map("password_hash")
+  firstName       String    @map("first_name")
+  lastName        String    @map("last_name")
+  role            Role
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(3)
+  termsAcceptedAt DateTime? @map("terms_accepted_at") @db.Timestamptz(3)
+  termsVersion    String?   @map("terms_version")
+  suspendedAt     DateTime? @map("suspended_at") @db.Timestamptz(3)
+  suspendReason   String?   @map("suspend_reason")
+  tombstone       Boolean   @default(false)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  identities    AuthIdentity[]
+  sessions      Session[]
+  emailTokens   EmailToken[]
+  preferences   NotificationPreference[]
+  notifications Notification[]
+  instructorKey InstructorKey?
+  classesTaught Class[]                  @relation("InstructorClasses")
+  enrollments   Enrollment[]
+  submissions   Submission[]
+  announcements Announcement[]
+
+  @@map("users")
+}
+
+model AuthIdentity {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider        String   @db.VarChar(32)
+  providerSubject String   @map("provider_subject")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([provider, providerSubject])
+  @@index([userId])
+  @@map("auth_identities")
+}
+
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique @map("token_hash")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model EmailToken {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @map("user_id") @db.Uuid
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   TokenPurpose
+  tokenHash String       @unique @map("token_hash")
+  expiresAt DateTime     @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime?    @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_tokens")
+}
+
+model NotificationPreference {
+  userId  String  @map("user_id") @db.Uuid
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category String @db.VarChar(64)
+  emailOn Boolean @default(true) @map("email_on")
+
+  @@id([userId, category])
+  @@map("notification_preferences")
+}
+
+model InstructorKey {
+  id              String    @id @default(uuid()) @db.Uuid
+  instructorId    String    @unique @map("instructor_id") @db.Uuid
+  instructor      User      @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  ciphertext      Bytes     @db.ByteA
+  iv              Bytes     @db.ByteA
+  authTag         Bytes     @map("auth_tag") @db.ByteA
+  keyVersion      Int       @map("key_version")
+  last4           String    @db.Char(4)
+  status          KeyStatus @default(CONNECTED)
+  lastSuccessAt   DateTime? @map("last_success_at") @db.Timestamptz(3)
+  disclosureAckAt DateTime  @map("disclosure_ack_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("instructor_keys")
+}
+
+// ---------- Classes and enrollment ----------
+
+model Class {
+  id                String    @id @default(uuid()) @db.Uuid
+  instructorId      String    @map("instructor_id") @db.Uuid
+  instructor        User      @relation("InstructorClasses", fields: [instructorId], references: [id], onDelete: Restrict)
+  name              String    @db.VarChar(120)
+  description       String?
+  section           String?
+  subject           String?
+  room              String?
+  joinCode          String    @unique @map("join_code") @db.VarChar(8)
+  joinCodeActive    Boolean   @default(true) @map("join_code_active")
+  requireApproval   Boolean   @default(false) @map("require_approval")
+  attestedAt        DateTime  @map("attested_at") @db.Timestamptz(3)
+  archivedAt        DateTime? @map("archived_at") @db.Timestamptz(3)
+  retentionNoticeAt DateTime? @map("retention_notice_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  enrollments   Enrollment[]
+  labels        AssignmentLabel[]
+  assignments   Assignment[]
+  announcements Announcement[]
+
+  @@index([instructorId])
+  @@map("classes")
+}
+
+model Enrollment {
+  id          String           @id @default(uuid()) @db.Uuid
+  classId     String           @map("class_id") @db.Uuid
+  class       Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  studentId   String           @map("student_id") @db.Uuid
+  student     User             @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  status      EnrollmentStatus
+  joinedAt    DateTime         @default(now()) @map("joined_at") @db.Timestamptz(3)
+  decidedAt   DateTime?        @map("decided_at") @db.Timestamptz(3)
+  decidedById String?          @map("decided_by_id") @db.Uuid
+
+  @@unique([classId, studentId])
+  @@index([studentId])
+  @@index([classId, status])
+  @@map("enrollments")
+}
+
+model AssignmentLabel {
+  id          String       @id @default(uuid()) @db.Uuid
+  classId     String       @map("class_id") @db.Uuid
+  class       Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  name        String       @db.VarChar(60)
+  assignments Assignment[]
+
+  @@unique([classId, name])
+  @@map("assignment_labels")
+}
+
+// ---------- Assignments ----------
+
+model Assignment {
+  id              String           @id @default(uuid()) @db.Uuid
+  classId         String           @map("class_id") @db.Uuid
+  class           Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  labelId         String?          @map("label_id") @db.Uuid
+  label           AssignmentLabel? @relation(fields: [labelId], references: [id], onDelete: SetNull)
+  title           String
+  instructions    String?
+  criteriaText    String           @map("criteria_text")
+  criteriaVersion Int              @default(1) @map("criteria_version")
+  dueAt           DateTime         @map("due_at") @db.Timestamptz(3)
+  timezone        String           @db.VarChar(64)
+  scoringFormat   ScoringFormat    @map("scoring_format")
+  maxScore        Decimal          @map("max_score") @db.Decimal(6, 2)
+  letterScale     Json?            @map("letter_scale") @db.JsonB
+  maxResubmissions Int?            @map("max_resubmissions")
+  acceptLate      Boolean          @default(true) @map("accept_late")
+  status          AssignmentStatus @default(DRAFT)
+  regradeNotBefore DateTime?       @map("regrade_not_before") @db.Timestamptz(3)
+  publishedAt     DateTime?        @map("published_at") @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  referenceFiles ReferenceFile[]
+  submissions    Submission[]
+
+  @@index([classId, status, dueAt])
+  @@index([labelId])
+  @@map("assignments")
+}
+
+model ReferenceFile {
+  id                String     @id @default(uuid()) @db.Uuid
+  assignmentId      String     @map("assignment_id") @db.Uuid
+  assignment        Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  ordinal           Int
+  storagePath       String     @unique @map("storage_path")
+  mimeType          String     @map("mime_type") @db.VarChar(64)
+  sizeBytes         BigInt     @map("size_bytes")
+  sha256            String     @db.Char(64)
+  visibleToStudents Boolean    @default(false) @map("visible_to_students")
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([assignmentId, ordinal])
+  @@map("reference_files")
+}
+
+// ---------- Submissions ----------
+
+model Submission {
+  id                String              @id @default(uuid()) @db.Uuid
+  assignmentId      String              @map("assignment_id") @db.Uuid
+  assignment        Assignment          @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId         String              @map("student_id") @db.Uuid
+  student           User                @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  state             SubmissionState?
+  manualReviewCause ManualReviewCause?  @map("manual_review_cause")
+  currentVersionId  String?             @map("current_version_id") @db.Uuid
+  activeGradeId     String?             @map("active_grade_id") @db.Uuid
+  resubmissionsUsed Int                 @default(0) @map("resubmissions_used")
+  extraAttempts     Int                 @default(0) @map("extra_attempts")
+  lateAllowed       Boolean             @default(false) @map("late_allowed")
+  firstSubmittedAt  DateTime?           @map("first_submitted_at") @db.Timestamptz(3)
+  latestSubmittedAt DateTime?           @map("latest_submitted_at") @db.Timestamptz(3)
+  approvedAt        DateTime?           @map("approved_at") @db.Timestamptz(3)
+  approvedById      String?             @map("approved_by_id") @db.Uuid
+  instructorComment String?             @map("instructor_comment") @db.VarChar(2000)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  versions        SubmissionVersion[]
+  grades          GradeResult[]
+  reviewActions   ReviewAction[]
+  gradingAttempts GradingAttempt[]
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId])
+  @@index([assignmentId, state])
+  @@map("submissions")
+}
+
+model SubmissionVersion {
+  id           String        @id @default(uuid()) @db.Uuid
+  submissionId String        @map("submission_id") @db.Uuid
+  submission   Submission    @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  versionNo    Int           @map("version_no")
+  status       VersionStatus @default(UPLOADING)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  storedAt     DateTime?     @map("stored_at") @db.Timestamptz(3)
+
+  files SubmissionFile[]
+
+  @@unique([submissionId, versionNo])
+  @@unique([id, submissionId])
+  @@map("submission_versions")
+}
+
+model SubmissionFile {
+  id           String            @id @default(uuid()) @db.Uuid
+  versionId    String            @map("version_id") @db.Uuid
+  version      SubmissionVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  clientFileId String            @map("client_file_id") @db.VarChar(64)
+  ordinal      Int
+  status       FileStatus        @default(STORED)
+  storagePath  String?           @unique @map("storage_path")
+  displayName  String?           @map("display_name")
+  mimeType     String?           @map("mime_type") @db.VarChar(64)
+  sizeBytes    BigInt?           @map("size_bytes")
+  pageCount    Int?              @map("page_count")
+  sha256       String?           @db.Char(64)
+  failureCode  String?           @map("failure_code") @db.VarChar(16)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([versionId, clientFileId])
+  @@map("submission_files")
+}
+
+// ---------- Grading, review, operations ----------
+
+model GradeResult {
+  id               String      @id @default(uuid()) @db.Uuid
+  submissionId     String      @map("submission_id") @db.Uuid
+  submission       Submission  @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  versionId        String      @map("version_id") @db.Uuid
+  source           GradeSource
+  status           GradeStatus
+  score            Decimal?    @db.Decimal(6, 2)
+  letter           String?     @db.VarChar(3)
+  feedback         String?
+  criteriaVersion  Int         @map("criteria_version")
+  model            String?
+  promptVersion    String?     @map("prompt_version")
+  confidence       String?     @db.VarChar(6)
+  readabilityIssue Boolean     @default(false) @map("readability_issue")
+  createdById      String?     @map("created_by_id") @db.Uuid
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([id, submissionId])
+  @@index([submissionId, status])
+  @@map("grade_results")
+}
+
+model ReviewAction {
+  id              String           @id @default(uuid()) @db.Uuid
+  submissionId    String           @map("submission_id") @db.Uuid
+  submission      Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  actorId         String           @map("actor_id") @db.Uuid
+  action          ReviewActionType
+  aiScore         Decimal?         @map("ai_score") @db.Decimal(6, 2)
+  finalScore      Decimal?         @map("final_score") @db.Decimal(6, 2)
+  editClass       String?          @map("edit_class") @db.VarChar(16)
+  attemptsGranted Int?             @map("attempts_granted")
+  lateAllowed     Boolean?         @map("late_allowed")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([submissionId, createdAt])
+  @@map("review_actions")
+}
+
+model GradingAttempt {
+  id           String         @id @default(uuid()) @db.Uuid
+  submissionId String         @map("submission_id") @db.Uuid
+  submission   Submission     @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  versionId    String         @map("version_id") @db.Uuid
+  attemptNo    Int            @map("attempt_no")
+  outcome      AttemptOutcome
+  errorClass   String?        @map("error_class") @db.VarChar(32)
+  latencyMs    Int?           @map("latency_ms")
+  model        String?
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([submissionId])
+  @@index([createdAt])
+  @@map("grading_attempts")
+}
+
+model Announcement {
+  id        String    @id @default(uuid()) @db.Uuid
+  classId   String    @map("class_id") @db.Uuid
+  class     Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  authorId  String    @map("author_id") @db.Uuid
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  title     String    @db.VarChar(200)
+  body      String
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  files AnnouncementFile[]
+
+  @@index([authorId])
+  @@index([classId, createdAt])
+  @@map("announcements")
+}
+
+model AnnouncementFile {
+  id             String       @id @default(uuid()) @db.Uuid
+  announcementId String       @map("announcement_id") @db.Uuid
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  storagePath    String       @unique @map("storage_path")
+  mimeType       String       @map("mime_type") @db.VarChar(64)
+  sizeBytes      BigInt       @map("size_bytes")
+  sha256         String       @db.Char(64)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([announcementId])
+  @@map("announcement_files")
+}
+
+model Notification {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  payload     Json             @db.JsonB
+  link        String           @db.VarChar(512)
+  readAt      DateTime?        @map("read_at") @db.Timestamptz(3)
+  emailStatus EmailStatus      @default(SKIPPED) @map("email_status")
+  emailAfter  DateTime?        @map("email_after") @db.Timestamptz(3)
+  emailedAt   DateTime?        @map("emailed_at") @db.Timestamptz(3)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorRole  Role?    @map("actor_role")
+  action     String   @db.VarChar(64)
+  targetType String   @map("target_type") @db.VarChar(64)
+  targetId   String?  @map("target_id") @db.Uuid
+  reason     String?
+  metadata   Json?    @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+model StorageDeletion {
+  id          String    @id @default(uuid()) @db.Uuid
+  bucket      String
+  objectPath  String    @map("object_path")
+  requestedAt DateTime  @default(now()) @map("requested_at") @db.Timestamptz(3)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(3)
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error")
+
+  @@unique([bucket, objectPath])
+  @@map("storage_deletions")
+}
