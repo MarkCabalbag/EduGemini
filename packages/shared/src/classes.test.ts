@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest';
+import { CreateClassSchema, ListClassesQuerySchema } from './classes';
+
+describe('ListClassesQuerySchema', () => {
+  it('defaults to active classes, 25 to a page', () => {
+    expect(ListClassesQuerySchema.parse({})).toEqual({ status: 'ACTIVE', limit: 25 });
+  });
+
+  it.each([
+    ['1', 1],
+    ['25', 25],
+    ['100', 100],
+    ['007', 7],
+  ])('accepts a limit of %s', (limit, expected) => {
+    expect(ListClassesQuerySchema.parse({ limit }).limit).toBe(expected);
+  });
+
+  // Number() would turn several of these into valid numbers. The API contract says a plain whole number.
+  it.each(['0', '101', '0x10', '1e1', ' 5', '5.5', '-1', '', 'abc'])('rejects a limit of %j', (limit) => {
+    expect(ListClassesQuerySchema.safeParse({ limit }).success).toBe(false);
+  });
+
+  it('rejects an empty cursor and an unknown status', () => {
+    expect(ListClassesQuerySchema.safeParse({ cursor: '' }).success).toBe(false);
+    expect(ListClassesQuerySchema.safeParse({ status: 'DELETED' }).success).toBe(false);
+  });
+});
+
+describe('CreateClassSchema', () => {
+  const valid = { name: 'Biology 101', attestation: { confirmed: true } };
+
+  it.each([
+    ['a NUL character', 'a\u0000b'],
+    ['half of an emoji at the end', 'Bio\ud83d'],
+    ['half of an emoji at the start', '\ude00Bio'],
+  ])('refuses %s in every text field, which cannot be stored', (_label, text) => {
+    for (const field of ['name', 'description', 'section', 'subject', 'room']) {
+      expect(CreateClassSchema.safeParse({ ...valid, [field]: text }).success, field).toBe(false);
+    }
+  });
+
+  it('accepts ordinary text, including accents and emoji', () => {
+    expect(CreateClassSchema.safeParse({ ...valid, name: 'Matemáticas 📐', room: 'B-12' }).success).toBe(true);
+  });
+});

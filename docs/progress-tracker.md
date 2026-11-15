@@ -8,7 +8,7 @@ How the docs fit together, the start-of-session routine and the end-of-session c
 
 **Phase:** building. **Active milestone:** M0, in progress. **Last updated:** 2026-11-15
 
-All docs are still "Draft for review". Code is in `apps/api`, `apps/web`, `packages/shared` and `packages/ai`. The API has sign-up, sign-in, sign-out and `/me`. The web app has the landing, sign-up, sign-in, Terms, Privacy and not-found pages and a placeholder dashboard.
+All docs are still "Draft for review". Code is in `apps/api`, `apps/web`, `packages/shared` and `packages/ai`. The API has sign-up, sign-in, sign-out, `/me`, and create, list and get class (instructors only). The web app has the landing, sign-up, sign-in, Terms, Privacy and not-found pages. Instructors have a class dashboard, a create-class form and a class page with the code and join link; students still see a placeholder dashboard.
 
 Repository: github.com/MarkCabalbag/EduGemini. `main` is the new version, `development` is where work happens, `main-old-version` is the previous app. The owner reviews and commits; do not commit or push unless asked.
 
@@ -18,7 +18,7 @@ Scope and exit criteria: [PRD §18](prd.md). Ticket list and build order: [featu
 
 | Milestone | Done | Status | Tickets done |
 |---|---|---|---|
-| M0 Foundations | 6 / 47 | In progress | FND-01, FND-04, FND-08, AUTH-01, AUTH-02, QA-02. Partly done: FND-02 (the mailer, storage and Gemini fakes come with their own tickets), FND-03 (Backend Schema Q5 and Q6 still to verify), FND-05 (join and reset limits come with those endpoints), FE-01 (only the signed-in guard so far), FE-02 (tokens and the system theme; no manual choice yet), FE-03 (form components built; more arrive with screens), AUTH-04 (the tick, the Gemini notice and the version are in; the final Terms wording is DEMO-05) |
+| M0 Foundations | 8 / 47 | In progress | FND-01, FND-04, FND-08, AUTH-01, AUTH-02, QA-02, CLS-01, CLS-02. Partly done: FND-02 (the mailer, storage and Gemini fakes come with their own tickets), FND-03 (Backend Schema Q5 and Q6 still to verify), FND-05 (join, reset and upload limits come with those endpoints; the general 120 per minute per user limit covers every route behind the session, and a route with its own API Spec A12 row adds that limiter), FE-01 (only the signed-in guard so far), FE-02 (tokens and the system theme; no manual choice yet), FE-03 (form components built; more arrive with screens), AUTH-04 (the tick, the Gemini notice and the version are in; the final Terms wording is DEMO-05), CLS-03 (code, join link and Copy buttons are done; the "case-insensitive on entry" part is built and tested with join by code in CLS-04) |
 | M1 AI grading and keys | 0 / 26 | Not started | None |
 | M2 Review, tracker, and gradebook | 0 / 20 | Not started | None |
 | M3 Notifications and admin | 0 / 19 | Not started | None |
@@ -38,6 +38,8 @@ Tick a box when the feature works and its tests pass.
 - [x] Sign up, sign in and sign out with email and password (EG-AUTH-01)
 - [x] Unit and database test setup (EG-QA-02)
 - [x] Web: sign-up, sign-in and sign-out screens with route guards and the UX Brief design tokens, light and dark (parts of EG-FE-01, EG-FE-02, EG-FE-03, EG-AUTH-04)
+- [x] Class API for instructors: create (with the attestation and an 8-character join code), list, and get one; 20 creates per hour per user, reads limited to 120 per minute (API part of EG-CLS-01, EG-CLS-02, EG-CLS-03)
+- [x] Web, instructors: class dashboard (cards, empty state, show more), create-class form with the attestation checkbox, and the class page with the code and join link and Copy buttons (EG-CLS-01, EG-CLS-02, most of EG-CLS-03)
 
 ## Spikes
 
@@ -54,11 +56,11 @@ Tests, pass criteria and fallbacks: [TRD §17.1](trd.md).
 
 ## Up next
 
-- [ ] Commit the web sign-up and sign-in screens and the review fixes (not committed yet)
 - [ ] At deploy (EG-FND-10): check that `req.ip` is the real client behind Vercel and Render. The sign-in limits key on it; if everyone shares one address, they share one limit
-- [ ] Dev database: run `DROP TABLE auth_identities;` once in the Supabase SQL editor (the dev project has no Prisma migration history, so `migrate deploy` cannot do it). Then stop the dev servers and run `pnpm install` so the Prisma client is regenerated
 - [ ] Decide: add the `cookie` package as a direct dependency (TRD T-D11)? It is only needed once the app sets more cookies (the return-to cookie, TRD §6.4)
-- [ ] Pick the next ticket: CLS-01 with the `authorize` middleware and the dashboard (the web screens can grow with it), FND-07 (CI), FND-06 (storage adapter), or FND-09 (job queue)
+- [ ] CLS-04 (join by code) with the join screen (`/join/:code`), which also finishes CLS-03 (case-insensitive entry). It adds students to the `class.view` and `class.list` policy actions (PRD §5.1 already has the row) and the student view of a class, which needs API-1 (instructor name on the student card) decided first
+- [ ] Left out of the class screens on purpose, each comes with its own ticket: the "create your first assignment" and "add a Gemini key" prompts on the class page (ASG-01, KEY tickets); counts on class cards and in the class response (CLS-05, ASG-01); the "Show archived" switch (CLS-10); edit, regenerate and disable code (CLS-07, CLS-08); the class page tabs (as each tab's ticket lands)
+- [ ] Other candidates for the next piece: FND-07 (CI), FND-06 (storage adapter), FND-09 (job queue)
 - [ ] Verify Backend Schema Q5 (backups) and Q6 (does `migrate dev` drop SQL-owned objects) while the schema is still small
 - [ ] Decide the two remaining "Schedule conflicts to decide" in `feature-tickets.md`
 - [ ] Review the docs and approve them, or say which need changes
@@ -98,6 +100,9 @@ Decisions made before the build are in PRD §16.1 and §16.2, TRD §1.2, App Flo
 | 2026-11-15 | Sign-in limits count failed attempts only (20 per 15 minutes per IP, 5 per email and IP together, so a stranger cannot lock the real owner out), with a 300-attempt cap per IP; sign-up is 60 per hour per IP, so a class on one network is not blocked | API Spec A12 |
 | 2026-11-15 | Google sign-in is removed from v1: email and password only. FR-AUTH-02, D13, F3, AUTH-03 (ticket), AUTH-09 to AUTH-11 (endpoints), the `auth_identities` table (dropped by a second migration), `hasPassword` and the Google settings are gone. Section numbers in Backend Schema §4 and API Spec Part C are kept, so those lists skip the removed number | PRD §7, TRD §6, API Spec B.1, Backend Schema §4 |
 | 2026-11-15 | The test project's safety guard replaces the old `_e2e` database-name rule; integration tests run with `pnpm test:int` | TRD §16.2a |
+| 2026-11-15 | Viewing classes is a permission of its own: instructors see their own classes, approved students the classes they are in. Policy actions `class.view` and `class.list` (instructors only until the join tickets) | PRD §5.1, API Spec A15 |
+| 2026-11-15 | List cursors do not expire: a cursor marks a position, and only a cursor the server did not issue is rejected | API Spec A2 |
+| 2026-11-15 | The class creation limit counts after validation. The general limit (120 per minute) is one shared counter per user (per IP when signed out), mounted once in `createApp` for every route behind the session. A route whose own row allows more (notifications) must be excluded when it is added | API Spec A12, code-standards §5 |
 
 ## Notes for next session
 

@@ -1,10 +1,10 @@
 import type { RequestHandler, Response } from 'express';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { AppError } from '../lib/app-error';
 
 type Schemas = {
   body?: z.ZodType;
-  /** An object schema. Unknown query parameters are rejected (API Spec A2). */
+  /** An object schema. Unknown query parameters are rejected (API Spec A2), also on a route that gives none. */
   query?: z.ZodObject;
   params?: z.ZodType;
 };
@@ -36,10 +36,11 @@ export function validate<S extends Schemas>(schemas: S): RequestHandler {
     };
 
     run('body', schemas.body, req.body, '');
-    run('query', schemas.query?.strict(), req.query, 'query');
+    run('query', (schemas.query ?? z.object({})).strict(), req.query, 'query'); // a route with no query takes none (API Spec A2)
     run('params', schemas.params, req.params, 'params');
 
     if (Object.keys(fields).length > 0) return next(new AppError('VALIDATION', { fields }));
+    if (!schemas.query) delete out['query']; // it was only checked for stray parameters; `validated` has no `query` then
     res.locals['validated'] = out;
     next();
   };

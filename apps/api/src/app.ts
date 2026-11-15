@@ -6,9 +6,11 @@ import type { Logger } from './lib/logger';
 import { errorHandler, notFound } from './middleware/error-handler';
 import { jsonBody } from './middleware/json-body';
 import { originCheck } from './middleware/origin-check';
+import { limiters } from './middleware/rate-limit';
 import { requestContext } from './middleware/request-id';
 import { loadSession } from './middleware/session';
 import { authRouter } from './routes/auth';
+import { classesRouter } from './routes/classes';
 import { healthRouter } from './routes/health';
 import { meRouter } from './routes/me';
 
@@ -41,7 +43,9 @@ export function createApp({ env, logger, db, checkDb, routers = [] }: AppDeps): 
   api.use(...jsonBody());
   api.use(authRouter({ db, appUrl: env.APP_URL })); // public: no session needed
   api.use(loadSession(db)); // everything below may use req.auth
+  api.use(limiters.everythingElseByUser()); // one counter per user (the IP when signed out) for every route below
   api.use(meRouter());
+  api.use(classesRouter({ db, appUrl: env.APP_URL }));
   for (const router of routers) api.use(router);
   app.use('/api', api);
 

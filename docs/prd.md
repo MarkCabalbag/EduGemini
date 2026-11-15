@@ -98,6 +98,7 @@ Target users are individual instructors and teachers who sign up independently. 
 | Action | Student | Instructor (own class) | Super Admin |
 |---|---|---|---|
 | Create class | No | Yes | No |
+| View own classes and class details | Yes (approved) | Yes (own class) | No |
 | Join class via code | Yes | No | No |
 | Approve, decline, or remove join requests | No | Yes | No |
 | Regenerate or disable class code | No | Yes | No |

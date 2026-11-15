@@ -8,6 +8,10 @@ import { validate, validated } from '../middleware/validate';
 
 type AuthDeps = { db: PrismaClient; appUrl: string };
 
+// What each route accepts, named once so `validate` and `validated` cannot drift apart.
+const signUpInput = { body: SignUpSchema };
+const signInInput = { body: SignInSchema };
+
 /** Sign up, sign in and sign out (API Spec AUTH-01 to AUTH-03). These need no session, so they run before it is loaded. */
 export function authRouter({ db, appUrl }: AuthDeps): Router {
   const router = Router();
@@ -27,8 +31,8 @@ export function authRouter({ db, appUrl }: AuthDeps): Router {
     }
   };
 
-  router.post('/auth/signup', limiters.signUpByIp(), validate({ body: SignUpSchema }), async (req, res) => {
-    const { body } = validated(res, { body: SignUpSchema });
+  router.post('/auth/signup', limiters.signUpByIp(), validate(signUpInput), async (req, res) => {
+    const { body } = validated(res, signUpInput);
     const { me, token } = await signUp(db, body);
     await dropHeldSession(req);
     res.cookie(SESSION_COOKIE, token, cookie).status(201).json(me);
@@ -39,9 +43,9 @@ export function authRouter({ db, appUrl }: AuthDeps): Router {
     limiters.signInFloodByIp(),
     limiters.authByIp(),
     limiters.signInByEmailAndIp(),
-    validate({ body: SignInSchema }),
+    validate(signInInput),
     async (req, res) => {
-      const { body } = validated(res, { body: SignInSchema });
+      const { body } = validated(res, signInInput);
       const { me, token } = await signIn(db, body, req.log);
       await dropHeldSession(req);
       res.cookie(SESSION_COOKIE, token, cookie).json(me);

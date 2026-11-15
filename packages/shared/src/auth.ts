@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RoleSchema } from './enums';
+import { safeText } from './text';
 
 export const MIN_PASSWORD_LENGTH = 10;
 
@@ -9,7 +10,7 @@ const MAX_PASSWORD_LENGTH = 128;
 export const MAX_EMAIL_LENGTH = 320;
 
 const email = z.string().trim().toLowerCase().pipe(z.email().max(MAX_EMAIL_LENGTH));
-const name = z.string().trim().min(1, 'Required').max(100);
+const name = safeText(100).min(1, 'Required');
 
 /** Sign-up (API Spec AUTH-01). Role is chosen once and cannot change (PRD A6). */
 export const SignUpSchema = z.object({

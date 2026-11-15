@@ -38,6 +38,18 @@ describe('SignUpSchema', () => {
     expect(SignUpSchema.safeParse({ ...valid, email: 'not-an-email' }).success).toBe(false);
     expect(SignUpSchema.safeParse({ ...valid, firstName: '   ' }).success).toBe(false);
   });
+
+  it('refuses a NUL character in a name or the email, which the database cannot store', () => {
+    expect(SignUpSchema.safeParse({ ...valid, firstName: 'Ad\u0000a' }).success).toBe(false);
+    expect(SignUpSchema.safeParse({ ...valid, lastName: 'Love\u0000lace' }).success).toBe(false);
+    expect(SignUpSchema.safeParse({ ...valid, email: 'ada\u0000@example.com' }).success).toBe(false);
+  });
+
+  it('refuses half of an emoji in a name, and accepts a whole one', () => {
+    expect(SignUpSchema.safeParse({ ...valid, firstName: 'Ada\ud83d' }).success).toBe(false);
+    expect(SignUpSchema.safeParse({ ...valid, lastName: '\ude00Lovelace' }).success).toBe(false);
+    expect(SignUpSchema.safeParse({ ...valid, firstName: 'Ada 😀' }).success).toBe(true);
+  });
 });
 
 describe('SignInSchema', () => {
