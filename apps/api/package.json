@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "dev": "tsx watch src/main.ts"
+    "dev": "tsx watch --env-file=../../.env src/main.ts"
   },
   "dependencies": {
     "@edugemini/ai": "workspace:*",
-    "@edugemini/shared": "workspace:*"
+    "@edugemini/shared": "workspace:*",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
