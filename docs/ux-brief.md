@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review |
+| **Status** | approved |
 | **Inputs** | [PRD v2.2](prd.md) (what and why), [App Flow v2.2](app-flow.md) (screens, states, copy), [TRD v1.0](trd.md) (stack, routes, accessibility) |
 | **Covers** | Look, feel, behavior, layout, and microcopy for every screen. Key screens have ASCII wireframes. |
 | **Does not cover** | Pixel-level Figma designs, illustration, marketing pages, or the admin area beyond layout notes |
@@ -502,9 +502,10 @@ Layout notes:
 - CSV export button in the header.
 
 **People (layout notes)**
-- Counts at the top: Approved, Pending, Declined.
+- Counts on the list buttons: Pending, Approved, Declined, Removed.
 - Join approval toggle in a settings card, off by default, with a note: "Turning this on doesn't change students who are already approved."
-- Lists: Pending (with Approve and Decline), Approved (with Remove), Declined (with Reverse). Each list is a tab.
+- Lists: Pending (with Approve and Decline), Approved (with Remove), Declined (with Reverse), Removed (with Reinstate). Each list is a tab.
+- Remove asks first, in a `ConfirmDialog` (Section 10.2) that names the student and the class and says their submissions are kept and they can be reinstated. Reinstate, Approve, Decline and Reverse do not ask.
 - "Approve all pending" appears only after the approval toggle is turned off with pending students still waiting (App Flow 4, step 4).
 - Shows name and email only (PRD Section 11).
 

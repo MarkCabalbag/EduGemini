@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review |
+| **Status** | approved |
 | **Owner** | Project owner (sole developer) |
 | **Machine-readable contract** | [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1). Same operation IDs as this document |
 | **Precedence** | PRD v2.2 wins on behavior. Backend Schema wins on stored data and enums. This document wins on request and response shapes. `openapi.yaml` wins on exact field types once both are read |
@@ -410,7 +410,7 @@ This table maps the PRD §5.1 matrix onto endpoint IDs. Each row has a test in t
 | Action (PRD §5.1) | Endpoints | Student | Instructor (own class) | Super Admin |
 |---|---|---|---|---|
 | Create class | CLS-02 | — | ✓ | — |
-| View own classes and class details | CLS-01, CLS-03 | ✓ (approved) | ✓ | — |
+| View own classes and class details | CLS-01, CLS-03, JOIN-03 | ✓ (approved; JOIN-03 lists a student's own classes with any status except removed) | ✓ | — |
 | Join via code | JOIN-01 | ✓ | — | — |
 | Approve, decline, remove joins | PPL-02, PPL-03 | — | ✓ | — |
 | Regenerate or disable code | CLS-08, CLS-09 | — | ✓ | — |
@@ -769,15 +769,15 @@ Each endpoint has the same fields:
 `GET /api/me/enrollments?cursor&limit`
 - **Access:** student.
 - **FR:** FR-CLS-08.
-- **Response:** `200` `Page<{ classId, className, status, instructorName, archived, joinedAt }>`. `REMOVED` rows are omitted (App Flow §3).
-- **Errors:** STD-AUTH.
+- **Response:** `200` `Page<{ classId, className, status, instructorName, archived, joinedAt }>`. `REMOVED` rows are omitted (App Flow §3). Newest joined first. `instructorName` is the first name and last initial.
+- **Errors:** STD-AUTH, `VALIDATION`.
 - **Test:** `class.spec` (Enrolled list).
 
 #### PPL-01 · List people in a class
 `GET /api/classes/{classId}/people?status=ACTIVE|PENDING|DECLINED|REMOVED&cursor&limit`
 - **Access:** owning instructor.
 - **FR:** FR-CLS-05, FR-CLS-07, FR-GB-01 (roster for the gradebook).
-- **Response:** `200` `{ counts: { approved, pending, declined, removed }, items: EnrollmentView[], nextCursor }`. The `counts` object is always complete, whatever the filter.
+- **Response:** `200` `{ counts: { approved, pending, declined, removed }, items: EnrollmentView[], nextCursor }`. The `counts` object is always complete, whatever the filter. Items are in join order, oldest first, so the longest-waiting request is at the top.
 - **Errors:** `NOT_FOUND` for students and other instructors.
 - **Effects:** none. `email` appears on each item (PRD §11: instructors see name and email only).
 - **Test:** `class.spec` (People view).

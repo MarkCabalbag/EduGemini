@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review |
+| **Status** | Approved |
 | **Owner** | Project owner (sole developer) |
 | **Inputs** | [PRD v2.2](prd.md) (requirements), [App Flow v2.2](app-flow.md) (state and system flows), [TRD v1.0](trd.md) (architecture) |
 | **Database** | PostgreSQL 15 or later on Supabase (free tier), accessed through Prisma and pg-boss |

@@ -1,6 +1,6 @@
 # EduGemini: Feature Ticket List
 
-Status: draft for triage · Date: 2026-11-15
+Status: approved · Date: 2026-11-15
 Built from: `prd.md` (v2.2) and `trd.md` (v1.0). The PRD and TRD remain the source of truth. Where this list and they disagree, the ticket notes the gap.
 
 ## How to read this

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review |
+| **Status** | approved |
 | **Owner** | Project owner (sole developer) |
 | **Supersedes** | PRD v1.2 (archived at `docs/archive/prd-v1.2.md`) |
 | **Related docs** | [App Flow](app-flow.md) · [UX Brief](ux-brief.md) · [TRD](trd.md) · [Backend Schema](backend-schema.md) · [API Spec](api-spec.md) ([OpenAPI](openapi.yaml)) · [Feature Tickets](feature-tickets.md) · [Progress Tracker](progress-tracker.md) · [Code Standards](code-standards.md) · not written yet: AI Guardrails, Deployment Runbook |

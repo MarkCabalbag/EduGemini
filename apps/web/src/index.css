@@ -26,6 +26,7 @@
   --status-pending-bg: #f1f5f9;
   --status-pending-fg: #334155;
   --shadow-raised: 0 1px 2px rgb(15 23 42 / 0.06);
+  --shadow-overlay: 0 8px 24px rgb(15 23 42 / 0.12);
 }
 
 .dark {
@@ -50,6 +51,7 @@
   --status-pending-bg: #1e293b;
   --status-pending-fg: #cbd5e1;
   --shadow-raised: none;
+  --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.5);
 }
 
 @theme inline {
@@ -73,6 +75,7 @@
   --color-pending-bg: var(--status-pending-bg);
   --color-pending-fg: var(--status-pending-fg);
   --shadow-raised: var(--shadow-raised);
+  --shadow-overlay: var(--shadow-overlay);
   --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   /* Type scale: UX Brief §4.1 */

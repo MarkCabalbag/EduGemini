@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Decision, EnrollmentStatus, Me } from '@edugemini/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,7 @@ const MAYA: Row = { id: '00000000-0000-4000-8000-000000000001', name: 'Maya Cruz
 const BEN: Row = { id: '00000000-0000-4000-8000-000000000002', name: 'Ben Ortiz', status: 'PENDING' };
 const LIA: Row = { id: '00000000-0000-4000-8000-000000000003', name: 'Lia Tan', status: 'ACTIVE' };
 const ZED: Row = { id: '00000000-0000-4000-8000-000000000004', name: 'Zed Park', status: 'DECLINED' };
+const OLA: Row = { id: '00000000-0000-4000-8000-000000000005', name: 'Ola Reyes', status: 'REMOVED' };
 
 const ENDS: Record<Decision['action'], EnrollmentStatus> = { APPROVE: 'ACTIVE', DECLINE: 'DECLINED', REVERSE: 'ACTIVE', REMOVE: 'REMOVED' };
 
@@ -33,6 +34,7 @@ let rows: Row[];
 let requireApproval: boolean;
 let pageSize: number;
 let decisionFailure: Response | undefined;
+let decisionGate: Promise<void> | undefined; // a decision waits for this, so a test can look at the screen while the request runs
 let settingsFailure: Response | undefined;
 
 const count = (status: EnrollmentStatus) => rows.filter((row) => row.status === status).length;
@@ -43,6 +45,7 @@ beforeEach(() => {
   requireApproval = true;
   pageSize = 100;
   decisionFailure = undefined;
+  decisionGate = undefined;
   settingsFailure = undefined;
 
   vi.stubGlobal(
@@ -96,6 +99,7 @@ beforeEach(() => {
       }
       const decision = /^\/enrollments\/([^/]+)\/decision$/.exec(path);
       if (method === 'POST' && decision) {
+        await decisionGate;
         if (decisionFailure) return decisionFailure;
         const row = rows.find((r) => r.id === decision[1]);
         if (!row) return failure(404, 'NOT_FOUND');
@@ -216,7 +220,6 @@ describe('people: decisions', () => {
 
   it.each([
     ['Pending (2)', 'Decline Ben Ortiz', BEN, 'DECLINE'],
-    ['Approved (1)', 'Remove Lia Tan', LIA, 'REMOVE'],
     ['Declined (1)', 'Reverse Zed Park', ZED, 'REVERSE'],
   ] as const)('on the %s list, "%s" sends %s', async (list, button, row, action) => {
     const user = userEvent.setup();
@@ -252,6 +255,132 @@ describe('people: decisions', () => {
 
     expect((await screen.findByRole('alert')).textContent).toContain('That changed in the meantime. The list has been updated.');
     await waitFor(() => expect(callsTo('GET', `/classes/${CLASS_ID}/people?status=PENDING`).length).toBeGreaterThan(1)); // read again
+  });
+});
+
+describe('people: removing and reinstating', () => {
+  const decisions = (id: string) => callsTo('POST', `/enrollments/${id}/decision`);
+  const dialog = () => screen.getByRole('dialog', { name: 'Remove Lia Tan?' });
+
+  /** Opens the confirm dialog for Lia, the one approved student. */
+  async function askToRemoveLia() {
+    const user = userEvent.setup();
+    openPeople();
+    await user.click(await screen.findByRole('button', { name: 'Approved (1)' }));
+    await user.click(await screen.findByRole('button', { name: 'Remove Lia Tan' }));
+    await screen.findByRole('dialog', { name: 'Remove Lia Tan?' });
+    return user;
+  }
+
+  it('lists the removed students with Reinstate, and nothing else to do to them', async () => {
+    rows = [{ ...LIA }, { ...OLA }];
+    const user = userEvent.setup();
+    openPeople();
+
+    await user.click(await screen.findByRole('button', { name: 'Removed (1)' }));
+
+    expect(await screen.findByText('Ola Reyes')).toBeTruthy();
+    expect(screen.getByText('ola@example.com')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reinstate Ola Reyes' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^(Approve|Decline|Remove|Reverse) / })).toBeNull();
+    expect(callsTo('GET', `/classes/${CLASS_ID}/people?status=REMOVED`)).toHaveLength(1);
+  });
+
+  it('says so when nobody is removed', async () => {
+    rows = [{ ...LIA }];
+    const user = userEvent.setup();
+    openPeople();
+
+    await user.click(await screen.findByRole('button', { name: 'Removed (0)' }));
+
+    expect(await screen.findByText('No removed students.')).toBeTruthy();
+  });
+
+  it('reinstates a student at once, without asking: they move back to Approved', async () => {
+    rows = [{ ...LIA }, { ...OLA }];
+    const user = userEvent.setup();
+    openPeople();
+    await user.click(await screen.findByRole('button', { name: 'Removed (1)' }));
+
+    await user.click(await screen.findByRole('button', { name: 'Reinstate Ola Reyes' }));
+
+    expect(await screen.findByRole('button', { name: 'Approved (2)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Removed (0)' })).toBeTruthy();
+    expect(decisions(OLA.id)[0]?.body).toEqual({ action: 'REVERSE' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('asks before removing, naming the student and the class, and sends nothing yet', async () => {
+    await askToRemoveLia();
+
+    expect(within(dialog()).getByText(/Lia Tan will no longer see Biology 101 in their classes/)).toBeTruthy();
+    expect(within(dialog()).getByText(/Their submissions are kept, and you can reinstate them at any time/)).toBeTruthy();
+    expect(decisions(LIA.id)).toHaveLength(0);
+  });
+
+  it('puts the focus on Cancel, not on the destructive button', async () => {
+    await askToRemoveLia();
+
+    expect(document.activeElement).toBe(within(dialog()).getByRole('button', { name: 'Cancel' }));
+  });
+
+  it('keeps focus inside the dialog when Tab is pressed past the last button', async () => {
+    const user = await askToRemoveLia();
+
+    await user.tab(); // Cancel to Remove
+    expect(document.activeElement).toBe(within(dialog()).getByRole('button', { name: 'Remove' }));
+    await user.tab(); // past the last button: back to the first
+    expect(dialog().contains(document.activeElement)).toBe(true);
+  });
+
+  it.each([
+    ['Cancel', async (user: ReturnType<typeof userEvent.setup>) => user.click(within(dialog()).getByRole('button', { name: 'Cancel' }))],
+    ['Escape', async (user: ReturnType<typeof userEvent.setup>) => user.keyboard('{Escape}')],
+  ])('closes on %s, sends nothing and gives the focus back to the Remove button', async (_how, close) => {
+    const user = await askToRemoveLia();
+
+    await close(user);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(decisions(LIA.id)).toHaveLength(0);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Remove Lia Tan' })));
+  });
+
+  it('removes the student when confirmed: the dialog closes and they move to Removed', async () => {
+    const user = await askToRemoveLia();
+
+    await user.click(within(dialog()).getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(decisions(LIA.id)[0]?.body).toEqual({ action: 'REMOVE' });
+    expect(await screen.findByRole('button', { name: 'Removed (1)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Approved (0)' })).toBeTruthy();
+  });
+
+  it('cannot be closed while the request runs, and shows it is working', async () => {
+    let finish = () => {};
+    decisionGate = new Promise<void>((resolve) => (finish = resolve));
+    const user = await askToRemoveLia();
+
+    await user.click(within(dialog()).getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => expect(within(dialog()).getByRole('button', { name: 'Remove' }).getAttribute('aria-busy')).toBe('true'));
+    expect((within(dialog()).getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeNull(); // Escape does nothing now
+
+    finish();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('closes the dialog and says so above the list when the student was changed by someone else (CONFLICT)', async () => {
+    decisionFailure = failure(409, 'CONFLICT');
+    const user = await askToRemoveLia();
+
+    await user.click(within(dialog()).getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await screen.findByRole('alert')).textContent).toContain('That changed in the meantime. The list has been updated.');
   });
 });
 
