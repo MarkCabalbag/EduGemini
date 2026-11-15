@@ -103,7 +103,7 @@ Rules that follow from this shape:
 |---|---|---|
 | Render web service | 512 MB RAM; spins down after about 15 minutes with no traffic; 750 instance-hours per month (enough for one always-on service) | UptimeRobot pings `/healthz` every 5 minutes. The worker stays alive with the process. Check the current terms before launch |
 | Vercel (Hobby) | Intended for personal, non-commercial use; generous bandwidth for a small app | Fine for a portfolio project. Check the current terms if usage changes |
-| Supabase | Projects pause after about a week with no activity; limited database and storage size (verify current figures) | `/healthz` runs `SELECT 1`, so the database sees regular activity. Keep stored files small (Section 9) |
+| Supabase | Projects pause after about a week with no activity; limited database and storage size (verify current figures) | `/healthz` runs a trivial query, so the database sees regular activity. Keep stored files small (Section 9) |
 | SMTP provider | Daily send quota (verify current figure) | Low volume. Digests batch instructor emails (Section 13) |
 | Gemini (per instructor key) | Per-minute and per-day request limits; they depend on the model (Section 11) | Per-key pacing, retry only for per-minute limits, no periodic key checks |
 | UptimeRobot | Free monitor count and 5-minute interval | One monitor (`/healthz`) |

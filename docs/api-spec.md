@@ -328,7 +328,7 @@ Uploads are a three-step flow so that a retry never loses files and a submission
 
 ### A8. Health and maintenance
 
-`GET /healthz` (SYS-01) runs `SELECT 1` and returns `200 { status: "ok" }` or `503 { status: "degraded" }`. It is outside `/api`, unauthenticated, and returns nothing internal. Maintenance mode returns `503 SERVICE_UNAVAILABLE` from every `/api` route except `/healthz` and returns the maintenance page to browsers (App Flow §11).
+`GET /healthz` (SYS-01) runs a trivial query (a one-row read through Prisma, because raw SQL is limited to three places, code-standards §7) and returns `200 { status: "ok" }` or `503 { status: "degraded" }`. It is outside `/api`, unauthenticated, and returns nothing internal. Maintenance mode returns `503 SERVICE_UNAVAILABLE` from every `/api` route except `/healthz` and returns the maintenance page to browsers (App Flow §11).
 
 ### A9. Change policy
 
@@ -1518,7 +1518,7 @@ Every admin endpoint returns metadata only. No response contains submission cont
 - **Access:** anonymous. Used by UptimeRobot and by the platform's health check.
 - **FR:** Operations (TRD §17.1, S6).
 - **Response:** `200` `Health` (`status: "ok"`), or `503` (`status: "degraded"`) when the database check fails. The body never includes version, dependency names, or counts (A8).
-- **Effects:** runs `SELECT 1`, which keeps the free database active (TRD §4.2).
+- **Effects:** runs a trivial query, which keeps the free database active (TRD §4.2).
 - **Headers:** `Cache-Control: no-store`.
 - **Test:** S6 in the TRD; `api` project smoke test.
 ## Part C: External integrations
@@ -1617,7 +1617,7 @@ Provider facts marked "confirmed" were checked against the sources listed at the
   - Connect timeout 10 seconds.
   - Statement timeout 10 seconds for API requests. Grading and cleanup jobs run with a longer limit set per job.
 - **Retries:** connection-level errors (for example P1001, P1017) retry up to three times with backoff, but never for writes that already committed. Application errors are not retried at this layer.
-- **Health:** `SELECT 1` in SYS-01. A failure returns `503 degraded` and the maintenance behavior in A8.
+- **Health:** a trivial query in SYS-01. A failure returns `503 degraded` and the maintenance behavior in A8.
 - **Limits (verify):** free-tier database size and inactivity pausing (TRD §4.2). Backup availability on the free tier is an open question (Backend Schema §16.2, item 5).
 - **Test substitute:** the `edugemini-test` Supabase project locally and a Postgres service container in CI (TRD §4.1, §16.3).
 - **Spike:** S2.

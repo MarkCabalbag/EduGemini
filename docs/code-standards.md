@@ -69,7 +69,7 @@ Folder names inside each app are set by this file. Imports go one way: apps impo
 - **Race-prone writes** (approve, reopen, grant, finalize, re-grade, the worker's grade write) lock the submission row with the one shared lock helper (`SELECT ... FOR UPDATE`) and rely on state checks for idempotency (API Spec A11).
 - **Adapters** for outside services (`Mailer`, `StorageAdapter`, the Gemini adapter) are interfaces with a real and a fake implementation, chosen by environment (`STORAGE_DRIVER`, `GEMINI_MODE`).
 
-**Middleware order** (set by this file; the checks themselves are in TRD §6 and §14): request ID, helmet, `trust proxy`, JSON body (100 KB limit), `Origin` check on non-GET, session load (suspension checked on every request), rate limit, routes, 404, error handler.
+**Middleware order** (set by this file; the checks themselves are in TRD §6 and §14): request ID, helmet, `trust proxy`, `Origin` check on non-GET (before the body is read, API Spec A3), JSON body (100 KB limit), session load (suspension checked on every request), rate limit, routes, 404, error handler.
 
 **Logging:** pino with the redaction list in TRD §14. Never log request bodies, tokens, keys or file contents. Product events are named lines such as `grading.attempt` (TRD §16.1).
 
