@@ -23,6 +23,8 @@ describe('rate limits (API Spec A12)', () => {
     expect(RULES.signUpByIp).toEqual({ windowMs: 60 * 60_000, limit: 60 });
     expect(RULES.signInByEmailAndIp).toEqual({ windowMs: 15 * 60_000, limit: 5 });
     expect(RULES.classCreateByUser).toEqual({ windowMs: 60 * 60_000, limit: 20 });
+    expect(RULES.joinByUser).toEqual({ windowMs: 60 * 60_000, limit: 10 });
+    expect(RULES.joinPreviewByIp).toEqual({ windowMs: 60 * 60_000, limit: 30 });
     expect(RULES.everythingElseByUser).toEqual({ windowMs: 60_000, limit: 120 });
   });
 

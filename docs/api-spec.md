@@ -181,7 +181,7 @@ These are the shapes used across endpoints. Each has a matching component in `op
 |---|---|---|
 | `id`, `name`, `description`, `section`, `subject`, `room` | yes | yes |
 | `status` | `ACTIVE` \| `ARCHIVED` | `ACTIVE` \| `ARCHIVED` |
-| `instructorName` | — | first name and last initial (proposed; UX D-U4) |
+| `instructorName` | — | first name and last initial (API-1; UX D-U4) |
 | `joinCode`, `joinLink`, `joinCodeActive` | yes | no |
 | `requireApproval` | yes | no |
 | `enrollment` | — | `{ "status": "ACTIVE" \| "PENDING" \| "DECLINED" \| "REMOVED" }` for the caller's own row |
@@ -346,7 +346,7 @@ The breaking-change check compares the previous `openapi.yaml` with the new one 
 
 | # | Decision | Where | Status |
 |---|---|---|---|
-| API-1 | Students see the instructor's first name and last initial on the class card | ClassSummary | Proposed (UX D-U4) |
+| API-1 | Students see the instructor's first name and last initial on the class card | ClassSummary | Decided 2026-11-15 |
 | API-2 | Reference files show as "Reference file N" and announcement attachments as "Attachment N", because the schema stores no display name for them | ReferenceFileView, Announcement | Proposed; avoids a schema change |
 | API-3 | `impactToken` confirmation for criteria and file changes | A6 | Proposed |
 | API-4 | Raw-byte PUT for each file | A7 | Proposed |
@@ -371,7 +371,8 @@ The breaking-change check compares the previous `openapi.yaml` with the new one 
 | Sign-in, per email and IP | 5 failed attempts per 15 minutes | Counted per email and IP together, so someone guessing at an email can only lock their own network out of it, not the real owner. Returns `RATE_LIMITED` with the same copy for known and unknown emails |
 | Sign-up, per IP | 60 per hour | Sized for a class signing up together on one school network |
 | Password reset request, per email | 3 per hour | Same response for known and unknown emails |
-| Join code attempts, per user | 10 per hour | `INVALID_JOIN_CODE` counts as an attempt |
+| Join code attempts, per user | 10 failed attempts per hour | Any refused join counts (`INVALID_JOIN_CODE`, `JOIN_BLOCKED`); a successful join and a code of the wrong length do not |
+| Join link preview, per IP | 30 failed tries per hour | Only failed tries count, for the same reason as sign-in. Not part of the general limit below |
 | Uploads (PUT), per user | 60 per minute | |
 | Grading triggers, per user | 30 per minute | Pacing per instructor key is separate (TRD §10.2) |
 | Bulk actions, per instructor | 10 per minute | |
@@ -760,7 +761,7 @@ Each endpoint has the same fields:
 - **Access:** anonymous or signed in. Instructors get `INSTRUCTOR_CANNOT_JOIN` when signed in as one.
 - **FR:** FR-AUTH-08, App Flow §Screens (join-link landing).
 - **Response:** `200` `{ className, instructorFirstName, requireApproval }`. No student data, no assignments, no counts.
-- **Errors:** `INVALID_JOIN_CODE` (404) for any code that does not work; `INSTRUCTOR_CANNOT_JOIN` (403); `RATE_LIMITED` (30 per hour per IP, because this reveals the class name for a valid code).
+- **Errors:** `INVALID_JOIN_CODE` (404) for any code that does not work; `INSTRUCTOR_CANNOT_JOIN` (403); `RATE_LIMITED` (30 failed tries per hour per IP, because a valid code reveals the class name; a good code is not counted, so a class opening the link on one network is not blocked). A code of the wrong length is `INVALID_JOIN_CODE` too, not `VALIDATION`. The code is trimmed and uppercased, as in JOIN-01.
 - **Effects:** none. `Cache-Control: no-store`.
 - **Test:** `auth.spec` (join link while signed out).
 

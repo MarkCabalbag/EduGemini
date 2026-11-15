@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ClassPage, ClassSummary, CreateClass } from '@edugemini/shared';
+import type { ClassPage, ClassSummary, CreateClass, Join, JoinPreview, JoinResult } from '@edugemini/shared';
 import { api } from '../lib/api';
 
 export const classKeys = {
@@ -20,6 +20,16 @@ export function useClasses() {
 
 export function useClass(classId: string) {
   return useQuery({ queryKey: classKeys.one(classId), queryFn: () => api<ClassSummary>(`/classes/${classId}`) });
+}
+
+/** What a join link shows (API Spec JOIN-02). A signed-out visitor may ask. */
+export function useJoinPreview(code: string) {
+  return useQuery({ queryKey: ['join', code], queryFn: () => api<JoinPreview>(`/join/${encodeURIComponent(code)}`) });
+}
+
+/** Join a class by its code (API Spec JOIN-01). */
+export function useJoinClass() {
+  return useMutation({ mutationFn: (input: Join) => api<JoinResult>('/join', { method: 'POST', body: input }) });
 }
 
 export function useCreateClass() {

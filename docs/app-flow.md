@@ -134,7 +134,7 @@ Re-grades never consume a student's resubmission attempts. While a re-grade runs
 ## 6. Student Flow: Join Class & Submit
 
 1. **Join class**: the student enters a class code (case-insensitive) or follows a join link. An invalid code shows a clear error; repeated invalid attempts are rate-limited; joining twice with the same code does nothing new. `[FR-CLS-03]`
-   - **Join link while signed out**: the code is kept through sign-in or sign-up, and sign-up preselects Student. After signing in, the join continues automatically. A signed-in instructor who opens a join link sees "Instructor accounts can't join classes".
+   - **Join link while signed out**: the code is kept through sign-in or sign-up, and sign-up preselects Student. After signing in or signing up, the join continues automatically. A student who is already signed in sees the class and presses **Join class**, so opening a link never joins anyone by itself. A signed-in instructor who opens a join link sees "Instructor accounts can't join classes".
    - **Codes that don't work**: the code of an archived class, or a disabled or regenerated code, reads as invalid and shows no class information. A removed student who re-enters the code stays Removed and sees "You can't join this class right now. Contact the instructor."
    - Approval **off**: the student is added immediately and the class appears on their dashboard.
    - Approval **on**: the class appears as **Pending approval**. The student is notified when approved or declined. A declined student who re-enters the code stays Declined until the instructor reverses it.

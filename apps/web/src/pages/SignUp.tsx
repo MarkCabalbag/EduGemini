@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { MIN_PASSWORD_LENGTH, SignUpSchema, TERMS_VERSION } from '@edugemini/shared';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
@@ -21,11 +21,15 @@ const SHOWN_FIELDS = ['firstName', 'lastName', 'email', 'password', 'role', 'acc
 
 export function SignUp() {
   const signUp = useSignUp();
+  const location = useLocation(); // where to go after signing up; handed on when the visitor switches to sign-in
+  // Someone who came from a join link is a student (App Flow F2).
+  const from = (location.state as { from?: unknown } | null)?.from;
+  const joining = typeof from === 'string' && from.startsWith('/join/');
   const [formError, setFormError] = useState<string>();
   const { register, handleSubmit, setError, formState } = useForm({
     resolver: zodResolver(SignUpSchema),
     mode: 'onBlur',
-    defaultValues: { termsVersion: TERMS_VERSION },
+    defaultValues: { termsVersion: TERMS_VERSION, ...(joining && { role: 'STUDENT' as const }) },
   });
   const { errors } = formState;
 
@@ -75,7 +79,7 @@ export function SignUp() {
       </form>
       <p>
         Already have an account?{' '}
-        <Link to="/signin" className="font-semibold text-primary underline">
+        <Link to="/signin" state={location.state} className="font-semibold text-primary underline">
           Sign in
         </Link>
       </p>

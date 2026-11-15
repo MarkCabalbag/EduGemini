@@ -41,9 +41,11 @@ let classes: ClassSummary[];
 let listResult: (cursor: string | null) => Response;
 let getResult: (classId: string) => Response;
 let createResult: (body: CreateBody) => Response;
+let joinResult: () => Response;
 
 beforeEach(() => {
   calls = [];
+  joinResult = () => failure(404, 'INVALID_JOIN_CODE');
   me = signedInAs('INSTRUCTOR');
   classes = [];
   listResult = () => Response.json({ items: classes, nextCursor: null });
@@ -67,6 +69,7 @@ beforeEach(() => {
 
       if (path === '/me') return Response.json(me);
       if (method === 'POST' && path === '/classes') return createResult(body as CreateBody);
+      if (method === 'POST' && path === '/join') return joinResult();
       if (method === 'GET' && (path === '/classes' || path.startsWith('/classes?'))) {
         return listResult(new URL(path, 'http://x').searchParams.get('cursor'));
       }
@@ -162,12 +165,104 @@ describe('instructor dashboard', () => {
     expect(await screen.findByRole('link', { name: 'Back again' })).toBeTruthy();
   });
 
-  it('leaves a student on the placeholder and never asks for classes', async () => {
+  it('shows a student a welcome and the join box, and never asks for classes', async () => {
     me = signedInAs('STUDENT');
     renderAt('/classes');
 
     expect(await screen.findByRole('heading', { name: 'Welcome, Maya' })).toBeTruthy();
+    expect(screen.getByLabelText('Class code')).toBeTruthy();
     expect(calls.filter((c) => c.path.startsWith('/classes'))).toHaveLength(0);
+  });
+
+  it('gives an instructor no join box', async () => {
+    renderAt('/classes');
+    await screen.findByRole('heading', { name: 'My classes' });
+    expect(screen.queryByLabelText('Class code')).toBeNull();
+  });
+});
+
+describe('student joins a class', () => {
+  const joinedAs = (status: 'ACTIVE' | 'PENDING' | 'DECLINED') => Response.json({ classId: crypto.randomUUID(), className: 'Biology 101', status });
+
+  beforeEach(() => {
+    me = signedInAs('STUDENT');
+  });
+
+  it('sends the code in capitals, trimmed, and says the student joined', async () => {
+    joinResult = () => joinedAs('ACTIVE');
+    const user = userEvent.setup();
+    renderAt('/classes');
+
+    await user.type(await screen.findByLabelText('Class code'), '  k7m2pq9x ');
+    await user.click(screen.getByRole('button', { name: 'Join class' }));
+
+    expect((await screen.findByRole('status')).textContent).toContain('You joined Biology 101.');
+    expect(callsTo('POST', '/join')[0]?.body).toEqual({ code: 'K7M2PQ9X' });
+    expect((screen.getByLabelText('Class code') as HTMLInputElement).value).toBe(''); // ready for another code
+  });
+
+  it('says Pending approval when the class needs the instructor to approve', async () => {
+    joinResult = () => joinedAs('PENDING');
+    const user = userEvent.setup();
+    renderAt('/classes');
+
+    await user.type(await screen.findByLabelText('Class code'), 'K7M2PQ9X');
+    await user.click(screen.getByRole('button', { name: 'Join class' }));
+
+    expect((await screen.findByRole('status')).textContent).toContain('Pending approval. Your instructor will review your request.');
+  });
+
+  it('says so when the student was declined earlier', async () => {
+    joinResult = () => joinedAs('DECLINED');
+    const user = userEvent.setup();
+    renderAt('/classes');
+
+    await user.type(await screen.findByLabelText('Class code'), 'K7M2PQ9X');
+    await user.click(screen.getByRole('button', { name: 'Join class' }));
+
+    expect((await screen.findByRole('status')).textContent).toContain('Your request to join Biology 101 was declined.');
+  });
+
+  it('asks for an 8-character code and sends nothing when the code is the wrong length', async () => {
+    const user = userEvent.setup();
+    renderAt('/classes');
+
+    await user.type(await screen.findByLabelText('Class code'), 'ABC');
+    await user.click(screen.getByRole('button', { name: 'Join class' }));
+
+    expect(await screen.findByText('Enter the 8-character code')).toBeTruthy();
+    expect(callsTo('POST', '/join')).toHaveLength(0);
+  });
+
+  it.each([
+    ['INVALID_JOIN_CODE', 404, "That code didn't work. Check it and try again."],
+    ['JOIN_BLOCKED', 403, "You can't join this class right now. Contact the instructor."],
+    ['RATE_LIMITED', 429, 'Too many attempts. Try again in a few minutes.'],
+  ] as const)('shows %s above the form and keeps the code for another try', async (code, status, text) => {
+    joinResult = () => failure(status, code);
+    const user = userEvent.setup();
+    renderAt('/classes');
+
+    await user.type(await screen.findByLabelText('Class code'), 'K7M2PQ9X');
+    await user.click(screen.getByRole('button', { name: 'Join class' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain(text);
+    expect((screen.getByLabelText('Class code') as HTMLInputElement).value).toBe('K7M2PQ9X');
+  });
+
+  it('drops the old message when the student tries again', async () => {
+    joinResult = () => failure(404, 'INVALID_JOIN_CODE');
+    const user = userEvent.setup();
+    renderAt('/classes');
+    await user.type(await screen.findByLabelText('Class code'), 'K7M2PQ9X');
+    await user.click(screen.getByRole('button', { name: 'Join class' }));
+    await screen.findByRole('alert');
+
+    joinResult = () => joinedAs('ACTIVE');
+    await user.click(screen.getByRole('button', { name: 'Join class' }));
+
+    expect(await screen.findByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 

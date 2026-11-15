@@ -837,7 +837,7 @@ Target: **WCAG 2.1 AA** for every core flow (PRD Section 12). This checklist is 
 | D-U1 | Should the wordmark or logo be designed before M0, or can it wait? | Wait; use the text wordmark until M5 |
 | D-U2 | Should the bottom tab bar be used on phones in v1? | No; header and menu are enough for the few destinations |
 | D-U3 | Keyboard shortcuts for review: in v1 or later? | Could; ship with M4 if time allows |
-| D-U4 | Should the student see the instructor's name on the class page? | Yes, first name and last initial only, on the class card; not on the assignment page |
+| D-U4 | Should the student see the instructor's name on the class page? | Yes, first name and last initial only, on the class card; not on the assignment page. **Decided 2026-11-15** |
 | D-U5 | Wording of the AI disclosure line marked *(new)* | Confirm the Section 11.2 text |
 | D-U6 | Wording of the grading-delay and attempts-used strings marked *(new)* | Confirm Section 11.2 |
 

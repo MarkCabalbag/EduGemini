@@ -8,7 +8,9 @@ How the docs fit together, the start-of-session routine and the end-of-session c
 
 **Phase:** building. **Active milestone:** M0, in progress. **Last updated:** 2026-11-15
 
-All docs are still "Draft for review". Code is in `apps/api`, `apps/web`, `packages/shared` and `packages/ai`. The API has sign-up, sign-in, sign-out, `/me`, and create, list and get class (instructors only). The web app has the landing, sign-up, sign-in, Terms, Privacy and not-found pages. Instructors have a class dashboard, a create-class form and a class page with the code and join link; students still see a placeholder dashboard.
+All docs are still "Draft for review". Code is in `apps/api`, `apps/web`, `packages/shared` and `packages/ai`. The API has sign-up, sign-in, sign-out, `/me`, create, list and get class (instructors only), join by code for students (`POST /api/join`), the join-link preview (`GET /api/join/{code}`), and join approval for instructors (the toggle, the People list with counts, approve, decline, reverse, remove, and approve all pending). The web app has the landing, sign-up, sign-in, Terms, Privacy, join-link and not-found pages. Instructors have a class dashboard, a create-class form and a class page with two sections, Overview (the code and join link) and People (join approval and the pending, approved and declined lists); students have a dashboard with a code box to join a class (no list of their classes yet).
+
+**Not committed:** seven docs have edits waiting for the owner's review (`api-spec.md`, `backend-schema.md`, `code-standards.md`, `feature-tickets.md`, `prd.md`, `trd.md`, `ux-brief.md`). One line of CLS-05's doc changes ("oldest first", PPL-01) is among them in `api-spec.md`. Everything else, CLS-05 included, is committed.
 
 Repository: github.com/MarkCabalbag/EduGemini. `main` is the new version, `development` is where work happens, `main-old-version` is the previous app. The owner reviews and commits; do not commit or push unless asked.
 
@@ -18,7 +20,7 @@ Scope and exit criteria: [PRD §18](prd.md). Ticket list and build order: [featu
 
 | Milestone | Done | Status | Tickets done |
 |---|---|---|---|
-| M0 Foundations | 8 / 47 | In progress | FND-01, FND-04, FND-08, AUTH-01, AUTH-02, QA-02, CLS-01, CLS-02. Partly done: FND-02 (the mailer, storage and Gemini fakes come with their own tickets), FND-03 (Backend Schema Q5 and Q6 still to verify), FND-05 (join, reset and upload limits come with those endpoints; the general 120 per minute per user limit covers every route behind the session, and a route with its own API Spec A12 row adds that limiter), FE-01 (only the signed-in guard so far), FE-02 (tokens and the system theme; no manual choice yet), FE-03 (form components built; more arrive with screens), AUTH-04 (the tick, the Gemini notice and the version are in; the final Terms wording is DEMO-05), CLS-03 (code, join link and Copy buttons are done; the "case-insensitive on entry" part is built and tested with join by code in CLS-04) |
+| M0 Foundations | 11 / 47 | In progress | FND-01, FND-04, FND-08, AUTH-01, AUTH-02, QA-02, CLS-01, CLS-02, CLS-03, CLS-04, CLS-05 (the `JOIN_REQUEST_RECEIVED` and `JOIN_DECIDED` notifications wait for NTF-01 and NTF-05; no notification code exists yet). Partly done: FND-02 (the mailer, storage and Gemini fakes come with their own tickets), FND-03 (Backend Schema Q5 and Q6 still to verify), FND-05 (reset and upload limits come with those endpoints; the general 120 per minute per user limit covers every route behind the session, and a route with its own API Spec A12 row adds that limiter), FE-01 (only the signed-in guard so far), FE-02 (tokens and the system theme; no manual choice yet), FE-03 (form components built; more arrive with screens), AUTH-04 (the tick, the Gemini notice and the version are in; the final Terms wording is DEMO-05) |
 | M1 AI grading and keys | 0 / 26 | Not started | None |
 | M2 Review, tracker, and gradebook | 0 / 20 | Not started | None |
 | M3 Notifications and admin | 0 / 19 | Not started | None |
@@ -39,7 +41,9 @@ Tick a box when the feature works and its tests pass.
 - [x] Unit and database test setup (EG-QA-02)
 - [x] Web: sign-up, sign-in and sign-out screens with route guards and the UX Brief design tokens, light and dark (parts of EG-FE-01, EG-FE-02, EG-FE-03, EG-AUTH-04)
 - [x] Class API for instructors: create (with the attestation and an 8-character join code), list, and get one; 20 creates per hour per user, reads limited to 120 per minute (API part of EG-CLS-01, EG-CLS-02, EG-CLS-03)
+- [x] Join a class by code: `POST /api/join` adds a student as Active, or Pending when the class needs approval; joining twice changes nothing; a removed student is refused; an invalid code gives one identical error; 10 failed attempts per hour per user. The student dashboard has the code box (entry is case-insensitive) and shows the result or the error. The join link `/join/:code` shows the class and the instructor's first name; a signed-out visitor signs up (Student preselected) or signs in and the join goes on by itself; a student who was already signed in presses Join class (EG-CLS-04, finishes EG-CLS-03)
 - [x] Web, instructors: class dashboard (cards, empty state, show more), create-class form with the attestation checkbox, and the class page with the code and join link and Copy buttons (EG-CLS-01, EG-CLS-02, most of EG-CLS-03)
+- [x] Join approval (EG-CLS-05). API: `PATCH /classes/{id}/settings` turns approval on or off and never changes existing students; `GET /classes/{id}/people` gives complete counts and a filtered, paged list (oldest first, with name and email); `POST /enrollments/{id}/decision` does approve, decline, reverse (an undone decline or a reinstated removal) and remove, and an action from the wrong state is a `CONFLICT` with the current state (two decisions at once: one wins); `POST /classes/{id}/approve-pending` is refused while approval is on; the class response carries `counts`. Web: the class page has Overview and People sections (`?tab=people`); People has the approval switch, Pending, Approved and Declined lists with their counts and actions, and "Approve all pending" while approval is off and students are still waiting (shown from the data, so it stays after a reload)
 
 ## Spikes
 
@@ -57,9 +61,12 @@ Tests, pass criteria and fallbacks: [TRD §17.1](trd.md).
 ## Up next
 
 - [ ] At deploy (EG-FND-10): check that `req.ip` is the real client behind Vercel and Render. The sign-in limits key on it; if everyone shares one address, they share one limit
-- [ ] Decide: add the `cookie` package as a direct dependency (TRD T-D11)? It is only needed once the app sets more cookies (the return-to cookie, TRD §6.4)
-- [ ] CLS-04 (join by code) with the join screen (`/join/:code`), which also finishes CLS-03 (case-insensitive entry). It adds students to the `class.view` and `class.list` policy actions (PRD §5.1 already has the row) and the student view of a class, which needs API-1 (instructor name on the student card) decided first
-- [ ] Left out of the class screens on purpose, each comes with its own ticket: the "create your first assignment" and "add a Gemini key" prompts on the class page (ASG-01, KEY tickets); counts on class cards and in the class response (CLS-05, ASG-01); the "Show archived" switch (CLS-10); edit, regenerate and disable code (CLS-07, CLS-08); the class page tabs (as each tab's ticket lands)
+- [ ] Decide: add the `cookie` package as a direct dependency (TRD T-D11)? It is only needed once the app sets more cookies (the return-to cookie, TRD §6.4). Today the return path, and with it a join link's code, travels in the router state, so it survives sign-in and sign-up but not a reload or a new tab
+- [ ] Next in the class area: CLS-06 (the student's Enrolled list: students join the `class.view` and `class.list` policy actions as `member`, and the student class view uses `instructorName` from API-1, decided), then CLS-09 (roster and removal: the Removed list and reinstating, which the API already supports)
+- [ ] Flaky web test: `join-link.test.tsx` "joins by itself right after sign-in…" failed in 2 of 5 runs (full suite and isolated). It reads the router state right after "You joined" appears, while `JoinLink.tsx` calls `mutate` and `navigate` in one effect, so it is a timing race. Not caused by CLS-05; fix it in its own change (wait for the state to clear instead of reading it at once)
+- [ ] Notifications owed by join approval, added with NTF-01 and NTF-05: `JOIN_REQUEST_RECEIVED` when a student joins a class that needs approval (JOIN-01), and `JOIN_DECIDED` on approve, decline and approve all (PPL-02, PPL-03; the API Spec's batches of 200 only matter then)
+- [ ] Decide: should the member routes (decision, approve all) refuse an archived class? API Spec lists `CLASS_ARCHIVED` for the approval switch only, so they do not today. Decide with CLS-10 (archive)
+- [ ] Left out of the class screens on purpose, each comes with its own ticket: the "create your first assignment" and "add a Gemini key" prompts on the class page (ASG-01, KEY tickets); counts on class cards and assignment counts (ASG-01); the "Show archived" switch (CLS-10); edit, regenerate and disable code (CLS-07, CLS-08); the other class page sections (as each one's ticket lands)
 - [ ] Other candidates for the next piece: FND-07 (CI), FND-06 (storage adapter), FND-09 (job queue)
 - [ ] Verify Backend Schema Q5 (backups) and Q6 (does `migrate dev` drop SQL-owned objects) while the schema is still small
 - [ ] Decide the two remaining "Schedule conflicts to decide" in `feature-tickets.md`
@@ -76,9 +83,9 @@ The question text and proposed answers are in the source doc. When one is settle
 | [PRD §16.3](prd.md) | Q1 Gemini model, Q2 announcements in v1, Q3 Terms wording, Q4 pilot | Q1: S3 (M1). Q3: before any real student |
 | [TRD §17.5](trd.md) | Confirm: TQ1, TQ7. Settled by spikes: TQ3, TQ5, TQ10, TQ11 | TQ1: EG-AUTH-05 (M3) |
 | [Backend Schema §16.2](backend-schema.md) | Q5 (backups), Q6 (Prisma and SQL-owned objects) | Closing EG-FND-03 |
-| [API Spec A10](api-spec.md) | API-1 to API-4, API-7, API-8 | The endpoints each one names |
+| [API Spec A10](api-spec.md) | API-2 to API-4, API-7, API-8 | The endpoints each one names |
 | [API Spec Appendix C](api-spec.md) | Provider facts to verify | The spike named in each row |
-| [UX Brief §16.2](ux-brief.md) | D-U1 to D-U6 | D-U5, D-U6: EG-AI-11 (M1) |
+| [UX Brief §16.2](ux-brief.md) | D-U1 to D-U3, D-U5, D-U6 | D-U5, D-U6: EG-AI-11 (M1) |
 | [feature-tickets.md](feature-tickets.md) | Schedule conflicts 1 and 2; missing docs (AI Guardrails, Deployment Runbook) | Runbook: EG-FND-10. Guardrails: EG-AI-04 |
 
 ## Decision log
@@ -102,6 +109,8 @@ Decisions made before the build are in PRD §16.1 and §16.2, TRD §1.2, App Flo
 | 2026-11-15 | The test project's safety guard replaces the old `_e2e` database-name rule; integration tests run with `pnpm test:int` | TRD §16.2a |
 | 2026-11-15 | Viewing classes is a permission of its own: instructors see their own classes, approved students the classes they are in. Policy actions `class.view` and `class.list` (instructors only until the join tickets) | PRD §5.1, API Spec A15 |
 | 2026-11-15 | List cursors do not expire: a cursor marks a position, and only a cursor the server did not issue is rejected | API Spec A2 |
+| 2026-11-15 | API-1: students see the instructor's first name and last initial on the class card (UX D-U4). The join limit counts every refused join, not only invalid codes, and not a code of the wrong length | API Spec A10, A12; UX Brief §16.2 |
+| 2026-11-15 | The join-link preview counts failed tries only (30 per hour per IP), so a class opening the link on one network is not blocked, and it is not part of the general 120 per minute limit. A student who was already signed in presses Join class; one who has just signed in or signed up is joined by the page, so opening a link never joins anyone by itself | API Spec JOIN-02, A12; App Flow F2; code-standards §5 |
 | 2026-11-15 | The class creation limit counts after validation. The general limit (120 per minute) is one shared counter per user (per IP when signed out), mounted once in `createApp` for every route behind the session. A route whose own row allows more (notifications) must be excluded when it is added | API Spec A12, code-standards §5 |
 
 ## Notes for next session
