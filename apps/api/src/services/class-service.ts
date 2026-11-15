@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { Prisma, type Class, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
-import type { ClassPage, ClassSummary, CreateClass, ListClassesQuery } from '@edugemini/shared';
+import type { ClassPage, ClassSummary, CreateClass, EnrollmentStatus, JoinPreview, JoinResult, ListClassesQuery } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import { authorize, type Actor } from '../policy/policy';
 
@@ -107,6 +107,54 @@ export async function listClasses(
     items: page.map((row) => toClassSummary(row, appUrl)),
     nextCursor: rows.length > query.limit && last ? encodeCursor(last) : null,
   };
+}
+
+// A code that is unknown, switched off, replaced or on an archived class finds nothing, so all four look the same and
+// no class information is given.
+const joinable = (code: string) => ({ joinCode: code, joinCodeActive: true, archivedAt: null });
+
+/** What a join link shows (API Spec JOIN-02). Anyone may ask, signed in or not. The caller normalizes the code (trim, capitals). */
+export async function previewJoin(db: PrismaClient, code: string): Promise<JoinPreview> {
+  // A code of the wrong length cannot match, so it is not looked up: the path can be any length.
+  const row =
+    code.length === JOIN_CODE_LENGTH
+      ? await db.class.findFirst({ where: joinable(code), include: { instructor: { select: { firstName: true } } } })
+      : null;
+  if (!row) throw new AppError('INVALID_JOIN_CODE');
+  return { className: row.name, instructorFirstName: row.instructor.firstName, requireApproval: row.requireApproval };
+}
+
+/**
+ * Join by code (API Spec JOIN-01). `created` is true for a new enrollment (201) and false when the student was already in
+ * (200), so joining twice does nothing new. A declined student stays declined; a removed student is refused.
+ */
+export async function joinClass(db: PrismaClient, actor: Actor, code: string): Promise<{ result: JoinResult; created: boolean }> {
+  authorize(actor, 'class.join');
+
+  const row = await db.class.findFirst({ where: joinable(code) });
+  if (!row) throw new AppError('INVALID_JOIN_CODE');
+
+  const current = () => db.enrollment.findUnique({ where: { classId_studentId: { classId: row.id, studentId: actor.id } } });
+  const answer = (status: EnrollmentStatus, created: boolean) => {
+    if (status === 'REMOVED') throw new AppError('JOIN_BLOCKED');
+    return { result: { classId: row.id, className: row.name, status }, created };
+  };
+
+  const before = await current();
+  if (before) return answer(before.status, false);
+
+  try {
+    const made = await db.enrollment.create({
+      data: { classId: row.id, studentId: actor.id, status: row.requireApproval ? 'PENDING' : 'ACTIVE' },
+    });
+    return answer(made.status, true);
+  } catch (error) {
+    // Two joins at once: the unique (class, student) key lets one win, and the other reads the winner's row.
+    const raced = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+    const winner = raced ? await current() : null;
+    if (!winner) throw error;
+    return answer(winner.status, false);
+  }
 }
 
 export async function getClass(db: PrismaClient, actor: Actor, classId: string, appUrl: string): Promise<ClassSummary> {

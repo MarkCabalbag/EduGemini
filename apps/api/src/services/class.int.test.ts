@@ -395,6 +395,225 @@ describe('get one class (API Spec CLS-03)', () => {
   });
 });
 
+describe('join a class by code (API Spec JOIN-01)', () => {
+  const join = (app: TestApp, cookie: string, code: unknown) =>
+    request(app).post('/api/join').set('Origin', APP_URL).set('Cookie', cookie).send({ code });
+  const enrollments = (classId: string) => db.enrollment.findMany({ where: { classId } });
+  const NO_SUCH_CODE = '22222222';
+
+  it('adds the student at once when approval is off (201 ACTIVE)', async () => {
+    const klass = await seed(owner.user.id);
+    const { user, cookie } = await signedInUser('join-open', 'STUDENT');
+
+    const res = await join(build(), cookie, klass.joinCode);
+
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ classId: klass.id, className: klass.name, status: 'ACTIVE' });
+    expect(await enrollments(klass.id)).toMatchObject([{ studentId: user.id, status: 'ACTIVE' }]);
+  });
+
+  it('makes the student Pending when approval is on (201 PENDING)', async () => {
+    const klass = await seed(owner.user.id, { requireApproval: true });
+    const { cookie } = await signedInUser('join-approval', 'STUDENT');
+
+    const res = await join(build(), cookie, klass.joinCode);
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('PENDING');
+  });
+
+  it('accepts the code in lower case with spaces around it', async () => {
+    const klass = await seed(owner.user.id);
+    const { cookie } = await signedInUser('join-lower', 'STUDENT');
+
+    const res = await join(build(), cookie, `  ${klass.joinCode.toLowerCase()} `);
+
+    expect(res.status).toBe(201);
+    expect(res.body.classId).toBe(klass.id);
+  });
+
+  it('does nothing new the second time (200, one row)', async () => {
+    const klass = await seed(owner.user.id);
+    const { cookie } = await signedInUser('join-twice', 'STUDENT');
+    const app = build();
+
+    const first = await join(app, cookie, klass.joinCode);
+    const second = await join(app, cookie, klass.joinCode);
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect(second.body).toEqual(first.body);
+    expect(await enrollments(klass.id)).toHaveLength(1);
+  });
+
+  it.each(['PENDING', 'DECLINED'] as const)('keeps a %s student as they are (200)', async (status) => {
+    const klass = await seed(owner.user.id, { requireApproval: true });
+    const { user, cookie } = await signedInUser(`join-${status.toLowerCase()}`, 'STUDENT');
+    await db.enrollment.create({ data: { classId: klass.id, studentId: user.id, status } });
+
+    const res = await join(build(), cookie, klass.joinCode);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe(status);
+  });
+
+  it('refuses a removed student with JOIN_BLOCKED and leaves them removed', async () => {
+    const klass = await seed(owner.user.id);
+    const { user, cookie } = await signedInUser('join-removed', 'STUDENT');
+    await db.enrollment.create({ data: { classId: klass.id, studentId: user.id, status: 'REMOVED' } });
+
+    const res = await join(build(), cookie, klass.joinCode);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('JOIN_BLOCKED');
+    expect(await enrollments(klass.id)).toMatchObject([{ status: 'REMOVED' }]);
+  });
+
+  it('gives the same INVALID_JOIN_CODE for an unknown, switched-off and archived code', async () => {
+    const off = await seed(owner.user.id, { joinCodeActive: false });
+    const archived = await seed(owner.user.id, { archivedAt: new Date() });
+    const { cookie } = await signedInUser('join-invalid', 'STUDENT');
+    const app = build();
+
+    const answers = [
+      await join(app, cookie, NO_SUCH_CODE),
+      await join(app, cookie, off.joinCode),
+      await join(app, cookie, archived.joinCode),
+    ];
+
+    for (const res of answers) {
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('INVALID_JOIN_CODE');
+    }
+    expect(new Set(answers.map((res) => res.body.error.message)).size).toBe(1);
+    expect(await enrollments(off.id)).toHaveLength(0);
+    expect(await enrollments(archived.id)).toHaveLength(0);
+  });
+
+  it('tells an instructor that instructor accounts cannot join (403)', async () => {
+    const klass = await seed(owner.user.id);
+
+    const res = await join(build(), other.cookie, klass.joinCode);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('INSTRUCTOR_CANNOT_JOIN');
+  });
+
+  it('needs a session', async () => {
+    const res = await request(build()).post('/api/join').set('Origin', APP_URL).send({ code: NO_SUCH_CODE });
+    expect(res.status).toBe(401);
+  });
+
+  it.each([['no code', undefined], ['a code that is too short', 'ABC'], ['a code that is too long', 'ABCDEFGHJ'], ['a blank code', '   ']])(
+    'refuses %s',
+    async (_label, code) => {
+      const res = await join(build(), student.cookie, code);
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION');
+      expect(res.body.error.fields).toHaveProperty(['code']);
+    },
+  );
+
+  it('keeps one row when the same student joins twice at the same moment', async () => {
+    const klass = await seed(owner.user.id);
+    const { cookie } = await signedInUser('join-race', 'STUDENT');
+    const app = build();
+
+    const answers = await Promise.all([join(app, cookie, klass.joinCode), join(app, cookie, klass.joinCode)]);
+
+    expect(answers.map((res) => res.status).sort()).toEqual([200, 201]);
+    expect(await enrollments(klass.id)).toHaveLength(1);
+  });
+
+  it('allows 10 failed attempts an hour per student, then RATE_LIMITED; joins and malformed codes are not counted', async () => {
+    const klass = await seed(owner.user.id);
+    const { cookie } = await signedInUser('join-rate', 'STUDENT');
+    const app = build();
+
+    expect((await join(app, cookie, klass.joinCode)).status).toBe(201);
+    for (let i = 0; i < 3; i++) expect((await join(app, cookie, 'ABC')).status).toBe(400);
+    for (let i = 0; i < RULES.joinByUser.limit; i++) expect((await join(app, cookie, NO_SUCH_CODE)).status).toBe(404);
+    const res = await join(app, cookie, NO_SUCH_CODE);
+
+    expect(res.status).toBe(429);
+    expect(res.body.error.code).toBe('RATE_LIMITED');
+  });
+});
+
+describe('preview a join link (API Spec JOIN-02)', () => {
+  const preview = (app: TestApp, code: string, cookie?: string) => {
+    const req = request(app).get(`/api/join/${code}`);
+    return cookie ? req.set('Cookie', cookie) : req;
+  };
+  const NO_SUCH_CODE = '22222222';
+
+  it('shows the class name, the instructor\'s first name and the approval setting to someone signed out, and nothing else', async () => {
+    const klass = await seed(owner.user.id, { name: 'Chemistry', requireApproval: true });
+
+    const res = await preview(build(), klass.joinCode);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ className: 'Chemistry', instructorFirstName: 'Ada', requireApproval: true });
+  });
+
+  it('works the same for a signed-in student, in lower case with spaces around the code', async () => {
+    const klass = await seed(owner.user.id, { name: 'Physics' });
+
+    const res = await preview(build(), `%20${klass.joinCode.toLowerCase()}%20`, student.cookie);
+
+    expect(res.status).toBe(200);
+    expect(res.body.className).toBe('Physics');
+  });
+
+  it('joins no one: it creates no enrollment', async () => {
+    const klass = await seed(owner.user.id);
+    await preview(build(), klass.joinCode, student.cookie);
+    expect(await db.enrollment.count({ where: { classId: klass.id } })).toBe(0);
+  });
+
+  it('gives the same INVALID_JOIN_CODE for an unknown, switched-off, archived and wrongly sized code', async () => {
+    const off = await seed(owner.user.id, { joinCodeActive: false });
+    const archived = await seed(owner.user.id, { archivedAt: new Date() });
+    const app = build();
+
+    const answers = [NO_SUCH_CODE, off.joinCode, archived.joinCode, 'ABC', 'ABCDEFGHJKLM'].map((code) => preview(app, code));
+
+    const results = await Promise.all(answers);
+    for (const res of results) {
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('INVALID_JOIN_CODE');
+    }
+    expect(new Set(results.map((res) => res.body.error.message)).size).toBe(1);
+  });
+
+  it('tells a signed-in instructor that instructor accounts cannot join (403)', async () => {
+    const klass = await seed(owner.user.id);
+
+    const res = await preview(build(), klass.joinCode, other.cookie);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('INSTRUCTOR_CANNOT_JOIN');
+  });
+
+  it('ignores an expired or made-up session and answers as for a signed-out visitor', async () => {
+    const klass = await seed(owner.user.id);
+    const res = await preview(build(), klass.joinCode, `${SESSION_COOKIE}=not-a-session`);
+    expect(res.status).toBe(200);
+  });
+
+  it('allows 30 failed tries an hour per IP, then RATE_LIMITED; good codes are not counted', async () => {
+    const klass = await seed(owner.user.id);
+    const app = build();
+
+    for (let i = 0; i < 5; i++) expect((await preview(app, klass.joinCode)).status).toBe(200);
+    for (let i = 0; i < RULES.joinPreviewByIp.limit; i++) expect((await preview(app, NO_SUCH_CODE)).status).toBe(404);
+    const refused = await preview(app, NO_SUCH_CODE);
+
+    expect(refused.status).toBe(429);
+    expect(refused.body.error.code).toBe('RATE_LIMITED');
+  });
+});
+
 describe('rate limits on the real routes (API Spec A12)', () => {
   // The RateLimit-Limit header names the limit that answered, so this proves the right limiter is mounted on each route
   // without sending 120 requests.
@@ -421,5 +640,22 @@ describe('rate limits on the real routes (API Spec A12)', () => {
 
     // Another user on the same app has a budget of their own.
     expect((await get(app, owner.cookie, '/me')).status).toBe(200);
+  });
+
+  it('does not count the join-link preview against that general limit, so a class can open one link together', async () => {
+    const klass = await seed(owner.user.id);
+    const app = build();
+
+    // More requests than the general limit allows, all from one IP and signed out, like a class on one school network.
+    // Ten at a time: the failed-only limit gives a good request back only once it has been answered, so the requests are
+    // not sent all in the same instant.
+    const statuses: number[] = [];
+    for (let batch = 0; batch < 13; batch++) {
+      const answers = await Promise.all(Array.from({ length: 10 }, () => request(app).get(`/api/join/${klass.joinCode}`)));
+      statuses.push(...answers.map((res) => res.status));
+    }
+
+    expect(statuses.length).toBeGreaterThan(RULES.everythingElseByUser.limit);
+    expect(statuses.every((status) => status === 200)).toBe(true);
   });
 });

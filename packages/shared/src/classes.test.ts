@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { CreateClassSchema, ListClassesQuerySchema } from './classes';
+import { CreateClassSchema, JoinSchema, ListClassesQuerySchema } from './classes';
+
+describe('JoinSchema', () => {
+  it('trims and uppercases the code, so entry is case-insensitive', () => {
+    expect(JoinSchema.parse({ code: '  ab3dEf9h ' })).toEqual({ code: 'AB3DEF9H' });
+  });
+
+  it.each(['', 'ABC', 'ABCDEFGHJ', '   '])('rejects the code %j', (code) => {
+    expect(JoinSchema.safeParse({ code }).success).toBe(false);
+  });
+});
 
 describe('ListClassesQuerySchema', () => {
   it('defaults to active classes, 25 to a page', () => {

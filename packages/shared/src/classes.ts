@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EnrollmentStatusSchema } from './enums';
 import { safeText } from './text';
 
 export const ClassStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
@@ -35,6 +36,29 @@ export const ListClassesQuerySchema = z.object({
     .default(25),
 });
 export type ListClassesQuery = z.infer<typeof ListClassesQuerySchema>;
+
+/** Join by code (API Spec JOIN-01). The code is trimmed and uppercased, so entry is case-insensitive. */
+const joinCode = z.string().trim().toUpperCase();
+export const JoinSchema = z.object({ code: joinCode.length(8, 'Enter the 8-character code') });
+export type Join = z.infer<typeof JoinSchema>;
+
+/** The code in a join link (API Spec JOIN-02). A code of the wrong length is not a validation error: it is just a code that does not work. */
+export const JoinLinkParamsSchema = z.object({ code: joinCode });
+
+/** What a join link shows: no student data, no assignments, no counts. */
+export const JoinPreviewSchema = z.object({
+  className: z.string(),
+  instructorFirstName: z.string(),
+  requireApproval: z.boolean(),
+});
+export type JoinPreview = z.infer<typeof JoinPreviewSchema>;
+
+export const JoinResultSchema = z.object({
+  classId: z.uuid(),
+  className: z.string(),
+  status: EnrollmentStatusSchema,
+});
+export type JoinResult = z.infer<typeof JoinResultSchema>;
 
 /** A class as the caller sees it (API Spec A5). The join fields are for the owning instructor only. */
 export const ClassSummarySchema = z.object({

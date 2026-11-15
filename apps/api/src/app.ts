@@ -12,6 +12,7 @@ import { loadSession } from './middleware/session';
 import { authRouter } from './routes/auth';
 import { classesRouter } from './routes/classes';
 import { healthRouter } from './routes/health';
+import { joinLinkRouter } from './routes/join-link';
 import { meRouter } from './routes/me';
 
 export type AppDeps = {
@@ -43,6 +44,7 @@ export function createApp({ env, logger, db, checkDb, routers = [] }: AppDeps): 
   api.use(...jsonBody());
   api.use(authRouter({ db, appUrl: env.APP_URL })); // public: no session needed
   api.use(loadSession(db)); // everything below may use req.auth
+  api.use(joinLinkRouter({ db })); // public, and with its own limit, so it sits before the general one (API Spec A12)
   api.use(limiters.everythingElseByUser()); // one counter per user (the IP when signed out) for every route below
   api.use(meRouter());
   api.use(classesRouter({ db, appUrl: env.APP_URL }));
