@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.vite/
+.turbo/
+apps/e2e/.auth/
+apps/e2e/reports/
+apps/api/.storage/
+eval/reports/

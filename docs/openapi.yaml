@@ -1,0 +1,3050 @@
+openapi: 3.1.0
+info:
+  title: EduGemini API
+  version: 1.0.0
+  summary: Contract for the EduGemini web client and grading worker.
+  description: |
+    Machine-readable contract for the endpoints in docs/api-spec.md. The
+    Markdown document holds the rules and the reasoning; this file holds the
+    shapes. Operation IDs equal the endpoint IDs in the Markdown (AUTH-01 and
+    so on). Errors use one envelope (see components/schemas/Error) and the
+    codes in components/schemas/ErrorCode.
+
+    Status draft: list-valued and deeply nested fields are described with their
+    key properties. The full field list is completed at scaffold, when the shared
+    Zod schemas are generated from the same definitions and checked in CI.
+  license:
+    name: Proprietary (portfolio project)
+servers:
+  - url: /
+    description: Same origin as the web app (Vercel rewrite to the API host).
+security:
+  - sessionCookie: []
+tags:
+  - name: Auth
+  - name: Account
+  - name: Instructor key
+  - name: Classes
+  - name: Joining and people
+  - name: Assignments
+  - name: Reference files
+  - name: Student submission
+  - name: Files
+  - name: Instructor review
+  - name: Bulk actions
+  - name: Review queue
+  - name: Tracker and gradebook
+  - name: Announcements
+  - name: Notifications
+  - name: Admin
+  - name: System
+paths:
+  /api/auth/signup:
+    post:
+      operationId: AUTH-01
+      tags: [Auth]
+      summary: Sign up
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignupRequest' }
+      responses:
+        '201':
+          description: Account created and signed in. Sets eg_session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/Internal' }
+
+  /api/auth/signin:
+    post:
+      operationId: AUTH-02
+      tags: [Auth]
+      summary: Sign in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SigninRequest' }
+      responses:
+        '200':
+          description: Signed in. Sets eg_session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '400': { $ref: '#/components/responses/Validation' }
+
+  /api/auth/signout:
+    post:
+      operationId: AUTH-03
+      tags: [Auth]
+      summary: Sign out
+      responses:
+        '204': { description: "Signed out. Clears eg_session." }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/auth/signout-all:
+    post:
+      operationId: AUTH-04
+      tags: [Auth]
+      summary: Sign out of all devices
+      responses:
+        '204': { description: "All sessions removed." }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/auth/forgot-password:
+    post:
+      operationId: AUTH-05
+      tags: [Auth]
+      summary: Request a password reset link
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailRequest' }
+      responses:
+        '202':
+          description: Always the same response, whether or not the account exists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '400': { $ref: '#/components/responses/Validation' }
+
+  /api/auth/reset-password:
+    post:
+      operationId: AUTH-06
+      tags: [Auth]
+      summary: Set a new password from a reset link
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '204': { description: "Password changed; all sessions removed." }
+        '400': { $ref: '#/components/responses/Validation' }
+
+  /api/auth/verify-email:
+    post:
+      operationId: AUTH-07
+      tags: [Auth]
+      summary: Verify email with a token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyEmailRequest' }
+      responses:
+        '200':
+          description: Email verified.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailVerified' }
+        '400': { $ref: '#/components/responses/Validation' }
+
+  /api/auth/resend-verification:
+    post:
+      operationId: AUTH-08
+      tags: [Auth]
+      summary: Resend the verification email
+      responses:
+        '202': { description: "Verification email queued." }
+        '204': { description: "Already verified; nothing sent." }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/auth/google/start:
+    get:
+      operationId: AUTH-09
+      tags: [Auth]
+      summary: Start Google sign-in (or re-authentication)
+      security: []
+      parameters:
+        - name: purpose
+          in: query
+          required: false
+          schema: { type: string, enum: [signin, reauth], default: signin }
+        - name: next
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+          description: Relative path only. Dropped when it fails the allowlist.
+      responses:
+        '302': { description: "Redirect to Google's authorization endpoint. Sets eg_oauth." }
+        '400': { $ref: '#/components/responses/Validation' }
+
+  /api/auth/google/callback:
+    get:
+      operationId: AUTH-10
+      tags: [Auth]
+      summary: Google sign-in callback (browser redirect)
+      security: []
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '302': { description: "Redirect to the return path, the dashboard, or /signup/role. On failure, /signin?error=google." }
+
+  /api/auth/pending-role:
+    post:
+      operationId: AUTH-11
+      tags: [Auth]
+      summary: Complete a first-time Google sign-up
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PendingRoleRequest' }
+      responses:
+        '201':
+          description: Account created and signed in. Clears eg_pending.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/me:
+    get:
+      operationId: ACC-01
+      tags: [Account]
+      summary: Get the current user
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      operationId: ACC-02
+      tags: [Account]
+      summary: Update name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileUpdate' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      operationId: ACC-04
+      tags: [Account]
+      summary: Delete own account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteAccountRequest' }
+      responses:
+        '204': { description: "Account deleted. Clears eg_session." }
+        '400': { $ref: '#/components/responses/Validation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/me/password:
+    post:
+      operationId: ACC-03
+      tags: [Account]
+      summary: Change password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordChange' }
+      responses:
+        '204': { description: "Password changed. Other sessions stay signed in." }
+        '400': { $ref: '#/components/responses/Validation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/me/deletion-impact:
+    get:
+      operationId: ACC-07
+      tags: [Account]
+      summary: Preview what deleting the account removes
+      responses:
+        '200':
+          description: Counts for the confirmation screen.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeletionImpact' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/me/preferences:
+    get:
+      operationId: ACC-05
+      tags: [Account]
+      summary: Get notification preferences
+      responses:
+        '200':
+          description: Preferences.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      operationId: ACC-06
+      tags: [Account]
+      summary: Update notification preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Preferences' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/me/key:
+    get:
+      operationId: KEY-01
+      tags: [Instructor key]
+      summary: Get key status (never the key)
+      responses:
+        '200':
+          description: Key status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: KEY-02
+      tags: [Instructor key]
+      summary: Save a Gemini key (validated first)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KeySaveRequest' }
+      responses:
+        '200':
+          description: Key validated, encrypted, and stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyStatus' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    delete:
+      operationId: KEY-03
+      tags: [Instructor key]
+      summary: Remove the key
+      responses:
+        '204': { description: "Key removed. Queued grading moves to manual review." }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/me/key/test:
+    post:
+      operationId: KEY-04
+      tags: [Instructor key]
+      summary: Test the saved key
+      responses:
+        '200':
+          description: Key status after the test.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /api/classes:
+    get:
+      operationId: CLS-01
+      tags: [Classes]
+      summary: List classes
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, ARCHIVED] } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: One page of classes the caller can see.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageOfClassSummary' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      operationId: CLS-02
+      tags: [Classes]
+      summary: Create a class
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClassCreate' }
+      responses:
+        '201':
+          description: Class created with its join code.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassSummary' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/classes/{classId}:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    get:
+      operationId: CLS-03
+      tags: [Classes]
+      summary: Get a class
+      responses:
+        '200':
+          description: Class (instructor view includes counts).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: CLS-04
+      tags: [Classes]
+      summary: Edit class details
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClassUpdate' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassSummary' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      operationId: CLS-07
+      tags: [Classes]
+      summary: Delete a class permanently
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TypedConfirmation' }
+      responses:
+        '204': { description: "Class and its data deleted." }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/classes/{classId}/archive:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    post:
+      operationId: CLS-05
+      tags: [Classes]
+      summary: Archive a class (idempotent)
+      responses:
+        '200':
+          description: Archived.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassSummary' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/classes/{classId}/restore:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    post:
+      operationId: CLS-06
+      tags: [Classes]
+      summary: Restore an archived class (idempotent)
+      responses:
+        '200':
+          description: Restored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassSummary' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/classes/{classId}/code/regenerate:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    post:
+      operationId: CLS-08
+      tags: [Classes]
+      summary: Issue a new join code (also re-enables a disabled code)
+      responses:
+        '200':
+          description: New code.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassSummary' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/classes/{classId}/code/disable:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    post:
+      operationId: CLS-09
+      tags: [Classes]
+      summary: Disable the join code (idempotent)
+      responses:
+        '200':
+          description: Code disabled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassSummary' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/classes/{classId}/settings:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    patch:
+      operationId: CLS-10
+      tags: [Classes]
+      summary: Change join approval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClassSettings' }
+      responses:
+        '200':
+          description: Setting saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassSettingsResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/classes/{classId}/deletion-impact:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    get:
+      operationId: CLS-11
+      tags: [Classes]
+      summary: Preview what deleting the class removes
+      responses:
+        '200':
+          description: Counts and a gradebook download path.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassDeletionImpact' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/join:
+    post:
+      operationId: JOIN-01
+      tags: [Joining and people]
+      summary: Join a class with a code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JoinRequest' }
+      responses:
+        '201':
+          description: New enrollment (ACTIVE or PENDING).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JoinResult' }
+        '200':
+          description: Already joined; same body, no new enrollment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JoinResult' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/join/{code}:
+    get:
+      operationId: JOIN-02
+      tags: [Joining and people]
+      summary: Preview a join link
+      security: []
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string, minLength: 8, maxLength: 8 } }
+      responses:
+        '200':
+          description: Class name and instructor first name only.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JoinPreview' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/me/enrollments:
+    get:
+      operationId: JOIN-03
+      tags: [Joining and people]
+      summary: List my enrollments (Enrolled list)
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: One page of enrollments (REMOVED excluded).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageOfEnrollmentSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/classes/{classId}/people:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    get:
+      operationId: PPL-01
+      tags: [Joining and people]
+      summary: List people in a class
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, PENDING, DECLINED, REMOVED] } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: Counts (always complete) and one page of enrollments.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PeoplePage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/enrollments/{enrollmentId}/decision:
+    parameters:
+      - { name: enrollmentId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: PPL-02
+      tags: [Joining and people]
+      summary: Approve, decline, reverse, or remove an enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnrollmentDecisionRequest' }
+      responses:
+        '200':
+          description: Updated enrollment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnrollmentView' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/classes/{classId}/approve-pending:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    post:
+      operationId: PPL-03
+      tags: [Joining and people]
+      summary: Approve all pending enrollments (after approval is turned off)
+      responses:
+        '200':
+          description: Count approved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApproveAllResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/classes/{classId}/assignments:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    get:
+      operationId: ASG-01
+      tags: [Assignments]
+      summary: List assignments (students see published only)
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] } }
+        - { name: labelId, in: query, schema: { type: string, format: uuid } }
+        - { name: sort, in: query, schema: { type: string, enum: [dueAt], default: dueAt } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: One page of assignments.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageOfAssignmentSummary' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: ASG-02
+      tags: [Assignments]
+      summary: Create an assignment draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignmentInput' }
+      responses:
+        '201':
+          description: Draft created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssignmentDetail' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/assignments/{assignmentId}:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    get:
+      operationId: ASG-03
+      tags: [Assignments]
+      summary: Get an assignment
+      responses:
+        '200':
+          description: Assignment (instructor view includes counts; student view includes my state).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssignmentDetail' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: ASG-04
+      tags: [Assignments]
+      summary: Edit an assignment (criteria changes need an impact token)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignmentPatch' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssignmentDetail' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      operationId: ASG-09
+      tags: [Assignments]
+      summary: Delete an assignment permanently
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TypedConfirmation' }
+      responses:
+        '204': { description: "Deleted with its submissions and files." }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/assignments/{assignmentId}/criteria-impact:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    post:
+      operationId: ASG-05
+      tags: [Assignments]
+      summary: Preview the re-grade impact of a proposed criteria change
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CriteriaImpactRequest' }
+      responses:
+        '200':
+          description: Counts and a signed impact token (10 minutes).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CriteriaImpact' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/assignments/{assignmentId}/publish:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    post:
+      operationId: ASG-06
+      tags: [Assignments]
+      summary: Publish an assignment (warnings returned, not blocking)
+      responses:
+        '200':
+          description: Published, with any warnings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssignmentDetail' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/assignments/{assignmentId}/archive:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    post:
+      operationId: ASG-07
+      tags: [Assignments]
+      summary: Archive an assignment (idempotent)
+      responses:
+        '200':
+          description: Archived.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssignmentDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/assignments/{assignmentId}/restore:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    post:
+      operationId: ASG-08
+      tags: [Assignments]
+      summary: Restore an archived assignment (idempotent)
+      responses:
+        '200':
+          description: Restored to published.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssignmentDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/classes/{classId}/labels:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    get:
+      operationId: ASG-10
+      tags: [Assignments]
+      summary: List labels (instructors)
+      responses:
+        '200':
+          description: Labels with assignment counts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LabelList' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: ASG-11
+      tags: [Assignments]
+      summary: Create a label
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LabelInput' }
+      responses:
+        '201':
+          description: Label created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Label' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/labels/{labelId}:
+    parameters:
+      - { name: labelId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: ASG-12
+      tags: [Assignments]
+      summary: Delete a label (assignments keep existing, unlabeled)
+      responses:
+        '204': { description: "Label deleted." }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/assignments/{assignmentId}/reference-files:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    post:
+      operationId: REF-01
+      tags: [Reference files]
+      summary: Add a reference file (criteria change)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/ReferenceUpload' }
+      responses:
+        '201':
+          description: Reference file stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferenceFileView' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/FileTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedFile' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/reference-files/{fileId}:
+    parameters:
+      - { $ref: '#/components/parameters/FileId' }
+    patch:
+      operationId: REF-02
+      tags: [Reference files]
+      summary: Change student visibility of a reference file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReferenceFileVisibility' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferenceFileView' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: REF-03
+      tags: [Reference files]
+      summary: Remove a reference file (criteria change; needs impact token header)
+      parameters:
+        - { name: X-Impact-Token, in: header, required: true, schema: { type: string } }
+      responses:
+        '204': { description: "Removed." }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/reference-files/{fileId}/url:
+    parameters:
+      - { $ref: '#/components/parameters/FileId' }
+    get:
+      operationId: REF-04
+      tags: [Reference files]
+      summary: Get a five-minute link to a reference file
+      responses:
+        '200':
+          description: Signed URL.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileUrl' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/assignments/{assignmentId}/me:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    get:
+      operationId: SUB-01
+      tags: [Student submission]
+      summary: Get my submission for an assignment
+      responses:
+        '200':
+          description: My state, attempts, grade (when shown), and files.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudentSubmission' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/assignments/{assignmentId}/versions:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    post:
+      operationId: SUB-02
+      tags: [Student submission]
+      summary: Open an upload version (idempotent while one is open)
+      responses:
+        '200':
+          description: The open version (already existed).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionView' }
+        '201':
+          description: New version opened.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionView' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/versions/{versionId}:
+    parameters:
+      - { $ref: '#/components/parameters/VersionId' }
+    delete:
+      operationId: SUB-06
+      tags: [Student submission]
+      summary: Cancel an open upload
+      responses:
+        '204': { description: "Cancelled." }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/versions/{versionId}/files/{clientFileId}:
+    parameters:
+      - { $ref: '#/components/parameters/VersionId' }
+      - { $ref: '#/components/parameters/ClientFileId' }
+    put:
+      operationId: SUB-03
+      tags: [Student submission]
+      summary: Send one file (raw bytes; idempotent per clientFileId)
+      parameters:
+        - { name: X-File-Name, in: header, required: true, schema: { type: string, maxLength: 340 } }
+      requestBody:
+        required: true
+        content:
+          application/pdf: { schema: { type: string, format: binary } }
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/png: { schema: { type: string, format: binary } }
+          image/heic: { schema: { type: string, format: binary } }
+      responses:
+        '200':
+          description: Replaced an existing file with the same clientFileId.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileView' }
+        '201':
+          description: File stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileView' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/FileTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedFile' }
+        '422': { $ref: '#/components/responses/FileError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    delete:
+      operationId: SUB-04
+      tags: [Student submission]
+      summary: Remove a file from an open upload
+      responses:
+        '204': { description: "Removed (or already gone)." }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/versions/{versionId}/finalize:
+    parameters:
+      - { $ref: '#/components/parameters/VersionId' }
+    post:
+      operationId: SUB-05
+      tags: [Student submission]
+      summary: Finalize the upload and queue grading
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FinalizeRequest' }
+      responses:
+        '200':
+          description: Submission queued (display state GRADING).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudentSubmission' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/files/{fileId}/url:
+    parameters:
+      - { $ref: '#/components/parameters/FileId' }
+    get:
+      operationId: FILE-01
+      tags: [Files]
+      summary: Get a five-minute link to a submission or announcement file
+      responses:
+        '200':
+          description: Signed URL.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileUrl' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/submissions/{submissionId}:
+    parameters:
+      - { $ref: '#/components/parameters/SubmissionId' }
+    get:
+      operationId: INS-01
+      tags: [Instructor review]
+      summary: Get the Submission screen
+      responses:
+        '200':
+          description: Submission for review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InstructorSubmission' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/submissions/{submissionId}/approve:
+    parameters:
+      - { $ref: '#/components/parameters/SubmissionId' }
+    post:
+      operationId: INS-02
+      tags: [Instructor review]
+      summary: Approve (with optional score, feedback, and comment edits)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApproveRequest' }
+      responses:
+        '200':
+          description: Approved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InstructorSubmission' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/submissions/{submissionId}/reopen:
+    parameters:
+      - { $ref: '#/components/parameters/SubmissionId' }
+    post:
+      operationId: INS-03
+      tags: [Instructor review]
+      summary: Reopen an approved submission (optionally grant attempts)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReopenRequest' }
+      responses:
+        '200':
+          description: Reopened.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InstructorSubmission' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/assignments/{assignmentId}/students/{studentId}/grant-attempts:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+      - { $ref: '#/components/parameters/StudentId' }
+    post:
+      operationId: INS-04
+      tags: [Instructor review]
+      summary: Grant attempts to a student (give-back uses count 1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrantAttemptsRequest' }
+      responses:
+        '200':
+          description: New totals.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrantAttemptsResult' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/assignments/{assignmentId}/students/{studentId}/allow-late:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+      - { $ref: '#/components/parameters/StudentId' }
+    post:
+      operationId: INS-05
+      tags: [Instructor review]
+      summary: Allow one student to submit after the due date
+      responses:
+        '200':
+          description: Late allowed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AllowLateResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/submissions/{submissionId}/rerun:
+    parameters:
+      - { $ref: '#/components/parameters/SubmissionId' }
+    post:
+      operationId: INS-06
+      tags: [Instructor review]
+      summary: Re-run AI grading for a manual-review item (no attempt consumed)
+      responses:
+        '202':
+          description: Queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionAccepted' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/submissions/{submissionId}/regrade:
+    parameters:
+      - { $ref: '#/components/parameters/SubmissionId' }
+    post:
+      operationId: INS-07
+      tags: [Instructor review]
+      summary: Re-grade an approved submission (result waits for review)
+      responses:
+        '202':
+          description: Queued. The approved grade stays visible to the student.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionAccepted' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/submissions/{submissionId}/regrade/approve:
+    parameters:
+      - { $ref: '#/components/parameters/SubmissionId' }
+    post:
+      operationId: INS-08
+      tags: [Instructor review]
+      summary: Approve the pending re-grade result
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegradeApproveRequest' }
+      responses:
+        '200':
+          description: New result is now the active grade.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InstructorSubmission' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/submissions/{submissionId}/regrade/keep-previous:
+    parameters:
+      - { $ref: '#/components/parameters/SubmissionId' }
+    post:
+      operationId: INS-09
+      tags: [Instructor review]
+      summary: Discard the pending re-grade and keep the approved grade
+      responses:
+        '200':
+          description: Pending result discarded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InstructorSubmission' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/submissions/{submissionId}/comment:
+    parameters:
+      - { $ref: '#/components/parameters/SubmissionId' }
+    post:
+      operationId: INS-10
+      tags: [Instructor review]
+      summary: Save or clear the instructor comment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentRequest' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InstructorSubmission' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/submissions/{submissionId}/manual-grade:
+    parameters:
+      - { $ref: '#/components/parameters/SubmissionId' }
+    post:
+      operationId: INS-11
+      tags: [Instructor review]
+      summary: Enter a manual grade and approve it in one step
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualGradeRequest' }
+      responses:
+        '200':
+          description: Approved with the manual grade.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InstructorSubmission' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/assignments/{assignmentId}/bulk-approve:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    post:
+      operationId: BLK-01
+      tags: [Bulk actions]
+      summary: Approve unedited AI results in bulk (up to 200)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkApproveRequest' }
+      responses:
+        '200':
+          description: Approved items and skipped items with reasons.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkApproveResult' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/assignments/{assignmentId}/bulk-rerun:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    post:
+      operationId: BLK-02
+      tags: [Bulk actions]
+      summary: Re-run AI grading for manual-review items
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkRerunRequest' }
+      responses:
+        '202':
+          description: Batch started.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Progress' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/assignments/{assignmentId}/bulk-regrade:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    post:
+      operationId: BLK-03
+      tags: [Bulk actions]
+      summary: Re-grade approved submissions in bulk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkRegradeRequest' }
+      responses:
+        '202':
+          description: Batch started, with skipped items and reasons.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchAccepted' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/assignments/{assignmentId}/progress:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    get:
+      operationId: BLK-04
+      tags: [Bulk actions]
+      summary: Progress of a batch (re-grade, re-run, or bulk approve)
+      parameters:
+        - { name: batchId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Batch progress.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Progress' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/review-queue:
+    get:
+      operationId: REV-01
+      tags: [Review queue]
+      summary: List the review queue
+      parameters:
+        - { name: classId, in: query, schema: { type: string, format: uuid } }
+        - { name: assignmentId, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [AI_GENERATED, NEEDS_MANUAL_REVIEW, PENDING_REGRADE] } }
+        - { name: sort, in: query, schema: { type: string, enum: [flagged, submittedAt, late], default: flagged } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc], default: asc } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: One page of review items.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageOfReviewQueueItem' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/review-queue/count:
+    get:
+      operationId: REV-02
+      tags: [Review queue]
+      summary: Review queue counts for the header badge
+      responses:
+        '200':
+          description: Counts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewCount' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/assignments/{assignmentId}/tracker:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    get:
+      operationId: TRK-01
+      tags: [Tracker and gradebook]
+      summary: Assignment submission tracker
+      parameters:
+        - { name: status, in: query, schema: { type: string }, description: "Comma-separated instructor display states." }
+        - { name: criteriaChanged, in: query, schema: { type: boolean } }
+        - { name: q, in: query, schema: { type: string, maxLength: 120 } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: Tracker counts, class statistics, and rows.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tracker' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/assignments/{assignmentId}/export.csv:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    get:
+      operationId: TRK-02
+      tags: [Tracker and gradebook]
+      summary: Export the assignment as CSV (UTF-8 with BOM)
+      responses:
+        '200':
+          description: CSV file.
+          content:
+            text/csv; charset=utf-8:
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/classes/{classId}/gradebook:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    get:
+      operationId: TRK-03
+      tags: [Tracker and gradebook]
+      summary: Gradebook (students by assignments)
+      parameters:
+        - { name: labelId, in: query, schema: { type: string, format: uuid } }
+        - { name: includeArchived, in: query, schema: { type: boolean, default: false } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: Columns and one page of student rows.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Gradebook' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/classes/{classId}/gradebook.csv:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    get:
+      operationId: TRK-04
+      tags: [Tracker and gradebook]
+      summary: Gradebook as CSV (UTF-8 with BOM)
+      parameters:
+        - { name: labelId, in: query, schema: { type: string, format: uuid } }
+        - { name: includeArchived, in: query, schema: { type: boolean, default: false } }
+      responses:
+        '200':
+          description: CSV file.
+          content:
+            text/csv; charset=utf-8:
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/assignments/{assignmentId}/stats:
+    parameters:
+      - { $ref: '#/components/parameters/AssignmentId' }
+    get:
+      operationId: TRK-05
+      tags: [Tracker and gradebook]
+      summary: Class statistics for an assignment (approved scores only)
+      responses:
+        '200':
+          description: Average (percent) and count, hidden below five graded submissions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClassStats' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/classes/{classId}/announcements:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    get:
+      operationId: ANN-01
+      tags: [Announcements]
+      summary: List announcements (Could)
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: One page of announcements, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageOfAnnouncement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: ANN-02
+      tags: [Announcements]
+      summary: Post an announcement with an optional attachment (Could)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/AnnouncementCreate' }
+      responses:
+        '201':
+          description: Posted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Announcement' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/FileTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedFile' }
+
+  /api/announcements/{announcementId}:
+    parameters:
+      - { name: announcementId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: ANN-03
+      tags: [Announcements]
+      summary: Delete an announcement and its files completely
+      responses:
+        '204': { description: "Deleted." }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/notifications:
+    get:
+      operationId: NTF-01
+      tags: [Notifications]
+      summary: List my notifications, newest first
+      parameters:
+        - { name: unreadOnly, in: query, schema: { type: boolean, default: false } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: One page of notifications.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageOfNotification' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/notifications/{notificationId}/read:
+    parameters:
+      - { name: notificationId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: NTF-02
+      tags: [Notifications]
+      summary: Mark one notification read (idempotent)
+      responses:
+        '204': { description: "Marked read." }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/notifications/read-all:
+    post:
+      operationId: NTF-03
+      tags: [Notifications]
+      summary: Mark all my notifications read
+      responses:
+        '200':
+          description: Count marked.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadAllResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/notifications/unread-count:
+    get:
+      operationId: NTF-04
+      tags: [Notifications]
+      summary: Unread notification count (polled)
+      responses:
+        '200':
+          description: Count.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnreadCount' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/admin/users:
+    get:
+      operationId: ADM-01
+      tags: [Admin]
+      summary: List users (metadata only)
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 120 } }
+        - { name: role, in: query, schema: { type: string, enum: [STUDENT, INSTRUCTOR, SUPER_ADMIN] } }
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, SUSPENDED, TOMBSTONE] } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: One page of users.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageOfAdminUser' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/admin/users/{userId}:
+    parameters:
+      - { $ref: '#/components/parameters/UserId' }
+    get:
+      operationId: ADM-02
+      tags: [Admin]
+      summary: Get a user (metadata only)
+      responses:
+        '200':
+          description: User with class memberships (metadata).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: ADM-05
+      tags: [Admin]
+      summary: Delete a user (same path as the student or instructor deletion)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TypedConfirmation' }
+      responses:
+        '204': { description: "Deleted." }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/admin/users/{userId}/suspend:
+    parameters:
+      - { $ref: '#/components/parameters/UserId' }
+    post:
+      operationId: ADM-03
+      tags: [Admin]
+      summary: Suspend a user (optional reason; user is emailed)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspendRequest' }
+      responses:
+        '200':
+          description: Suspended.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/admin/users/{userId}/reinstate:
+    parameters:
+      - { $ref: '#/components/parameters/UserId' }
+    post:
+      operationId: ADM-04
+      tags: [Admin]
+      summary: Reinstate a suspended user (idempotent; user is emailed)
+      responses:
+        '200':
+          description: Reinstated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/admin/classes:
+    get:
+      operationId: ADM-06
+      tags: [Admin]
+      summary: List classes (metadata only)
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 120 } }
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, ARCHIVED] } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: One page of classes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageOfAdminClass' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/admin/classes/{classId}/archive:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    post:
+      operationId: ADM-07
+      tags: [Admin]
+      summary: Archive a class (admin, idempotent)
+      responses:
+        '200':
+          description: Archived.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminClass' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/admin/classes/{classId}:
+    parameters:
+      - { $ref: '#/components/parameters/ClassId' }
+    delete:
+      operationId: ADM-08
+      tags: [Admin]
+      summary: Delete a class (admin; instructor and approved students notified)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TypedConfirmation' }
+      responses:
+        '204': { description: "Deleted." }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/admin/health:
+    get:
+      operationId: ADM-09
+      tags: [Admin]
+      summary: Platform health (counts and rates only)
+      parameters:
+        - { name: window, in: query, schema: { type: string, enum: ['24h', '7d'], default: '24h' } }
+      responses:
+        '200':
+          description: Health figures.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminHealth' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/admin/audit:
+    get:
+      operationId: ADM-10
+      tags: [Admin]
+      summary: Audit log (append-only, read-only here)
+      parameters:
+        - { name: action, in: query, schema: { type: string } }
+        - { name: targetType, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: One page of audit entries, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageOfAuditEntry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /healthz:
+    get:
+      operationId: SYS-01
+      tags: [System]
+      summary: Health check (outside /api; no internals)
+      security: []
+      responses:
+        '200':
+          description: Healthy.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: Degraded (database check failed).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: eg_session
+      description: Opaque session token. Set by sign-in; HttpOnly, Secure, SameSite=Lax.
+
+  parameters:
+    ClassId:
+      name: classId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AssignmentId:
+      name: assignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SubmissionId:
+      name: submissionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    VersionId:
+      name: versionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ClientFileId:
+      name: clientFileId
+      in: path
+      required: true
+      description: Browser-generated idempotency key for one file in a version.
+      schema: { type: string, minLength: 8, maxLength: 64 }
+    FileId:
+      name: fileId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    StudentId:
+      name: studentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from the previous page's nextCursor.
+      schema: { type: string, maxLength: 512 }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+
+  responses:
+    Unauthorized:
+      description: No valid session (UNAUTHENTICATED) or the session was revoked.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: ACCOUNT_SUSPENDED, ENROLLMENT_PENDING, JOIN_BLOCKED, INSTRUCTOR_CANNOT_JOIN, or CSRF_ORIGIN.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: NOT_FOUND. Also INVALID_JOIN_CODE. Identical for missing items and items the caller cannot access.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Validation:
+      description: VALIDATION. The fields object maps JSON paths to messages.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: 409 with a specific code (CONFLICT, ATTEMPTS_EXHAUSTED, LATE_CLOSED, LOCKED_APPROVED, EMAIL_TAKEN, and others).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unprocessable:
+      description: 422 with a specific code (CONFIRMATION_REQUIRED, KEY_INVALID, KEY_MISSING, FILE_LIMIT, and others).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: RATE_LIMITED.
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+          description: Seconds until the caller may retry.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PayloadTooLarge:
+      description: PAYLOAD_TOO_LARGE (JSON body over 100 KB).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UnsupportedMediaType:
+      description: UNSUPPORTED_MEDIA_TYPE (wrong Content-Type for this endpoint).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    FileTooLarge:
+      description: FILE_TOO_LARGE (one file over 10 MiB).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UnsupportedFile:
+      description: FILE_TYPE (not PDF, JPEG, PNG, or HEIC by content).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    FileError:
+      description: FILE_ERROR (password-protected or corrupt). For upload endpoints, details.file carries the FAILED file view.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unavailable:
+      description: SERVICE_UNAVAILABLE or PROVIDER_UNAVAILABLE. Nothing was saved.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Internal:
+      description: INTERNAL. No detail is returned; use X-Request-Id when reporting.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    ErrorCode:
+      type: string
+      description: The complete catalog from api-spec.md A4. Clients must handle unknown codes with the generic message.
+      enum:
+        - UNAUTHENTICATED
+        - INVALID_CREDENTIALS
+        - VALIDATION
+        - PASSWORD_INCORRECT
+        - TOKEN_INVALID
+        - CONFIRMATION_MISMATCH
+        - CONFIRMATION_REQUIRED
+        - CONFIRMATION_STALE
+        - ACCOUNT_SUSPENDED
+        - ENROLLMENT_PENDING
+        - JOIN_BLOCKED
+        - INSTRUCTOR_CANNOT_JOIN
+        - CSRF_ORIGIN
+        - NOT_FOUND
+        - INVALID_JOIN_CODE
+        - EMAIL_TAKEN
+        - CONFLICT
+        - LOCKED_APPROVED
+        - ATTEMPTS_EXHAUSTED
+        - LATE_CLOSED
+        - FORMAT_LOCKED
+        - CLASS_ARCHIVED
+        - GRADE_PENDING_EXISTS
+        - NOT_REGRADABLE
+        - UPLOAD_NOT_OPEN
+        - UPLOAD_INCOMPLETE
+        - ALREADY_APPROVED
+        - LABEL_EXISTS
+        - FILE_TYPE
+        - UNSUPPORTED_MEDIA_TYPE
+        - PAYLOAD_TOO_LARGE
+        - FILE_TOO_LARGE
+        - FILE_LIMIT
+        - FILE_ERROR
+        - KEY_INVALID
+        - KEY_API_DISABLED
+        - KEY_QUOTA
+        - KEY_MISSING
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - PROVIDER_UNAVAILABLE
+        - INTERNAL
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code: { $ref: '#/components/schemas/ErrorCode' }
+            message: { type: string, description: "For logs and developers. Not shown to users except where the code's row says so." }
+            requestId: { type: string }
+            fields:
+              type: object
+              description: Present for VALIDATION and CONFIRMATION_REQUIRED only.
+              additionalProperties: { type: string }
+            details:
+              type: object
+              description: Typed per code (for example details.remaining, details.limit, details.currentState).
+              additionalProperties: true
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+
+    EmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+
+    SignupRequest:
+      type: object
+      required: [email, password, firstName, lastName, role, acceptTerms, termsVersion]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        password: { type: string, minLength: 10, maxLength: 256 }
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        role: { type: string, enum: [STUDENT, INSTRUCTOR] }
+        acceptTerms: { type: boolean, const: true }
+        termsVersion: { type: string, maxLength: 32 }
+
+    SigninRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        password: { type: string, maxLength: 256 }
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token: { type: string, minLength: 20, maxLength: 200 }
+        newPassword: { type: string, minLength: 10, maxLength: 256 }
+
+    VerifyEmailRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, minLength: 20, maxLength: 200 }
+
+    EmailVerified:
+      type: object
+      required: [emailVerified]
+      properties:
+        emailVerified: { type: boolean, const: true }
+
+    PendingRoleRequest:
+      type: object
+      required: [role, firstName, lastName, acceptTerms, termsVersion]
+      properties:
+        role: { type: string, enum: [STUDENT, INSTRUCTOR] }
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        acceptTerms: { type: boolean, const: true }
+        termsVersion: { type: string, maxLength: 32 }
+
+    Me:
+      type: object
+      required: [id, email, firstName, lastName, role, emailVerified, hasPassword, suspended]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        firstName: { type: string }
+        lastName: { type: string }
+        role: { type: string, enum: [STUDENT, INSTRUCTOR, SUPER_ADMIN] }
+        emailVerified: { type: boolean }
+        hasPassword: { type: boolean }
+        suspended: { type: boolean, const: false }
+        preferences: { $ref: '#/components/schemas/Preferences' }
+
+    ProfileUpdate:
+      type: object
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+      additionalProperties: false
+
+    PasswordChange:
+      type: object
+      required: [newPassword]
+      properties:
+        currentPassword: { type: string, description: "Required when the account has a password." }
+        newPassword: { type: string, minLength: 10, maxLength: 256 }
+
+    DeleteAccountRequest:
+      type: object
+      required: [confirmation]
+      properties:
+        password: { type: string, description: "Required when the account has one." }
+        confirmation: { type: string, const: DELETE }
+
+    DeletionImpact:
+      type: object
+      properties:
+        role: { type: string, enum: [STUDENT, INSTRUCTOR] }
+        classesArchived: { type: integer, minimum: 0 }
+        studentsNotified: { type: integer, minimum: 0 }
+        keyDeleted: { type: boolean }
+        submissionsDeleted: { type: integer, minimum: 0 }
+        filesDeleted: { type: integer, minimum: 0 }
+
+    Preferences:
+      type: object
+      required: [emailCategories]
+      properties:
+        emailCategories:
+          type: object
+          properties:
+            grading: { type: boolean }
+            joins: { type: boolean }
+            announcements: { type: boolean }
+            account: { type: boolean, description: "Always true; not accepted on write." }
+          additionalProperties: false
+
+    KeyStatus:
+      type: object
+      required: [connected]
+      properties:
+        connected: { type: boolean }
+        status:
+          type: [string, 'null']
+          enum: [CONNECTED, NEEDS_ATTENTION, QUOTA_REACHED, null]
+        last4: { type: [string, 'null'], minLength: 4, maxLength: 4 }
+        lastSuccessAt: { type: [string, 'null'], format: date-time }
+        disclosureAckAt: { type: [string, 'null'], format: date-time }
+
+    KeySaveRequest:
+      type: object
+      required: [apiKey]
+      properties:
+        apiKey: { type: string, minLength: 20, maxLength: 200, writeOnly: true }
+        disclosureAcknowledged: { type: boolean, description: "Must be true on the first save (FR-KEY-04)." }
+
+    ClassCreate:
+      type: object
+      required: [name, attestation]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+        section: { type: string, maxLength: 60 }
+        subject: { type: string, maxLength: 60 }
+        room: { type: string, maxLength: 60 }
+        attestation:
+          type: object
+          required: [confirmed]
+          properties:
+            confirmed: { type: boolean, const: true }
+
+    ClassSummary:
+      type: object
+      required: [id, name, status]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        section: { type: [string, 'null'] }
+        subject: { type: [string, 'null'] }
+        room: { type: [string, 'null'] }
+        status: { type: string, enum: [ACTIVE, ARCHIVED] }
+        instructorName: { type: string, description: "First name and last initial (API-1, proposed)." }
+        joinCode: { type: string, description: "Instructor only." }
+        joinLink: { type: string, description: "Instructor only." }
+        joinCodeActive: { type: boolean }
+        requireApproval: { type: boolean, description: "Instructor only." }
+        enrollment:
+          type: object
+          description: The caller's own enrollment (students).
+          properties:
+            status: { type: string, enum: [ACTIVE, PENDING, DECLINED, REMOVED] }
+        counts:
+          type: object
+          description: Instructor only.
+          properties:
+            approved: { type: integer }
+            pending: { type: integer }
+            declined: { type: integer }
+            removed: { type: integer }
+
+    PageOfClassSummary:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ClassSummary' } }
+        nextCursor: { type: [string, 'null'] }
+
+    ClassUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+        section: { type: string, maxLength: 60 }
+        subject: { type: string, maxLength: 60 }
+        room: { type: string, maxLength: 60 }
+      additionalProperties: false
+
+    ClassSettings:
+      type: object
+      required: [requireApproval]
+      properties:
+        requireApproval: { type: boolean }
+
+    ClassSettingsResult:
+      type: object
+      required: [requireApproval, pendingCount]
+      properties:
+        requireApproval: { type: boolean }
+        pendingCount: { type: integer, minimum: 0 }
+
+    TypedConfirmation:
+      type: object
+      required: [confirmation]
+      properties:
+        confirmation:
+          type: string
+          description: Must equal the name the dialog asks for (class name, assignment title, or the literal DELETE for a user).
+
+    ClassDeletionImpact:
+      type: object
+      properties:
+        students: { type: integer, minimum: 0 }
+        approvedStudents: { type: integer, minimum: 0 }
+        pendingStudents: { type: integer, minimum: 0 }
+        assignments: { type: integer, minimum: 0 }
+        submissions: { type: integer, minimum: 0 }
+        files: { type: integer, minimum: 0 }
+        gradebookCsvPath: { type: string }
+
+    JoinRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, minLength: 8, maxLength: 8 }
+
+    JoinResult:
+      type: object
+      required: [classId, className, status]
+      properties:
+        classId: { type: string, format: uuid }
+        className: { type: string }
+        status: { type: string, enum: [ACTIVE, PENDING, DECLINED] }
+
+    JoinPreview:
+      type: object
+      required: [className, instructorFirstName, requireApproval]
+      properties:
+        className: { type: string }
+        instructorFirstName: { type: string }
+        requireApproval: { type: boolean }
+
+    EnrollmentSummary:
+      type: object
+      required: [classId, className, status]
+      properties:
+        classId: { type: string, format: uuid }
+        className: { type: string }
+        status: { type: string, enum: [ACTIVE, PENDING, DECLINED] }
+        instructorName: { type: string }
+        archived: { type: boolean }
+        joinedAt: { type: string, format: date-time }
+
+    PageOfEnrollmentSummary:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/EnrollmentSummary' } }
+        nextCursor: { type: [string, 'null'] }
+
+    EnrollmentView:
+      type: object
+      required: [id, student, status]
+      properties:
+        id: { type: string, format: uuid }
+        student:
+          type: object
+          required: [id, displayName]
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+            email: { type: string, format: email, description: "Owning instructor only (PRD §11)." }
+        status: { type: string, enum: [PENDING, ACTIVE, DECLINED, REMOVED] }
+        joinedAt: { type: string, format: date-time }
+        decidedAt: { type: [string, 'null'], format: date-time }
+
+    PeoplePage:
+      type: object
+      required: [counts, items, nextCursor]
+      properties:
+        counts:
+          type: object
+          required: [approved, pending, declined, removed]
+          properties:
+            approved: { type: integer, minimum: 0 }
+            pending: { type: integer, minimum: 0 }
+            declined: { type: integer, minimum: 0 }
+            removed: { type: integer, minimum: 0 }
+        items: { type: array, items: { $ref: '#/components/schemas/EnrollmentView' } }
+        nextCursor: { type: [string, 'null'] }
+
+    EnrollmentDecisionRequest:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [APPROVE, DECLINE, REVERSE, REMOVE] }
+
+    ApproveAllResult:
+      type: object
+      required: [approvedCount]
+      properties:
+        approvedCount: { type: integer, minimum: 0 }
+
+    AssignmentSummary:
+      type: object
+      required: [id, title, dueAt, timezone, status, scoringFormat, maxScore, maxResubmissions, acceptLate, criteriaVersion]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        dueAt: { type: string, format: date-time }
+        timezone: { type: string }
+        label:
+          type: [object, 'null']
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
+        scoringFormat: { type: string, enum: [POINTS, PERCENTAGE, LETTER_NUMERIC] }
+        maxScore: { type: number, minimum: 0, maximum: 1000 }
+        maxResubmissions: { type: [integer, 'null'], minimum: 0, maximum: 10, description: "Null means Unlimited." }
+        acceptLate: { type: boolean }
+        criteriaVersion: { type: integer, minimum: 1 }
+        my:
+          type: object
+          description: Students only.
+          properties:
+            state: { $ref: '#/components/schemas/DisplayState' }
+            attemptsLeft: { type: [integer, 'null'], minimum: 0 }
+            isLate: { type: boolean }
+        counts:
+          type: object
+          description: Instructors only.
+          properties:
+            turnedIn: { type: integer, minimum: 0 }
+            late: { type: integer, minimum: 0 }
+            missing: { type: integer, minimum: 0 }
+            notYetDue: { type: integer, minimum: 0 }
+            needsReview: { type: integer, minimum: 0 }
+
+    PageOfAssignmentSummary:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AssignmentSummary' } }
+        nextCursor: { type: [string, 'null'] }
+
+    AssignmentDetail:
+      allOf:
+        - $ref: '#/components/schemas/AssignmentSummary'
+        - type: object
+          properties:
+            instructions: { type: [string, 'null'] }
+            criteriaText: { type: string }
+            letterScale:
+              type: [array, 'null']
+              items:
+                type: object
+                required: [letter, min]
+                properties:
+                  letter: { type: string }
+                  min: { type: number }
+            referenceFiles:
+              type: array
+              items: { $ref: '#/components/schemas/ReferenceFileView' }
+            warnings:
+              type: array
+              description: Returned by ASG-06 only. Codes DUE_IN_PAST and NO_VALID_KEY.
+              items: { type: string }
+
+    AssignmentInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        instructions: { type: string, maxLength: 5000 }
+        criteriaText: { type: string, maxLength: 5000, description: "Required to publish; may be empty on a draft." }
+        dueAt: { type: string, format: date-time, description: "A placeholder (seven days ahead) is used on a draft until set." }
+        timezone: { type: string, maxLength: 64, description: "IANA zone name." }
+        scoringFormat: { type: string, enum: [POINTS, PERCENTAGE, LETTER_NUMERIC] }
+        maxScore: { type: number, exclusiveMinimum: 0, maximum: 1000 }
+        letterScale:
+          type: array
+          items:
+            type: object
+            required: [letter, min]
+            properties:
+              letter: { type: string }
+              min: { type: number }
+        maxResubmissions: { type: [integer, 'null'], minimum: 0, maximum: 10 }
+        acceptLate: { type: boolean }
+        labelId: { type: string, format: uuid }
+
+    AssignmentPatch:
+      allOf:
+        - $ref: '#/components/schemas/AssignmentInput'
+        - type: object
+          properties:
+            impactToken:
+              type: string
+              description: Required when criteriaText or the reference-file set changes (api-spec A6).
+
+    CriteriaImpactRequest:
+      type: object
+      required: [changesCriteria, changesReferenceFiles]
+      properties:
+        changesCriteria: { type: boolean }
+        changesReferenceFiles: { type: boolean }
+
+    CriteriaImpact:
+      type: object
+      required: [unapprovedCount, approvedCount, pendingRegradeCount, impactToken, impactExpiresAt]
+      properties:
+        unapprovedCount: { type: integer, minimum: 0 }
+        approvedCount: { type: integer, minimum: 0 }
+        pendingRegradeCount: { type: integer, minimum: 0 }
+        impactToken: { type: string }
+        impactExpiresAt: { type: string, format: date-time }
+
+    LabelInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 60 }
+
+    Label:
+      type: object
+      required: [id, name, assignmentCount]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        assignmentCount: { type: integer, minimum: 0 }
+
+    LabelList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Label' } }
+
+    ReferenceUpload:
+      type: object
+      required: [file, impactToken]
+      properties:
+        file: { type: string, format: binary, description: "One PDF, JPEG, or PNG, at most 10 MiB, checked by content." }
+        impactToken: { type: string }
+
+    ReferenceFileView:
+      type: object
+      required: [id, ordinal, label, mimeType, sizeBytes, visibleToStudents]
+      properties:
+        id: { type: string, format: uuid }
+        ordinal: { type: integer, minimum: 1, maximum: 3 }
+        label: { type: string, description: "Reference file N (API-2)." }
+        mimeType: { type: string }
+        sizeBytes: { type: integer, minimum: 1 }
+        visibleToStudents: { type: boolean }
+
+    ReferenceFileVisibility:
+      type: object
+      required: [visibleToStudents]
+      properties:
+        visibleToStudents: { type: boolean }
+
+    FileUrl:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+
+    DisplayState:
+      type: string
+      description: Student-facing state. Causes and internal states never appear here (api-spec A5).
+      enum: [NOT_SUBMITTED, UPLOADING, GRADING, AWAITING_REVIEW, AI_GENERATED, INSTRUCTOR_APPROVED]
+
+    FileView:
+      type: object
+      required: [id, ordinal, displayName, mimeType, sizeBytes, status]
+      properties:
+        id: { type: string, format: uuid }
+        ordinal: { type: integer, minimum: 1, maximum: 10 }
+        displayName: { type: string }
+        mimeType: { type: [string, 'null'] }
+        sizeBytes: { type: [integer, 'null'], minimum: 1 }
+        pageCount: { type: [integer, 'null'], minimum: 1, maximum: 20 }
+        status: { type: string, enum: [STORED, FAILED] }
+        failureCode: { type: [string, 'null'], enum: [TYPE, SIZE, PAGES, PASSWORD, CORRUPT, null] }
+
+    VersionView:
+      type: object
+      required: [id, versionNo, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        versionNo: { type: integer, minimum: 1 }
+        status: { type: string, enum: [UPLOADING, STORED, REPLACED] }
+        createdAt: { type: string, format: date-time }
+        storedAt: { type: [string, 'null'], format: date-time }
+
+    GradeView:
+      type: object
+      required: [source, score, maxScore, scoringFormat, feedback, chip]
+      properties:
+        source: { type: string, enum: [AI, INSTRUCTOR] }
+        score: { type: number, minimum: 0 }
+        maxScore: { type: number }
+        scoringFormat: { type: string, enum: [POINTS, PERCENTAGE, LETTER_NUMERIC] }
+        letter: { type: [string, 'null'] }
+        percentage: { type: [integer, 'null'], minimum: 0, maximum: 100 }
+        feedback: { type: string }
+        chip: { type: string, description: "Token name from the UX Brief (for example status-ai)." }
+
+    StudentSubmission:
+      type: object
+      required: [state, isLate, closed, attemptsLeft, unlimited, files]
+      properties:
+        state: { $ref: '#/components/schemas/DisplayState' }
+        isLate: { type: boolean }
+        closed: { type: boolean }
+        attemptsLeft: { type: [integer, 'null'], minimum: 0 }
+        unlimited: { type: boolean }
+        firstSubmittedAt: { type: [string, 'null'], format: date-time }
+        latestSubmittedAt: { type: [string, 'null'], format: date-time }
+        files: { type: array, items: { $ref: '#/components/schemas/FileView' } }
+        grade:
+          oneOf:
+            - $ref: '#/components/schemas/GradeView'
+            - type: 'null'
+        instructorComment: { type: [string, 'null'], maxLength: 2000 }
+        draftVersion:
+          oneOf:
+            - $ref: '#/components/schemas/VersionView'
+            - type: 'null'
+
+    FinalizeRequest:
+      type: object
+      required: [expectedFileIds]
+      properties:
+        expectedFileIds:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { type: string, minLength: 8, maxLength: 64 }
+
+    InstructorSubmission:
+      type: object
+      required: [id, state, assignment, student, attemptsLeft, resubmissionsUsed, extraAttempts, lateAllowed, criteriaChanged, files]
+      properties:
+        id: { type: string, format: uuid }
+        state:
+          type: [string, 'null']
+          enum: [QUEUED, GRADING, AI_GENERATED, NEEDS_MANUAL_REVIEW, INSTRUCTOR_APPROVED, null]
+        manualReviewCause:
+          type: [string, 'null']
+          enum: [AI_FAILED, KEY_MISSING, KEY_INVALID, KEY_QUOTA, FILE_QUALITY, null]
+        assignment:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+            dueAt: { type: string, format: date-time }
+            scoringFormat: { type: string }
+            maxScore: { type: number }
+        student:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+        isLate: { type: boolean }
+        firstSubmittedAt: { type: [string, 'null'], format: date-time }
+        latestSubmittedAt: { type: [string, 'null'], format: date-time }
+        attemptsLeft: { type: [integer, 'null'], minimum: 0 }
+        resubmissionsUsed: { type: integer, minimum: 0 }
+        extraAttempts: { type: integer, minimum: 0 }
+        lateAllowed: { type: boolean }
+        criteriaChanged: { type: boolean }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        approvedBy:
+          type: [object, 'null']
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+        activeGrade:
+          oneOf:
+            - $ref: '#/components/schemas/GradeView'
+            - type: 'null'
+        pendingRegrade:
+          oneOf:
+            - $ref: '#/components/schemas/GradeView'
+            - type: 'null'
+        instructorComment: { type: [string, 'null'], maxLength: 2000 }
+        files: { type: array, items: { $ref: '#/components/schemas/FileView' } }
+        reviewHistory:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/ReviewActionView' }
+
+    ReviewActionView:
+      type: object
+      required: [action, actor, createdAt]
+      properties:
+        action:
+          type: string
+          enum: [APPROVE, REOPEN, MANUAL_GRADE, GRANT_ATTEMPTS, ALLOW_LATE, REGRADE_REQUEST, REGRADE_APPROVE, REGRADE_KEEP_PREVIOUS]
+        actor: { type: object, properties: { id: { type: string, format: uuid }, displayName: { type: string } } }
+        aiScore: { type: [number, 'null'] }
+        finalScore: { type: [number, 'null'] }
+        editClass:
+          type: [string, 'null']
+          enum: [edit_free, score_only, feedback_only, both, null]
+        attemptsGranted: { type: [integer, 'null'] }
+        lateAllowed: { type: [boolean, 'null'] }
+        createdAt: { type: string, format: date-time }
+
+    ApproveRequest:
+      type: object
+      properties:
+        score: { type: number, minimum: 0 }
+        feedback: { type: string, maxLength: 4000 }
+        instructorComment: { type: string, maxLength: 2000 }
+
+    ReopenRequest:
+      type: object
+      properties:
+        grantAttempts: { type: integer, minimum: 1, maximum: 10 }
+
+    GrantAttemptsRequest:
+      type: object
+      required: [count]
+      properties:
+        count: { type: integer, minimum: 1, maximum: 10 }
+
+    GrantAttemptsResult:
+      type: object
+      required: [attemptsLeft, extraAttempts]
+      properties:
+        attemptsLeft: { type: [integer, 'null'], minimum: 0 }
+        extraAttempts: { type: integer, minimum: 0 }
+
+    AllowLateResult:
+      type: object
+      required: [lateAllowed]
+      properties:
+        lateAllowed: { type: boolean, const: true }
+
+    SubmissionAccepted:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string }
+        pendingRegrade: { type: boolean }
+
+    RegradeApproveRequest:
+      type: object
+      properties:
+        score: { type: number, minimum: 0 }
+        feedback: { type: string, maxLength: 4000 }
+        instructorComment: { type: string, maxLength: 2000 }
+
+    CommentRequest:
+      type: object
+      required: [comment]
+      properties:
+        comment:
+          type: [string, 'null']
+          maxLength: 2000
+          description: null clears the comment.
+
+    ManualGradeRequest:
+      type: object
+      required: [score, feedback]
+      properties:
+        score: { type: number, minimum: 0 }
+        feedback: { type: string, minLength: 1, maxLength: 4000 }
+        instructorComment: { type: string, maxLength: 2000 }
+
+    BulkApproveRequest:
+      type: object
+      required: [submissionIds, confirmedCount]
+      properties:
+        submissionIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { type: string, format: uuid }
+        confirmedCount: { type: integer, minimum: 1 }
+
+    BulkApproveResult:
+      type: object
+      required: [approvedCount, skipped]
+      properties:
+        approvedCount: { type: integer, minimum: 0 }
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [submissionId, reason]
+            properties:
+              submissionId: { type: string, format: uuid }
+              reason: { type: string, enum: [EDITED, NOT_AI_GENERATED, NOT_OWNED] }
+
+    BulkRerunRequest:
+      type: object
+      properties:
+        scope: { type: string, enum: [NEEDS_MANUAL_REVIEW] }
+        submissionIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { type: string, format: uuid }
+
+    BulkRegradeRequest:
+      type: object
+      properties:
+        scope: { type: string, enum: [CRITERIA_CHANGED] }
+        submissionIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { type: string, format: uuid }
+
+    BatchAccepted:
+      type: object
+      required: [batchId, total, skipped]
+      properties:
+        batchId: { type: string, format: uuid }
+        total: { type: integer, minimum: 0 }
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [submissionId, reason]
+            properties:
+              submissionId: { type: string, format: uuid }
+              reason: { type: string, enum: [NOT_APPROVED, PENDING_EXISTS] }
+
+    Progress:
+      type: object
+      required: [kind, total, done, state]
+      properties:
+        batchId: { type: string, format: uuid }
+        kind: { type: string, enum: [REGRADE, RERUN, BULK_APPROVE] }
+        total: { type: integer, minimum: 0 }
+        done: { type: integer, minimum: 0 }
+        state: { type: string, enum: [RUNNING, DONE, PAUSED_QUOTA] }
+        updatedAt: { type: string, format: date-time }
+
+    ReviewQueueItem:
+      type: object
+      required: [submissionId, class, assignment, student, state, pendingRegrade, isLate, criteriaChanged]
+      properties:
+        submissionId: { type: string, format: uuid }
+        class: { type: object, properties: { id: { type: string, format: uuid }, name: { type: string } } }
+        assignment: { type: object, properties: { id: { type: string, format: uuid }, title: { type: string } } }
+        student: { type: object, properties: { displayName: { type: string } } }
+        state: { type: string, enum: [AI_GENERATED, NEEDS_MANUAL_REVIEW, INSTRUCTOR_APPROVED], description: "INSTRUCTOR_APPROVED only for a re-grade awaiting review (pendingRegrade true)." }
+        manualReviewCause: { type: [string, 'null'] }
+        pendingRegrade: { type: boolean }
+        isLate: { type: boolean }
+        latestSubmittedAt: { type: [string, 'null'], format: date-time }
+        criteriaChanged: { type: boolean }
+
+    PageOfReviewQueueItem:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ReviewQueueItem' } }
+        nextCursor: { type: [string, 'null'] }
+
+    ReviewCount:
+      type: object
+      required: [total, needsReview, pendingRegrade]
+      properties:
+        total: { type: integer, minimum: 0 }
+        needsReview: { type: integer, minimum: 0 }
+        pendingRegrade: { type: integer, minimum: 0 }
+
+    TrackerRow:
+      type: object
+      required: [student, displayState, isLate, criteriaChanged]
+      properties:
+        submissionId: { type: [string, 'null'], format: uuid }
+        student: { type: object, properties: { id: { type: string, format: uuid }, displayName: { type: string } } }
+        displayState:
+          type: string
+          enum: [NOT_SUBMITTED, MISSING, NOT_YET_DUE, GRADING, NEEDS_REVIEW, AI_GENERATED, INSTRUCTOR_APPROVED]
+        score: { type: [number, 'null'] }
+        maxScore: { type: number }
+        letter: { type: [string, 'null'] }
+        isLate: { type: boolean }
+        attemptsLeft: { type: [integer, 'null'], minimum: 0 }
+        criteriaChanged: { type: boolean }
+        latestSubmittedAt: { type: [string, 'null'], format: date-time }
+        manualReviewCause: { type: [string, 'null'] }
+
+    ClassStats:
+      type: object
+      required: [average, unit, gradedCount, minimumGraded, hidden]
+      properties:
+        average: { type: [number, 'null'], minimum: 0, maximum: 100 }
+        unit: { type: string, enum: [percent] }
+        gradedCount: { type: integer, minimum: 0 }
+        minimumGraded: { type: integer, const: 5 }
+        hidden: { type: boolean, description: "True below five graded submissions." }
+
+    Tracker:
+      type: object
+      required: [assignment, classStats, counts, items, nextCursor]
+      properties:
+        assignment:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+            dueAt: { type: string, format: date-time }
+            maxScore: { type: number }
+            scoringFormat: { type: string }
+        classStats: { $ref: '#/components/schemas/ClassStats' }
+        counts:
+          type: object
+          required: [turnedIn, late, missing, notYetDue, needsReview]
+          properties:
+            turnedIn: { type: integer, minimum: 0 }
+            late: { type: integer, minimum: 0 }
+            missing: { type: integer, minimum: 0 }
+            notYetDue: { type: integer, minimum: 0 }
+            needsReview: { type: integer, minimum: 0 }
+            submissions: { type: integer, minimum: 0, description: "Total, used for the deletion confirmation." }
+        items: { type: array, items: { $ref: '#/components/schemas/TrackerRow' } }
+        nextCursor: { type: [string, 'null'] }
+
+    Gradebook:
+      type: object
+      required: [columns, items, nextCursor]
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            required: [assignmentId, title, scoringFormat, maxScore, archived]
+            properties:
+              assignmentId: { type: string, format: uuid }
+              title: { type: string }
+              label: { type: [string, 'null'] }
+              scoringFormat: { type: string }
+              maxScore: { type: number }
+              archived: { type: boolean }
+        items:
+          type: array
+          items:
+            type: object
+            required: [student, cells]
+            properties:
+              student: { type: object, properties: { id: { type: string, format: uuid }, displayName: { type: string } } }
+              cells:
+                type: array
+                items:
+                  type: object
+                  required: [assignmentId, displayState]
+                  properties:
+                    assignmentId: { type: string, format: uuid }
+                    displayState: { type: string }
+                    score: { type: [number, 'null'] }
+                    letter: { type: [string, 'null'] }
+        nextCursor: { type: [string, 'null'] }
+
+    Announcement:
+      type: object
+      required: [id, title, body, createdAt, author, files]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        author: { type: object, properties: { displayName: { type: string } } }
+        files:
+          type: array
+          items:
+            type: object
+            required: [id, label, mimeType, sizeBytes]
+            properties:
+              id: { type: string, format: uuid }
+              label: { type: string, description: "Attachment N (API-2)." }
+              mimeType: { type: string }
+              sizeBytes: { type: integer, minimum: 1 }
+
+    PageOfAnnouncement:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Announcement' } }
+        nextCursor: { type: [string, 'null'] }
+
+    AnnouncementCreate:
+      type: object
+      required: [title, body]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, maxLength: 5000 }
+        file: { type: string, format: binary, description: "Optional; one PDF, JPEG, or PNG, at most 10 MiB." }
+
+    Notification:
+      type: object
+      required: [id, type, title, link, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [SUBMISSION_GRADED, GRADE_APPROVED, SUBMISSION_AWAITING_REVIEW, NEEDS_MANUAL_REVIEW_INSTRUCTOR, NEEDS_MANUAL_REVIEW_STUDENT, KEY_NEEDS_ATTENTION, REGRADE_COMPLETE, SUBMISSION_REOPENED, JOIN_REQUEST_RECEIVED, JOIN_DECIDED, ATTEMPTS_GRANTED, LATE_ALLOWED, ASSIGNMENT_PUBLISHED, DUE_DATE_CHANGED, CLASS_DELETED, INSTRUCTOR_ACCOUNT_DELETED, ACCOUNT_STATUS_CHANGED, RETENTION_NOTICE, ANNOUNCEMENT_POSTED]
+        title: { type: string }
+        body: { type: [string, 'null'] }
+        link: { type: string, pattern: '^/(?!/)' }
+        readAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    PageOfNotification:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Notification' } }
+        nextCursor: { type: [string, 'null'] }
+
+    ReadAllResult:
+      type: object
+      required: [marked]
+      properties:
+        marked: { type: integer, minimum: 0 }
+
+    UnreadCount:
+      type: object
+      required: [count]
+      properties:
+        count: { type: integer, minimum: 0 }
+
+    AdminUser:
+      type: object
+      required: [id, email, firstName, lastName, role, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        role: { type: string, enum: [STUDENT, INSTRUCTOR, SUPER_ADMIN] }
+        status: { type: string, enum: [ACTIVE, SUSPENDED, TOMBSTONE] }
+        createdAt: { type: string, format: date-time }
+        classCount: { type: integer, minimum: 0 }
+
+    AdminUserDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminUser'
+        - type: object
+          properties:
+            classes:
+              type: array
+              description: Metadata only.
+              items:
+                type: object
+                required: [id, name, role]
+                properties:
+                  id: { type: string, format: uuid }
+                  name: { type: string }
+                  role: { type: string }
+
+    PageOfAdminUser:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminUser' } }
+        nextCursor: { type: [string, 'null'] }
+
+    SuspendRequest:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 500 }
+
+    AdminClass:
+      type: object
+      required: [id, name, instructor, studentCount, assignmentCount, status]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        instructor: { type: object, properties: { id: { type: string, format: uuid }, displayName: { type: string } } }
+        studentCount: { type: integer, minimum: 0 }
+        assignmentCount: { type: integer, minimum: 0 }
+        status: { type: string, enum: [ACTIVE, ARCHIVED] }
+        archivedAt: { type: [string, 'null'], format: date-time }
+
+    PageOfAdminClass:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminClass' } }
+        nextCursor: { type: [string, 'null'] }
+
+    AdminHealth:
+      type: object
+      required: [window, gradingSuccessRate, manualReviewRate, keyQuotaErrorRate, queueDepth]
+      properties:
+        window: { type: string, enum: ['24h', '7d'] }
+        gradingSuccessRate: { type: number, minimum: 0, maximum: 1 }
+        manualReviewRate:
+          type: object
+          properties:
+            total: { type: number, minimum: 0, maximum: 1 }
+            byCause:
+              type: object
+              additionalProperties: { type: number, minimum: 0, maximum: 1 }
+        keyQuotaErrorRate: { type: number, minimum: 0, maximum: 1 }
+        queueDepth:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+
+    AuditEntry:
+      type: object
+      required: [id, action, target, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        actor: { type: [object, 'null'], properties: { id: { type: string, format: uuid }, role: { type: string } } }
+        action: { type: string }
+        target:
+          type: object
+          required: [type]
+          properties:
+            type: { type: string }
+            id: { type: [string, 'null'], format: uuid }
+        reason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+
+    PageOfAuditEntry:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AuditEntry' } }
+        nextCursor: { type: [string, 'null'] }
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        time: { type: string, format: date-time }
