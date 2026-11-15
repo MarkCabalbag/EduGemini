@@ -680,7 +680,7 @@ Each endpoint has the same fields:
 - **Access:** owning instructor; the Super Admin uses ADM-07.
 - **FR:** FR-CLS-06.
 - **Response:** `200` `ClassSummary` with `status: ARCHIVED`. Archiving an archived class returns `200` with the same body (idempotent, A11).
-- **Effects:** the class becomes read-only for everyone. The review queue excludes its items (Backend Schema open question 3). Students keep read access (FR-CLS-06).
+- **Effects:** the class becomes read-only for everyone: the approval switch and the member routes (PPL-02, PPL-03) answer `CLASS_ARCHIVED`, and its join code reads as invalid. Archiving again does not move `archived_at`. The review queue excludes its items (Backend Schema open question 3). Students keep read access (FR-CLS-06).
 - **Test:** `class.spec`.
 
 #### CLS-06 · Restore class
@@ -688,7 +688,7 @@ Each endpoint has the same fields:
 - **Access:** owning instructor.
 - **FR:** FR-CLS-06.
 - **Response:** `200` `ClassSummary` with `status: ACTIVE`. Idempotent.
-- **Effects:** writes are allowed again. Retention clocks are not reset until the class is archived again, so a restore cancels nothing already sent. (Retention notices already sent stay sent.)
+- **Effects:** writes are allowed again. Restore clears `archived_at` and `retention_notice_at`, and archiving again starts a new 12-month clock. A retention notice already sent stays sent.
 - **Test:** `class.spec`.
 
 #### CLS-07 · Delete class
@@ -798,7 +798,7 @@ Each endpoint has the same fields:
   | `REMOVE` | `ACTIVE` | `REMOVED` |
 
 - **Response:** `200` `EnrollmentView`.
-- **Errors:** `CONFLICT` (409) with `details.currentState` when the transition is not allowed.
+- **Errors:** `CONFLICT` (409) with `details.currentState` when the transition is not allowed; `CLASS_ARCHIVED` (409) when the class is archived (it is read-only, FR-CLS-06).
 - **Effects:**
   - `APPROVE` and `DECLINE` create `JOIN_DECIDED` for the student (with the class name).
   - `REMOVE` creates no notification (the PRD matrix has none). The student's submissions leave the queue and tracker because the status is no longer `ACTIVE` (derived).
@@ -811,7 +811,7 @@ Each endpoint has the same fields:
 - **Access:** owning instructor.
 - **FR:** FR-CLS-07.
 - **Response:** `200` `{ approvedCount }`.
-- **Errors:** `CONFLICT` when join approval is still on (the action is only for after it is turned off, Backend Schema §6.2).
+- **Errors:** `CONFLICT` when join approval is still on (the action is only for after it is turned off, Backend Schema §6.2); `CLASS_ARCHIVED` (409) when the class is archived.
 - **Effects:** every pending row becomes `ACTIVE`, and each student gets `JOIN_DECIDED`. Runs in one transaction; for large classes it is processed in batches of 200 with the same final result.
 - **Test:** `class.spec`.
 ### B.6 Assignments and labels (12 endpoints)

@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ClassPage, ClassSummary, CreateClass, EnrolledPage, Join, JoinPreview, JoinResult } from '@edugemini/shared';
+import type { ClassPage, ClassStatus, ClassSummary, CreateClass, EnrolledPage, Join, JoinPreview, JoinResult } from '@edugemini/shared';
 import { api } from '../lib/api';
 
 export const classKeys = {
@@ -10,12 +10,17 @@ export const classKeys = {
 
 const enrollmentsKey = ['enrollments'] as const;
 
-/** The instructor's own active classes, one page at a time (API Spec CLS-01). */
-export function useClasses() {
+/** The instructor's own classes, active ones unless archived are asked for, one page at a time (API Spec CLS-01). */
+export function useClasses(status: ClassStatus = 'ACTIVE') {
   return useInfiniteQuery({
-    queryKey: classKeys.lists(),
+    queryKey: [...classKeys.lists(), status],
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => api<ClassPage>(pageParam ? `/classes?cursor=${encodeURIComponent(pageParam)}` : '/classes'),
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams();
+      if (status === 'ARCHIVED') query.set('status', status);
+      if (pageParam) query.set('cursor', pageParam);
+      return api<ClassPage>(`/classes${query.size > 0 ? `?${query}` : ''}`);
+    },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 }
@@ -46,6 +51,15 @@ export function useJoinClass() {
   return useMutation({
     mutationFn: (input: Join) => api<JoinResult>('/join', { method: 'POST', body: input }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: enrollmentsKey }),
+  });
+}
+
+/** Archive (true) or restore (false) a class (API Spec CLS-05, CLS-06). The class and every list of classes are read again. */
+export function useArchiveClass(classId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (archive: boolean) => api<ClassSummary>(`/classes/${classId}/${archive ? 'archive' : 'restore'}`, { method: 'POST' }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: classKeys.all }),
   });
 }
 

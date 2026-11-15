@@ -536,6 +536,115 @@ describe('a student lists their classes (API Spec JOIN-03)', () => {
   });
 });
 
+describe('archive and restore a class (API Spec CLS-05, CLS-06)', () => {
+  const post = (cookie: string | undefined, classId: string, action: 'archive' | 'restore') => {
+    const req = request(build()).post(`/api/classes/${classId}/${action}`).set('Origin', APP_URL);
+    return cookie ? req.set('Cookie', cookie) : req;
+  };
+  const stored = (classId: string) => db.class.findUniqueOrThrow({ where: { id: classId } });
+  const LONG_AGO = new Date('2026-01-01T00:00:00.000Z');
+
+  it('archives the class and keeps its code and link; the class leaves the default list and shows when archived classes are asked for', async () => {
+    const { user, cookie } = await signedInUser('archive-owner', 'INSTRUCTOR');
+    const klass = await seed(user.id);
+
+    const res = await post(cookie, klass.id, 'archive');
+
+    expect(res.status).toBe(200);
+    expect(ClassSummarySchema.parse(res.body)).toMatchObject({ id: klass.id, status: 'ARCHIVED', joinCode: klass.joinCode });
+    expect((await stored(klass.id)).archivedAt).not.toBeNull();
+    const active = ClassPageSchema.parse((await get(build(), cookie, '/classes')).body);
+    const archived = ClassPageSchema.parse((await get(build(), cookie, '/classes?status=ARCHIVED')).body);
+    expect(active.items).toEqual([]);
+    expect(archived.items.map((c) => c.id)).toEqual([klass.id]);
+  });
+
+  it('archiving an archived class changes nothing, so the archive date does not move', async () => {
+    const klass = await seed(owner.user.id, { archivedAt: LONG_AGO });
+
+    const res = await post(owner.cookie, klass.id, 'archive');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ARCHIVED');
+    expect((await stored(klass.id)).archivedAt).toEqual(LONG_AGO);
+  });
+
+  it('restores the class, and clears the retention notice with the archive date', async () => {
+    const noticeAt = new Date('2026-12-01T00:00:00.000Z');
+    const klass = await seed(owner.user.id, { archivedAt: LONG_AGO, retentionNoticeAt: noticeAt });
+
+    const res = await post(owner.cookie, klass.id, 'restore');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ACTIVE');
+    expect(await stored(klass.id)).toMatchObject({ archivedAt: null, retentionNoticeAt: null });
+  });
+
+  it('restoring an active class changes nothing', async () => {
+    const klass = await seed(owner.user.id);
+
+    const res = await post(owner.cookie, klass.id, 'restore');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ACTIVE');
+    expect((await stored(klass.id)).archivedAt).toBeNull();
+  });
+
+  it('stops the join code while archived and brings it back on restore', async () => {
+    const klass = await seed(owner.user.id);
+    const join = async (cookie: string) =>
+      request(build()).post('/api/join').set('Origin', APP_URL).set('Cookie', cookie).send({ code: klass.joinCode });
+    const first = await signedInUser('archive-join-1', 'STUDENT');
+    const second = await signedInUser('archive-join-2', 'STUDENT');
+
+    await post(owner.cookie, klass.id, 'archive');
+    const whileArchived = await join(first.cookie);
+    await post(owner.cookie, klass.id, 'restore');
+    const afterRestore = await join(second.cookie);
+
+    expect(whileArchived.status).toBe(404);
+    expect(whileArchived.body.error.code).toBe('INVALID_JOIN_CODE');
+    expect(afterRestore.status).toBe(201);
+  });
+
+  it('keeps an approved student in the class, read-only, and in their Enrolled list marked archived', async () => {
+    const klass = await seed(owner.user.id);
+    const { cookie } = await enrolled('archive-student', klass.id, 'ACTIVE');
+
+    await post(owner.cookie, klass.id, 'archive');
+
+    expect((await get(build(), cookie, `/classes/${klass.id}`)).body.status).toBe('ARCHIVED');
+    const list = EnrolledPageSchema.parse((await get(build(), cookie, '/me/enrollments')).body);
+    expect(list.items).toMatchObject([{ classId: klass.id, status: 'ACTIVE', archived: true }]);
+  });
+
+  it.each(['archive', 'restore'] as const)('is NOT_FOUND to another instructor, a student and a missing class on %s, and changes nothing', async (action) => {
+    const klass = await seed(owner.user.id, action === 'restore' ? { archivedAt: LONG_AGO } : {});
+    const before = (await stored(klass.id)).archivedAt;
+
+    const answers = [
+      await post(other.cookie, klass.id, action),
+      await post(student.cookie, klass.id, action),
+      await post(owner.cookie, randomUUID(), action),
+    ];
+
+    for (const res of answers) {
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('NOT_FOUND');
+    }
+    expect((await stored(klass.id)).archivedAt).toEqual(before);
+  });
+
+  it.each(['archive', 'restore'] as const)('needs a session and a class id on %s', async (action) => {
+    const klass = await seed(owner.user.id);
+
+    expect((await post(undefined, klass.id, action)).status).toBe(401);
+    const bad = await post(owner.cookie, 'not-an-id', action);
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('VALIDATION');
+  });
+});
+
 describe('join a class by code (API Spec JOIN-01)', () => {
   const join = (app: TestApp, cookie: string, code: unknown) =>
     request(app).post('/api/join').set('Origin', APP_URL).set('Cookie', cookie).send({ code });

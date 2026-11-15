@@ -5,7 +5,7 @@ import { refuseInstructor, requireAction } from '../middleware/authorize';
 import { limiters } from '../middleware/rate-limit';
 import { requireAuth } from '../middleware/session';
 import { validate, validated } from '../middleware/validate';
-import { createClass, getClass, joinClass, listClasses, listEnrollments } from '../services/class-service';
+import { archiveClass, createClass, getClass, joinClass, listClasses, listEnrollments, restoreClass } from '../services/class-service';
 
 type ClassDeps = { db: PrismaClient; appUrl: string };
 
@@ -17,8 +17,9 @@ const one = { params: ClassParamsSchema };
 const join = { body: JoinSchema };
 
 /**
- * Create, list and get a class, join one by code, and a student's Enrolled list (API Spec CLS-01 to CLS-03, JOIN-01,
- * JOIN-03). The join link preview is in join-link.ts. Needs the session, so it is mounted after loadSession.
+ * Create, list, get, archive and restore a class, join one by code, and a student's Enrolled list (API Spec CLS-01 to
+ * CLS-03, CLS-05, CLS-06, JOIN-01, JOIN-03). The join link preview is in join-link.ts. Needs the session, so it is mounted
+ * after loadSession.
  * The role check comes first on every route but get-one, so a role that cannot use them cannot tell they exist. The
  * services check again, and decide whether a class is the caller's own.
  */
@@ -53,6 +54,16 @@ export function classesRouter({ db, appUrl }: ClassDeps): Router {
   router.get('/classes/:classId', requireAuth, validate(one), async (req, res) => {
     const { params } = validated(res, one);
     res.json(await getClass(db, req.auth!.user, params.classId, appUrl));
+  });
+
+  router.post('/classes/:classId/archive', requireAuth, requireAction('class.list'), validate(one), async (req, res) => {
+    const { params } = validated(res, one);
+    res.json(await archiveClass(db, req.auth!.user, params.classId, appUrl));
+  });
+
+  router.post('/classes/:classId/restore', requireAuth, requireAction('class.list'), validate(one), async (req, res) => {
+    const { params } = validated(res, one);
+    res.json(await restoreClass(db, req.auth!.user, params.classId, appUrl));
   });
 
   // The limit comes after validation, so a code of the wrong length does not use up an attempt.

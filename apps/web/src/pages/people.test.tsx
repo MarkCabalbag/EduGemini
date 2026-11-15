@@ -32,6 +32,7 @@ const ENDS: Record<Decision['action'], EnrollmentStatus> = { APPROVE: 'ACTIVE', 
 let calls: Call[];
 let rows: Row[];
 let requireApproval: boolean;
+let archived: boolean;
 let pageSize: number;
 let decisionFailure: Response | undefined;
 let decisionGate: Promise<void> | undefined; // a decision waits for this, so a test can look at the screen while the request runs
@@ -43,6 +44,7 @@ beforeEach(() => {
   calls = [];
   rows = [MAYA, BEN, LIA, ZED].map((row) => ({ ...row }));
   requireApproval = true;
+  archived = false;
   pageSize = 100;
   decisionFailure = undefined;
   decisionGate = undefined;
@@ -66,7 +68,7 @@ beforeEach(() => {
           section: null,
           subject: null,
           room: null,
-          status: 'ACTIVE',
+          status: archived ? 'ARCHIVED' : 'ACTIVE',
           joinCode: 'K7M2PQ9X',
           joinLink: 'http://localhost:5173/join/K7M2PQ9X',
           joinCodeActive: true,
@@ -451,5 +453,41 @@ describe('people: join approval', () => {
 
     expect((await screen.findByRole('alert')).textContent).toContain('This class is archived and read-only.');
     expect((screen.getByLabelText(switchLabel) as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe('people: an archived class', () => {
+  const switchLabel = 'Require approval to join';
+
+  it('is read-only: the switch is disabled, and no list offers an action, or "Approve all pending"', async () => {
+    archived = true;
+    requireApproval = false; // with students waiting, "Approve all pending" would be offered on an active class
+    rows = [MAYA, LIA, ZED, OLA].map((row) => ({ ...row }));
+    const user = userEvent.setup();
+    openPeople();
+
+    expect((await screen.findByLabelText(switchLabel) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Approve all pending' })).toBeNull();
+
+    const lists = [
+      ['Pending (1)', 'Maya Cruz', 'Approve Maya Cruz'],
+      ['Approved (1)', 'Lia Tan', 'Remove Lia Tan'],
+      ['Declined (1)', 'Zed Park', 'Reverse Zed Park'],
+      ['Removed (1)', 'Ola Reyes', 'Reinstate Ola Reyes'],
+    ] as const;
+    for (const [tab, student, action] of lists) {
+      await user.click(screen.getByRole('button', { name: tab }));
+      expect(await screen.findByText(student)).toBeTruthy(); // the list is still readable
+      expect(screen.queryByRole('button', { name: action })).toBeNull();
+    }
+  });
+
+  it('does not offer the class code to share when nobody has joined', async () => {
+    archived = true;
+    rows = [];
+    openPeople();
+
+    expect(await screen.findByText('No approved students yet.')).toBeTruthy();
+    expect(screen.queryByLabelText('Class code')).toBeNull();
   });
 });

@@ -275,6 +275,68 @@ describe('approve all pending (API Spec PPL-03)', () => {
   });
 });
 
+describe('an archived class is read-only (API Spec PPL-02, PPL-03, EG-CLS-10)', () => {
+  const statusOf = async (id: string) => (await db.enrollment.findUniqueOrThrow({ where: { id } })).status;
+
+  it.each([
+    ['APPROVE', 'PENDING'],
+    ['DECLINE', 'PENDING'],
+    ['REMOVE', 'ACTIVE'],
+    ['REVERSE', 'DECLINED'],
+    ['REVERSE', 'REMOVED'],
+  ] as const)('refuses %s on a %s student with CLASS_ARCHIVED, and changes nothing', async (action, from) => {
+    const klass = await seedClass({ archivedAt: new Date() });
+    const row = await enroll(klass.id, from);
+
+    const res = await decide(row.id, action);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CLASS_ARCHIVED');
+    expect(await statusOf(row.id)).toBe(from);
+  });
+
+  it('refuses approve all pending, and approves nobody', async () => {
+    const klass = await seedClass({ archivedAt: new Date() });
+    const row = await enroll(klass.id, 'PENDING');
+
+    const res = await approveAll(klass.id);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CLASS_ARCHIVED');
+    expect(await statusOf(row.id)).toBe('PENDING');
+  });
+
+  it('still lists the people, with their counts', async () => {
+    const klass = await seedClass({ archivedAt: new Date() });
+    await enroll(klass.id, 'ACTIVE');
+
+    const res = await people(klass.id);
+
+    expect(res.status).toBe(200);
+    expect(PeoplePageSchema.parse(res.body).counts).toMatchObject({ approved: 1 });
+  });
+
+  it('works again once the class is restored', async () => {
+    const klass = await seedClass({ archivedAt: new Date() });
+    const row = await enroll(klass.id, 'PENDING');
+
+    await db.class.update({ where: { id: klass.id }, data: { archivedAt: null } });
+
+    expect((await decide(row.id, 'APPROVE')).status).toBe(200);
+    expect(await statusOf(row.id)).toBe('ACTIVE');
+  });
+
+  it('does not tell another instructor the class is archived: it is NOT_FOUND', async () => {
+    const klass = await seedClass({ archivedAt: new Date() });
+    const row = await enroll(klass.id, 'PENDING');
+
+    const res = await decide(row.id, 'APPROVE', other.cookie);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+});
+
 describe('a removed student (EG-CLS-09)', () => {
   /** An approved student with a session of their own. */
   async function approved(classId: string) {

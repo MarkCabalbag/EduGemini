@@ -508,6 +508,7 @@ Layout notes:
 - Remove asks first, in a `ConfirmDialog` (Section 10.2) that names the student and the class and says their submissions are kept and they can be reinstated. Reinstate, Approve, Decline and Reverse do not ask.
 - "Approve all pending" appears only after the approval toggle is turned off with pending students still waiting (App Flow 4, step 4).
 - Shows name and email only (PRD Section 11).
+- On an archived class People is read-only: the toggle is disabled and the lists show no actions.
 
 **Announcements (Could, layout notes)**
 - Stream, newest first. A composer at the top with title, body, and optional attachment.
@@ -517,6 +518,7 @@ Layout notes:
 - Code and join link in `CopyField` components, each with a Copy button.
 - "Regenerate code" and "Disable code" in a card labeled Class code; both use confirm dialogs explaining that members are unaffected.
 - "Edit class details" opens a dialog. "Archive class" and "Delete class" are in a separate Danger zone card at the bottom.
+- "Archive class" asks first, in a `ConfirmDialog`: the class becomes read-only, students can still open it and see their work, the class code stops working, and it can be restored. On an archived class the card offers "Restore class" instead, which does not ask.
 - The first-run prompts (App Flow 4, step 1) appear as a short checklist card above the code, dismissible.
 
 **Create class (layout notes)**
@@ -653,7 +655,7 @@ Error pages never show stack traces, error codes, or the names of internal servi
 - Submit buttons stay enabled; the error explains what is missing. Disabled buttons are used only for the upload Submit (with a reason shown beside it).
 
 ### 10.2 Destructive actions
-- Delete, remove student, delete class, delete assignment, and delete account use `ConfirmDialog`.
+- Delete, remove student, archive class, delete class, delete assignment, and delete account use `ConfirmDialog`.
 - The dialog states the consequence with counts where the PRD requires them ("This removes 28 students' submissions and 3 assignments.").
 - Typed confirmation is required for: class deletion (class name), account deletion (`DELETE`), and assignment deletion (assignment name). Other confirmations are a plain "Remove" button with the destructive style.
 - The destructive button is never the default focused button in the dialog.

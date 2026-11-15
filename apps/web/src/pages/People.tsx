@@ -33,11 +33,12 @@ const ORDER: EnrollmentStatus[] = ['PENDING', 'ACTIVE', 'DECLINED', 'REMOVED'];
 
 const errorCode = (error: unknown) => (error instanceof ApiRequestError ? error.code : 'INTERNAL');
 
-/** The join approval switch, and the offer to approve everyone who is still waiting once approval is off. */
+/** The join approval switch, and the offer to approve everyone who is still waiting once approval is off. Read-only once archived. */
 function JoinApproval({ cls, pending }: { cls: ClassSummary; pending: number }) {
   const settings = useClassSettings(cls.id);
   const approveAll = useApprovePending(cls.id);
   const requireApproval = cls.requireApproval ?? false;
+  const archived = cls.status === 'ARCHIVED';
 
   return (
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
@@ -46,11 +47,11 @@ function JoinApproval({ cls, pending }: { cls: ClassSummary; pending: number }) 
         label="Require approval to join"
         helper="Turning this on doesn't change students who are already approved."
         checked={requireApproval}
-        disabled={settings.isPending}
+        disabled={settings.isPending || archived}
         onChange={(event) => settings.mutate(event.target.checked)}
       />
       {settings.isError && <Alert>{errorText(errorCode(settings.error))}</Alert>}
-      {!requireApproval && pending > 0 && (
+      {!requireApproval && pending > 0 && !archived && (
         <div className="space-y-4">
           <Alert variant="info">
             {pending === 1 ? '1 student is' : `${pending} students are`} still waiting for approval. Turning approval off does not approve them.
@@ -65,9 +66,13 @@ function JoinApproval({ cls, pending }: { cls: ClassSummary; pending: number }) 
   );
 }
 
-/** The students in one state, with the actions for that state. Removing asks first; every other action goes straight through. */
+/**
+ * The students in one state, with the actions for that state, none once the class is archived. Removing asks first;
+ * every other action goes straight through.
+ */
 function PeopleList({ cls, status }: { cls: ClassSummary; status: EnrollmentStatus }) {
   const list = LISTS[status];
+  const actions = cls.status === 'ARCHIVED' ? [] : list.actions;
   const people = usePeople(cls.id, status);
   const decision = useDecision(cls.id);
   const [removing, setRemoving] = useState<EnrollmentView>();
@@ -88,7 +93,7 @@ function PeopleList({ cls, status }: { cls: ClassSummary; status: EnrollmentStat
               <p className="break-all text-muted">{row.student.email}</p>
             </div>
             <div className="flex gap-2">
-              {list.actions.map(({ action, label }) => (
+              {actions.map(({ action, label }) => (
                 <Button
                   key={action}
                   variant={action === 'APPROVE' ? 'primary' : 'secondary'}
@@ -137,7 +142,7 @@ export function People({ cls }: { cls: ClassSummary }) {
   return (
     <div className="space-y-6">
       <JoinApproval cls={cls} pending={counts.pending} />
-      {nobody && cls.joinCode && cls.joinLink ? (
+      {nobody && cls.status === 'ACTIVE' && cls.joinCode && cls.joinLink ? (
         <EmptyState
           icon={Users}
           action={

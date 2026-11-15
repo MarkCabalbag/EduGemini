@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, screen } from '@testing-library/react';
+import { cleanup, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ClassSummary, EnrollmentSummary, Me } from '@edugemini/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -63,8 +63,9 @@ let calls: Call[];
 let me: Me;
 let classes: ClassSummary[];
 let enrolledResult: (cursor: string | null) => Response;
-let listResult: (cursor: string | null) => Response;
+let listResult: (cursor: string | null, status: string | null) => Response;
 let getResult: (classId: string) => Response;
+let changeResult: (classId: string, action: 'archive' | 'restore') => Response;
 let createResult: (body: CreateBody) => Response;
 let joinResult: () => Response;
 
@@ -74,10 +75,18 @@ beforeEach(() => {
   me = signedInAs('INSTRUCTOR');
   classes = [];
   enrolledResult = () => Response.json({ items: [], nextCursor: null });
-  listResult = () => Response.json({ items: classes, nextCursor: null });
+  // Like the API: active classes unless archived ones are asked for.
+  listResult = (_cursor, status) =>
+    Response.json({ items: classes.filter((c) => c.status === (status === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE')), nextCursor: null });
   getResult = (classId) => {
     const found = classes.find((c) => c.id === classId);
     return found ? Response.json(found) : failure(404, 'NOT_FOUND');
+  };
+  changeResult = (classId, action) => {
+    const found = classes.find((c) => c.id === classId);
+    if (!found) return failure(404, 'NOT_FOUND');
+    found.status = action === 'archive' ? 'ARCHIVED' : 'ACTIVE';
+    return Response.json(found);
   };
   createResult = (body) => {
     const created = aClass({ name: body.name, section: body.section || null });
@@ -100,8 +109,11 @@ beforeEach(() => {
         return enrolledResult(new URL(path, 'http://x').searchParams.get('cursor'));
       }
       if (method === 'GET' && (path === '/classes' || path.startsWith('/classes?'))) {
-        return listResult(new URL(path, 'http://x').searchParams.get('cursor'));
+        const { searchParams } = new URL(path, 'http://x');
+        return listResult(searchParams.get('cursor'), searchParams.get('status'));
       }
+      const change = /^\/classes\/([^/?]+)\/(archive|restore)$/.exec(path);
+      if (method === 'POST' && change) return changeResult(change[1] ?? '', change[2] as 'archive' | 'restore');
       const one = /^\/classes\/([^/?]+)$/.exec(path);
       if (method === 'GET' && one) return getResult(one[1] ?? '');
       return failure(404, 'NOT_FOUND');
@@ -192,6 +204,41 @@ describe('instructor dashboard', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }));
 
     expect(await screen.findByRole('link', { name: 'Back again' })).toBeTruthy();
+  });
+
+  it('lists archived classes, marked Archived, when "Show archived" is on, and active ones again when it is off', async () => {
+    classes = [aClass({ name: 'Current' }), aClass({ name: 'Old class', status: 'ARCHIVED' })];
+    const user = userEvent.setup();
+    renderAt('/classes');
+
+    expect(await screen.findByRole('link', { name: 'Current' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Old class/ })).toBeNull();
+
+    await user.click(screen.getByLabelText('Show archived'));
+
+    const old = await screen.findByRole('link', { name: /Old class/ });
+    expect(old.textContent).toContain('Archived');
+    expect(screen.queryByRole('link', { name: 'Current' })).toBeNull();
+    expect(callsTo('GET', '/classes?status=ARCHIVED')).toHaveLength(1);
+
+    await user.click(screen.getByLabelText('Show archived'));
+    expect(await screen.findByRole('link', { name: 'Current' })).toBeTruthy();
+  });
+
+  it('keeps "Show archived" for an instructor whose only class is archived, and says when none are archived', async () => {
+    classes = [aClass({ name: 'Old class', status: 'ARCHIVED' })];
+    const user = userEvent.setup();
+    renderAt('/classes');
+
+    expect(await screen.findByText('No classes yet. Create one to share a code with your students.')).toBeTruthy();
+    await user.click(screen.getByLabelText('Show archived'));
+    expect(await screen.findByRole('link', { name: /Old class/ })).toBeTruthy();
+
+    classes = [];
+    await user.click(screen.getByLabelText('Show archived')); // off, then on again
+    await user.click(screen.getByLabelText('Show archived'));
+    expect(await screen.findByText('No archived classes.')).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: 'Create class' })).toHaveLength(1); // the header one; no empty-state prompt
   });
 
   it('shows a student a welcome and the join box, and never asks for classes', async () => {
@@ -606,6 +653,73 @@ describe('class page', () => {
 
     expect(await screen.findByRole('heading', { name: /couldn.t find that page/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  describe('archive and restore', () => {
+    const archiveCalls = (cls: ClassSummary) => callsTo('POST', `/classes/${cls.id}/archive`);
+
+    it('asks first, then archives: the page shows the Archived chip, offers Restore, and no longer offers the code', async () => {
+      const cls = aClass({ name: 'Physics' });
+      classes = [cls];
+      const user = userEvent.setup();
+      renderAt(`/classes/${cls.id}`);
+
+      await user.click(await screen.findByRole('button', { name: 'Archive class' }));
+      expect(archiveCalls(cls)).toHaveLength(0); // it asked, and has not archived yet
+      const dialog = screen.getByRole('dialog', { name: 'Archive Physics?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Archive class' }));
+
+      expect(await screen.findByRole('button', { name: 'Restore class' })).toBeTruthy();
+      expect(archiveCalls(cls)).toHaveLength(1);
+      expect(screen.getByText('Archived')).toBeTruthy();
+      expect(screen.queryByLabelText('Class code')).toBeNull(); // an archived class's code does not work
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('archives nothing when the instructor cancels', async () => {
+      const cls = aClass({ name: 'Physics' });
+      classes = [cls];
+      const user = userEvent.setup();
+      renderAt(`/classes/${cls.id}`);
+
+      await user.click(await screen.findByRole('button', { name: 'Archive class' }));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(archiveCalls(cls)).toHaveLength(0);
+      expect(screen.getByRole('button', { name: 'Archive class' })).toBeTruthy();
+    });
+
+    it('restores an archived class without asking, and the code comes back', async () => {
+      const cls = aClass({ name: 'Physics', status: 'ARCHIVED' });
+      classes = [cls];
+      const user = userEvent.setup();
+      renderAt(`/classes/${cls.id}`);
+
+      expect(await screen.findByText('Archived')).toBeTruthy();
+      expect(screen.queryByLabelText('Class code')).toBeNull();
+      await user.click(screen.getByRole('button', { name: 'Restore class' }));
+
+      expect(await screen.findByRole('button', { name: 'Archive class' })).toBeTruthy();
+      expect(callsTo('POST', `/classes/${cls.id}/restore`)).toHaveLength(1);
+      expect(screen.queryByText('Archived')).toBeNull();
+      expect((screen.getByLabelText('Class code') as HTMLInputElement).value).toBe('K7M2PQ9X');
+    });
+
+    it('says what went wrong when archiving fails, and the class stays as it was', async () => {
+      const cls = aClass({ name: 'Physics' });
+      classes = [cls];
+      changeResult = () => failure(500, 'INTERNAL');
+      const user = userEvent.setup();
+      renderAt(`/classes/${cls.id}`);
+
+      await user.click(await screen.findByRole('button', { name: 'Archive class' }));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Archive class' }));
+
+      expect((await screen.findByRole('alert')).textContent).toContain('Something went wrong on our side.');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Archive class' })).toBeTruthy();
+    });
   });
 
   it('says what went wrong and lets the user try again', async () => {

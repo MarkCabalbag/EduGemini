@@ -188,6 +188,30 @@ export async function getClass(db: PrismaClient, actor: Actor, classId: string, 
   return toClassSummary(row, appUrl, await enrollmentCounts(db, row.id));
 }
 
+/** Stops unless the class is the caller's to archive. Someone else's class looks the same as a missing one (API Spec A3). */
+async function authorizeArchive(db: PrismaClient, actor: Actor, classId: string) {
+  const row = await db.class.findUnique({ where: { id: classId }, select: { instructorId: true } });
+  if (!row) throw new AppError('NOT_FOUND');
+  authorize(actor, 'class.archive', { classInstructorId: row.instructorId });
+}
+
+/**
+ * Archive a class: read-only for everyone (API Spec CLS-05). Archiving an archived class changes nothing, so the date
+ * stays where it was and the retention clock is not extended.
+ */
+export async function archiveClass(db: PrismaClient, actor: Actor, classId: string, appUrl: string): Promise<ClassSummary> {
+  await authorizeArchive(db, actor, classId);
+  await db.class.updateMany({ where: { id: classId, archivedAt: null }, data: { archivedAt: new Date() } });
+  return toClassSummary(await db.class.findUniqueOrThrow({ where: { id: classId } }), appUrl);
+}
+
+/** Restore an archived class (API Spec CLS-06). The notice date goes with the archive date: the database allows no notice without one. */
+export async function restoreClass(db: PrismaClient, actor: Actor, classId: string, appUrl: string): Promise<ClassSummary> {
+  await authorizeArchive(db, actor, classId);
+  await db.class.updateMany({ where: { id: classId, archivedAt: { not: null } }, data: { archivedAt: null, retentionNoticeAt: null } });
+  return toClassSummary(await db.class.findUniqueOrThrow({ where: { id: classId } }), appUrl);
+}
+
 /** The student's own classes, newest joined first, whatever the status except removed (API Spec JOIN-03). */
 export async function listEnrollments(db: PrismaClient, actor: Actor, query: EnrolledQuery): Promise<EnrolledPage> {
   authorize(actor, 'class.listEnrolled');
