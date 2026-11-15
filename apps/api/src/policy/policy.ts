@@ -26,9 +26,10 @@ type Access =
 /** One row per row of the PRD §5.1 matrix. A role that is not listed may never do the action. */
 const POLICY = {
   'class.create': { INSTRUCTOR: 'any' },
-  // "View own classes and class details". The approved-student half (`member`, `any`) is added with the join tickets.
-  'class.view': { INSTRUCTOR: 'ownClass' }, // one class
-  'class.list': { INSTRUCTOR: 'any' }, // the caller's own classes
+  // "View own classes and class details".
+  'class.view': { INSTRUCTOR: 'ownClass', STUDENT: 'member' }, // one class
+  'class.list': { INSTRUCTOR: 'any' }, // the instructor's own classes. Routes also use it as the instructors-only role check
+  'class.listEnrolled': { STUDENT: 'any' }, // the student's own enrollments, whatever their status (the Enrolled list)
   'class.join': { STUDENT: 'any' },
   'class.manageMembers': { INSTRUCTOR: 'ownClass' }, // approve, decline, remove; remove a student
   'class.regenerateCode': { INSTRUCTOR: 'ownClass' }, // regenerate or disable the code

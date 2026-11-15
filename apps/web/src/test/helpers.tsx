@@ -4,8 +4,11 @@ import { MemoryRouter } from 'react-router';
 import { App } from '../App';
 
 /** An API error answer, in the envelope shape of API Spec A4. */
-export const failure = (status: number, code: string, fields?: object) =>
-  Response.json({ error: { code, message: code, requestId: 'r', ...(fields ? { fields } : {}) } }, { status });
+export const failure = (status: number, code: string, fields?: object, details?: object) =>
+  Response.json(
+    { error: { code, message: code, requestId: 'r', ...(fields ? { fields } : {}), ...(details ? { details } : {}) } },
+    { status },
+  );
 
 /** Renders the whole app at an address. Queries never retry, so a failure shows at once. */
 export function renderAt(path: string) {

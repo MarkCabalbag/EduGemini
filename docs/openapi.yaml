@@ -2098,7 +2098,7 @@ components:
         subject: { type: [string, 'null'] }
         room: { type: [string, 'null'] }
         status: { type: string, enum: [ACTIVE, ARCHIVED] }
-        instructorName: { type: string, description: "First name and last initial (API-1, proposed)." }
+        instructorName: { type: string, description: "Students only: first name and last initial (API-1, UX D-U4)." }
         joinCode: { type: string, description: "Instructor only." }
         joinLink: { type: string, description: "Instructor only." }
         joinCodeActive: { type: boolean }

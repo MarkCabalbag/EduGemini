@@ -54,6 +54,7 @@ beforeEach(() => {
       if (path === '/auth/signin') return signInResult();
       if (path === '/auth/signup') return signUpResult();
       if (path === '/auth/signout') return signOutResult();
+      if (path === '/me/enrollments') return Response.json({ items: [], nextCursor: null }); // a student's dashboard asks for it
       return failure(404, 'NOT_FOUND');
     }),
   );

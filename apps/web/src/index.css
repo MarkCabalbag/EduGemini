@@ -21,6 +21,10 @@
   --status-error-fg: #991b1b;
   --status-info-bg: #e0f2fe;
   --status-info-fg: #075985;
+  --status-approved-bg: #dcfce7;
+  --status-approved-fg: #166534;
+  --status-pending-bg: #f1f5f9;
+  --status-pending-fg: #334155;
   --shadow-raised: 0 1px 2px rgb(15 23 42 / 0.06);
 }
 
@@ -41,6 +45,10 @@
   --status-error-fg: #fecaca;
   --status-info-bg: #082f49;
   --status-info-fg: #bae6fd;
+  --status-approved-bg: #052e16;
+  --status-approved-fg: #bbf7d0;
+  --status-pending-bg: #1e293b;
+  --status-pending-fg: #cbd5e1;
   --shadow-raised: none;
 }
 
@@ -60,6 +68,10 @@
   --color-error-fg: var(--status-error-fg);
   --color-info-bg: var(--status-info-bg);
   --color-info-fg: var(--status-info-fg);
+  --color-approved-bg: var(--status-approved-bg);
+  --color-approved-fg: var(--status-approved-fg);
+  --color-pending-bg: var(--status-pending-bg);
+  --color-pending-fg: var(--status-pending-fg);
   --shadow-raised: var(--shadow-raised);
   --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 

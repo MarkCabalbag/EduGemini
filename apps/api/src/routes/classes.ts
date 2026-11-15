@@ -1,24 +1,26 @@
 import type { PrismaClient } from '@prisma/client';
 import { Router } from 'express';
-import { ClassParamsSchema, CreateClassSchema, JoinSchema, ListClassesQuerySchema } from '@edugemini/shared';
+import { ClassParamsSchema, CreateClassSchema, EnrolledQuerySchema, JoinSchema, ListClassesQuerySchema } from '@edugemini/shared';
 import { refuseInstructor, requireAction } from '../middleware/authorize';
 import { limiters } from '../middleware/rate-limit';
 import { requireAuth } from '../middleware/session';
 import { validate, validated } from '../middleware/validate';
-import { createClass, getClass, joinClass, listClasses } from '../services/class-service';
+import { createClass, getClass, joinClass, listClasses, listEnrollments } from '../services/class-service';
 
 type ClassDeps = { db: PrismaClient; appUrl: string };
 
 // What each route accepts, named once so `validate` and `validated` cannot drift apart.
 const create = { body: CreateClassSchema };
 const list = { query: ListClassesQuerySchema };
+const enrolled = { query: EnrolledQuerySchema };
 const one = { params: ClassParamsSchema };
 const join = { body: JoinSchema };
 
 /**
- * Create, list and get a class, and join one by code (API Spec CLS-01 to CLS-03, JOIN-01). The join link preview is in join-link.ts. Needs the session, so it is mounted after loadSession.
- * The role check comes first on every route, so a role that cannot use them cannot tell they exist. The services check
- * again, and decide whether a class is the caller's own.
+ * Create, list and get a class, join one by code, and a student's Enrolled list (API Spec CLS-01 to CLS-03, JOIN-01,
+ * JOIN-03). The join link preview is in join-link.ts. Needs the session, so it is mounted after loadSession.
+ * The role check comes first on every route but get-one, so a role that cannot use them cannot tell they exist. The
+ * services check again, and decide whether a class is the caller's own.
  */
 export function classesRouter({ db, appUrl }: ClassDeps): Router {
   const router = Router();
@@ -41,8 +43,14 @@ export function classesRouter({ db, appUrl }: ClassDeps): Router {
     res.json(await listClasses(db, req.auth!.user, query, appUrl));
   });
 
-  // Whoever may list classes may ask for one; whether it is theirs is decided in the service.
-  router.get('/classes/:classId', requireAuth, requireAction('class.list'), validate(one), async (req, res) => {
+  router.get('/me/enrollments', requireAuth, requireAction('class.listEnrolled'), validate(enrolled), async (req, res) => {
+    const { query } = validated(res, enrolled);
+    res.json(await listEnrollments(db, req.auth!.user, query));
+  });
+
+  // Instructors and students both ask for a class, so there is no role check here: the service decides, from the class
+  // and, for a student, their enrollment in it.
+  router.get('/classes/:classId', requireAuth, validate(one), async (req, res) => {
     const { params } = validated(res, one);
     res.json(await getClass(db, req.auth!.user, params.classId, appUrl));
   });
