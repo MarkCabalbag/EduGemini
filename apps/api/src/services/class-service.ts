@@ -1,9 +1,19 @@
 import { randomInt } from 'node:crypto';
 import { Prisma, type Class, type PrismaClient } from '@prisma/client';
-import { z } from 'zod';
-import type { ClassPage, ClassSummary, CreateClass, EnrollmentStatus, JoinPreview, JoinResult, ListClassesQuery } from '@edugemini/shared';
+import type {
+  ClassPage,
+  ClassSummary,
+  CreateClass,
+  EnrollmentCounts,
+  EnrollmentStatus,
+  JoinPreview,
+  JoinResult,
+  ListClassesQuery,
+} from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
+import { decodeCursor, encodeCursor } from '../lib/cursor';
 import { authorize, type Actor } from '../policy/policy';
+import { enrollmentCounts } from './people-service';
 
 // 32 characters: letters without I and O, digits 2 to 9 (Backend Schema §4.7). No look-alikes (PRD FR-CLS-02).
 const JOIN_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -20,7 +30,7 @@ export function newJoinCode(): string {
 export const joinLinkFor = (appUrl: string, code: string) => `${appUrl.replace(/\/+$/, '')}/join/${code}`;
 
 /** The class as its owning instructor sees it. Students get their own view with the join tickets. */
-function toClassSummary(row: Class, appUrl: string): ClassSummary {
+function toClassSummary(row: Class, appUrl: string, counts?: EnrollmentCounts): ClassSummary {
   return {
     id: row.id,
     name: row.name,
@@ -33,6 +43,7 @@ function toClassSummary(row: Class, appUrl: string): ClassSummary {
     joinLink: joinLinkFor(appUrl, row.joinCode),
     joinCodeActive: row.joinCodeActive,
     requireApproval: row.requireApproval,
+    ...(counts && { counts }),
   };
 }
 
@@ -64,21 +75,6 @@ export async function createClass(db: PrismaClient, actor: Actor, input: CreateC
   throw new AppError('INTERNAL', { message: `No free join code after ${CODE_RETRIES + 1} tries` });
 }
 
-/** The cursor is the last row of the page, so the next page is the rows older than it. It cannot go stale. */
-const encodeCursor = (row: Pick<Class, 'createdAt' | 'id'>) =>
-  Buffer.from(`${row.createdAt.getTime()}:${row.id}`).toString('base64url');
-
-function decodeCursor(cursor: string): { createdAt: Date; id: string } {
-  const [ms, id] = Buffer.from(cursor, 'base64url').toString().split(':');
-  const uuid = z.uuid().safeParse(id);
-  const after = ms && /^\d{1,13}$/.test(ms) && uuid.success ? { createdAt: new Date(Number(ms)), id: uuid.data } : undefined;
-  // Only a cursor we made ourselves is accepted: extra segments or stray characters change the encoded form.
-  if (!after || encodeCursor(after) !== cursor) {
-    throw new AppError('VALIDATION', { fields: { 'query.cursor': 'That page link is not valid.' } });
-  }
-  return after;
-}
-
 /** The caller's own classes, newest first. Archived classes only when asked for (API Spec CLS-01). */
 export async function listClasses(
   db: PrismaClient,
@@ -92,7 +88,7 @@ export async function listClasses(
   const where: Prisma.ClassWhereInput = {
     instructorId: actor.id,
     archivedAt: query.status === 'ARCHIVED' ? { not: null } : null,
-    ...(after && { OR: [{ createdAt: { lt: after.createdAt } }, { createdAt: after.createdAt, id: { lt: after.id } }] }),
+    ...(after && { OR: [{ createdAt: { lt: after.at } }, { createdAt: after.at, id: { lt: after.id } }] }),
   };
 
   // One row more than the page, to learn whether there is a next page.
@@ -105,7 +101,7 @@ export async function listClasses(
   const last = page.at(-1);
   return {
     items: page.map((row) => toClassSummary(row, appUrl)),
-    nextCursor: rows.length > query.limit && last ? encodeCursor(last) : null,
+    nextCursor: rows.length > query.limit && last ? encodeCursor({ at: last.createdAt, id: last.id }) : null,
   };
 }
 
@@ -161,5 +157,5 @@ export async function getClass(db: PrismaClient, actor: Actor, classId: string, 
   const row = await db.class.findUnique({ where: { id: classId } });
   if (!row) throw new AppError('NOT_FOUND');
   authorize(actor, 'class.view', { classInstructorId: row.instructorId }); // someone else's class looks the same as a missing one
-  return toClassSummary(row, appUrl);
+  return toClassSummary(row, appUrl, await enrollmentCounts(db, row.id));
 }

@@ -584,7 +584,7 @@ paths:
         - { $ref: '#/components/parameters/Limit' }
       responses:
         '200':
-          description: Counts (always complete) and one page of enrollments.
+          description: Counts (always complete) and one page of enrollments, oldest join first.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PeoplePage' }

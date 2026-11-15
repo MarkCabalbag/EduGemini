@@ -13,7 +13,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-type Options = { method?: 'GET' | 'POST'; body?: unknown };
+type Options = { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown };
 
 /** The only place the web app calls fetch (code-standards §8). Same origin: the base is a relative /api. */
 export async function api<T = undefined>(path: string, { method = 'GET', body }: Options = {}): Promise<T> {

@@ -340,13 +340,14 @@ describe('list classes (API Spec CLS-01)', () => {
 });
 
 describe('get one class (API Spec CLS-03)', () => {
-  it('returns the class, with its code and link, to the instructor who owns it', async () => {
+  it('returns the class, with its code, link and student counts, to the instructor who owns it', async () => {
     const made = await create(build(), owner.cookie, validBody({ name: 'Physics' }));
 
     const res = await get(build(), owner.cookie, `/classes/${made.body.id}`);
 
     expect(res.status).toBe(200);
-    expect(ClassSummarySchema.parse(res.body)).toEqual(ClassSummarySchema.parse(made.body));
+    const counts = { approved: 0, pending: 0, declined: 0, removed: 0 }; // the counts come with the class, not with creating it
+    expect(ClassSummarySchema.parse(res.body)).toEqual({ ...ClassSummarySchema.parse(made.body), counts });
   });
 
   it('still shows an archived class to its owner', async () => {
