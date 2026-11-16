@@ -1064,14 +1064,14 @@ pg-boss runs the grading and background jobs (TRD §10.1). It keeps its own sche
 
 | Topic | Rule |
 |---|---|
-| Schema | `pgboss`, created by pg-boss on first start |
-| Who creates it | The migration owner, in a deploy step (`pnpm db:boss:init`), because creating a schema needs elevated rights |
-| Runtime connection | The `app_runtime` role over the session pooler (`PGBOSS_URL`, Section 12.3). pg-boss needs session semantics for `LISTEN/NOTIFY` and advisory locks |
+| Schema | `pgboss`, created and migrated by pg-boss itself when `db:boss:init` runs |
+| Who creates it | The migration owner, in a deploy step (`pnpm db:boss:init`), because creating a schema needs elevated rights. It also applies the grants in Section 11.1. The API starts with `migrate: false`, so it never creates or migrates the schema and refuses to start if it is missing or out of date |
+| Runtime connection | The `app_runtime` role over the session pooler (`PGBOSS_URL`, Section 12.3). pg-boss needs session semantics for its advisory locks |
 | Prisma | Never touches `pgboss`. Migrations manage only `public` |
 | Exposure | `pgboss` is not in Supabase's exposed API schemas (default: `public` only). Do not add it |
-| Job retention | Completed jobs deleted after 7 days; archived jobs deleted after 30 days (`deleteAfterSeconds`, `archiveCompletedAfterSeconds`) |
+| Job retention | Completed jobs are deleted after 7 days (`deleteAfterSeconds`, pg-boss's default). pg-boss 12 has no separate archive step |
 | Monitor | Queue sizes and failed-job counts by queue, read by the admin health view (FR-ADM-03) |
-| Version | Pinned in the lockfile. A pg-boss upgrade follows Section 13 (its own migrations run through `db:boss:init`) |
+| Version | Pinned exactly in `apps/api/package.json` (12.38.2). A pg-boss upgrade follows Section 13 (its own migrations run through `db:boss:init`) |
 
 ### 11.1 Grants for pg-boss
 
@@ -1081,7 +1081,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO app_runti
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA pgboss TO app_runtime;
 ```
 
-Run after `db:boss:init`. Re-run after each pg-boss upgrade, because new tables need the grant.
+`db:boss:init` applies them after it installs or migrates the schema, so running it again after each pg-boss upgrade covers the new tables.
 
 ---
 

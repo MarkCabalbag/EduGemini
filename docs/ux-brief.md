@@ -577,6 +577,7 @@ Layout notes:
 - The result block appears below the instructions once a submission exists; before submission, the upload control replaces it.
 - The disclosure line is always visible on the result block, not behind a tooltip.
 - Instructor-approved: the result is read-only, with a lock icon and "Locked by your instructor."
+- Late work closed (past due, late not accepted, and the instructor has not allowed this student): a student who has not submitted sees the "Closed" chip and "Late submissions are closed for this assignment." in place of the upload control. A student who already submitted still sees their receipt.
 
 **Upload (wireframe, phone; App Flow 6, step 4)**
 
@@ -584,7 +585,7 @@ Layout notes:
 ┌──────────────────────────────┐
 │ ← Essay 2 · Upload            │
 │ Up to 10 files · 10 MB each  │
-│ 15 MB total                  │
+│ 15 MB total · PDFs: 20 pages │
 │                              │
 │ ┌──────────────────────────┐ │
 │ │      + Add photos or PDF  │ │
@@ -604,11 +605,12 @@ Layout notes:
 ```
 
 Layout notes:
-- The Submit button is disabled until every file is stored; its helper text says why ("Waiting for 1 file to finish uploading").
-- Each file shows its own state in words: Ready, Uploading, Couldn't upload (with Retry), or the specific rejection reason.
-- Reorder with the ↑ and ↓ buttons; drag is optional. Remove asks for no confirmation (the file is only a local selection until submit).
-- The limits line shows the values in PRD FR-SUB-02.
-- After submit, the page shows the receipt: timestamp, file list, and "Grading in progress, usually about a minute" (App Flow 6, step 5).
+- The Submit button is disabled until every file is stored; its helper text says why: "Add a file to submit." with no files, "Waiting for 1 file to finish uploading" while files are on their way, "1 file couldn't be uploaded. Retry or remove it." after a failure, and "2 files ready to submit" when it is enabled. A file that failed or was refused can be removed, so it cannot hold Submit back.
+- Each file shows its own state in words: Ready, Uploading with a bar and its percent, Uploaded, Removing, Couldn't upload (with Retry), or the specific rejection reason. The bar and the percent are not read out; the words are.
+- A student who reloads or comes back to an upload that is still open sees the files already stored in it as Uploaded, ready to submit, and can add or remove files.
+- Reorder with the ↑ and ↓ buttons; drag is optional. Remove asks for no confirmation (nothing is submitted until Submit). Removing a stored file shows Removing until the server has done it; if that fails, the file stays Uploaded with "Couldn't remove it." and the reason, and Remove can be pressed again.
+- The limits line shows the values in PRD FR-SUB-02: "PDF, JPG or PNG. Up to 10 files, 10 MB each, 15 MB in total. PDFs up to 20 pages."
+- After submit, the page shows the receipt in place of the upload control: timestamp, file list, and "Grading in progress, usually about a minute" (App Flow 6, step 5). It is shown again whenever the student returns to the page.
 
 **Result, after grading (student)**
 - Chip, score, feedback, the disclosure line, attempts left, and the resubmit control.
@@ -733,6 +735,9 @@ These strings must match the App Flow exactly. A string marked **(new)** was wri
 | Unlimited | Unlimited resubmissions |
 | Attempts used up | You've used all your resubmissions. Your instructor can give you more. *(new)* |
 | Too many files (`FILE_LIMIT`, `details.limit: files`) | You can upload up to 10 files. *(new)* |
+| Too many pages (`FILE_LIMIT`, `details.limit: pages`) | This PDF has more than 20 pages. *(new)* |
+| Too much in total (`FILE_LIMIT`, `details.limit: total-size`) | Your files add up to more than 15 MB. *(new)* |
+| Too large to grade together (`FILE_LIMIT`, `details.limit: grading-budget`) | These files are too large to grade together. Remove one and try again. *(new)* |
 | No access | You don't have access to this page. |
 | Item gone | This item is no longer available. |
 | Account suspended | Account suspended. |

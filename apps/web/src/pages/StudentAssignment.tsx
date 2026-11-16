@@ -8,10 +8,13 @@ import { StatusChip } from '../components/ui/StatusChip';
 import { useAssignment } from '../hooks/use-assignments';
 import { useMe } from '../hooks/use-auth';
 import { useClass } from '../hooks/use-classes';
+import { useMySubmission } from '../hooks/use-submission';
 import { ApiRequestError } from '../lib/api';
 import { scoringText } from '../lib/assignment-meta';
+import { errorText } from '../lib/error-text';
 import { browserTimeZone, formatDue } from '../lib/zoned-time';
 import { NotFound } from './NotFound';
+import { SubmissionReceipt } from './SubmissionReceipt';
 import { UploadFiles } from './UploadFiles';
 
 // The exact wording of UX Brief §11.3 (PRD FR-AI-07). Every page that shows a score or will show one carries it, never behind a tooltip.
@@ -24,6 +27,33 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <p className="whitespace-pre-line">{children}</p>
     </section>
   );
+}
+
+/**
+ * The student's part of the page: the upload control (with the files of an upload still open) until they have submitted, then the receipt. When the due date has
+ * passed and late work is closed, a student who has not submitted sees that instead of the upload control. A resubmit
+ * control and the result block come with their tickets, so for now a submitted student sees the receipt only.
+ */
+function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; canUpload: boolean }) {
+  const mine = useMySubmission(assignmentId);
+  if (mine.isPending) return <PageLoading />;
+  if (mine.isError) return <ErrorState error={mine.error} onRetry={() => void mine.refetch()} />;
+  const { state, closed } = mine.data;
+  if (state !== 'NOT_SUBMITTED' && state !== 'UPLOADING') return <SubmissionReceipt submission={mine.data} />;
+  if (!canUpload) return null;
+  // The upload control reads the open upload's files once, when it appears. An answer cached from an earlier visit may not
+  // list files stored since, so it waits for the fresh one.
+  if (!mine.isFetchedAfterMount) return <PageLoading />;
+  if (closed) {
+    return (
+      <section className="space-y-2">
+        <h2 className="text-title font-semibold">Your submission</h2>
+        <StatusChip tone="info">Closed</StatusChip>
+        <p>{errorText('LATE_CLOSED')}</p>
+      </section>
+    );
+  }
+  return <UploadFiles assignmentId={assignmentId} draft={mine.data.draftVersion} />;
 }
 
 /**
@@ -51,7 +81,7 @@ function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
       </div>
       {assignment.instructions && <Section title="Instructions">{assignment.instructions}</Section>}
       <Section title="Criteria">{assignment.criteriaText}</Section>
-      {cls.data?.status === 'ACTIVE' && <UploadFiles assignmentId={assignment.id} />}
+      <SubmissionArea assignmentId={assignment.id} canUpload={cls.data?.status === 'ACTIVE'} />
       <p className="text-small text-muted">{DISCLOSURE}</p>
     </div>
   );

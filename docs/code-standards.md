@@ -77,7 +77,7 @@ Folder names inside each app are set by this file. Imports go one way: apps impo
 
 ## 6. Jobs and AI
 
-- Jobs live in `apps/api/src/jobs`, one file per queue in TRD §10.1. A handler is safe to run twice and checks the submission version before and after the Gemini call (TRD §10.3).
+- Jobs live in `apps/api/src/jobs`, one file per queue in TRD §10.1, and each is added to the list in `jobs/index.ts`, which creates its queue, worker and schedule. A handler is safe to run twice and checks the submission version before and after the Gemini call (TRD §10.3).
 - Gemini generation is called only from the `grade.submission` job, never from a route. The key check (model list) runs on save and goes through the same adapter (TRD §11.5).
 - The model name and prompt version are single constants (`GEMINI_MODEL`, `PROMPT_VERSION`) stored with every result. Prompts live in `packages/ai/prompts`, are versioned, and treat student and reference content as data (TRD §10.4).
 - AI tests use only the fake adapter.
@@ -92,7 +92,7 @@ Folder names inside each app are set by this file. Imports go one way: apps impo
 ## 8. Web app
 
 - **Data:** TanStack Query, one hook per resource (`useClass`, `useCreateClass`). Mutations invalidate the affected keys. Never call `fetch` outside `lib/api.ts`.
-- **`lib/api.ts`:** uses a relative `/api` base (same origin). It parses the error envelope into an `ApiRequestError` with `code`, `fields`, `details` and `requestId`, and returns `undefined` for `204`.
+- **`lib/api.ts`:** uses a relative `/api` base (same origin). It parses the error envelope into an `ApiRequestError` with `code`, `fields`, `details` and `requestId`, and returns `undefined` for `204`. A file goes through `api` too, by `XMLHttpRequest` instead of `fetch`, because only that reports upload progress; tests replace it with `test/fake-xhr.ts`, which hands the request to the stubbed `fetch`.
 - **Retries** (this file; TRD §15.3 sets no count): none for 4xx; at most twice for anything else. No per-query `retry` unless a doc says so.
 - **Polling** intervals are constants taken from [API Spec A13](api-spec.md), kept in one file. Polling pauses when the tab is hidden (TRD §15.3).
 - **Error text:** one lookup from error `code` to the UX Brief §11.2 string. Components never show `message`.

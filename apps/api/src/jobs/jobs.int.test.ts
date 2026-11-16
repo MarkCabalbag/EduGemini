@@ -1,0 +1,194 @@
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import type { PgBoss } from 'pg-boss';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { TERMS_VERSION } from '@edugemini/shared';
+import { createLocalStorage } from '../lib/local-storage';
+import { createLogger } from '../lib/logger';
+import type { StorageAdapter } from '../lib/storage';
+import { newJoinCode } from '../services/class-service';
+import { createTestDb, testDatabaseUrl } from '../test/test-db';
+import { startJobs } from './index';
+import { runStorageCleanup, STORAGE_CLEANUP } from './storage-cleanup.job';
+import { STAGED_CLEANUP } from './staged-cleanup.job';
+
+// Runs against the test database, with the files in a temporary folder. Every row carries this run's ID, so tests never
+// collide and cleanup is exact.
+const RUN = randomUUID().slice(0, 8);
+const BUCKET = `test-${RUN}`;
+const logger = createLogger('silent', 'test');
+
+const db = createTestDb();
+let storageDir: string;
+let storage: StorageAdapter;
+
+const putObject = (path: string) => storage.put(BUCKET, path, Readable.from([Buffer.from('object')]), 'application/pdf', 1024);
+const queueDeletion = (path: string, data: { attempts?: number; completedAt?: Date } = {}) =>
+  db.storageDeletion.create({ data: { bucket: BUCKET, objectPath: path, ...data } });
+const row = (path: string) => db.storageDeletion.findUniqueOrThrow({ where: { bucket_objectPath: { bucket: BUCKET, objectPath: path } } });
+
+beforeAll(async () => {
+  await db.$connect();
+  storageDir = await mkdtemp(join(tmpdir(), 'edugemini-jobs-test-'));
+  storage = createLocalStorage({ dir: storageDir, appUrl: 'http://localhost:5173', secret: 'a-test-secret-of-at-least-32-characters' });
+});
+
+afterAll(async () => {
+  await db.storageDeletion.deleteMany({ where: { bucket: BUCKET } });
+  await db.class.deleteMany({ where: { instructor: { email: { endsWith: `-${RUN}@example.test` } } } }); // assignments, submissions go with it
+  await db.user.deleteMany({ where: { email: { endsWith: `-${RUN}@example.test` } } });
+  await db.$disconnect();
+  await rm(storageDir, { recursive: true, force: true });
+});
+
+describe('storage.cleanup (the storage outbox)', () => {
+  it('deletes the object and marks its row complete', async () => {
+    const path = `${RUN}/one.pdf`;
+    await putObject(path);
+    await queueDeletion(path);
+
+    await runStorageCleanup({ db, storage, logger });
+
+    expect(await storage.exists(BUCKET, path)).toBe(false);
+    expect(await row(path)).toMatchObject({ attempts: 1, lastError: null });
+    expect((await row(path)).completedAt).not.toBeNull();
+  });
+
+  it('counts an object that is already gone as deleted', async () => {
+    const path = `${RUN}/never-stored.pdf`;
+    await queueDeletion(path);
+
+    await runStorageCleanup({ db, storage, logger });
+
+    expect((await row(path)).completedAt).not.toBeNull();
+  });
+
+  it('writes a failure on its row, leaves it pending and goes on with the others', async () => {
+    const bad = `${RUN}/bad.pdf`;
+    const good = `${RUN}/good.pdf`;
+    await putObject(bad);
+    await putObject(good);
+    await queueDeletion(bad);
+    await queueDeletion(good);
+    const storageDown: StorageAdapter = {
+      ...storage,
+      remove: async (bucket, paths) => {
+        if (paths[0] === bad) throw new Error('storage is down');
+        return storage.remove(bucket, paths);
+      },
+    };
+
+    await runStorageCleanup({ db, storage: storageDown, logger });
+
+    expect(await row(bad)).toMatchObject({ completedAt: null, attempts: 1, lastError: 'storage is down' });
+    expect((await row(good)).completedAt).not.toBeNull();
+    expect(await storage.exists(BUCKET, bad)).toBe(true);
+
+    await runStorageCleanup({ db, storage, logger }); // storage is back
+    expect(await row(bad)).toMatchObject({ attempts: 2, lastError: null });
+    expect((await row(bad)).completedAt).not.toBeNull();
+    expect(await storage.exists(BUCKET, bad)).toBe(false);
+  });
+
+  it('does not count an object as deleted while it is still there', async () => {
+    const path = `${RUN}/stubborn.pdf`;
+    await putObject(path);
+    await queueDeletion(path);
+    const ignoresRemove: StorageAdapter = { ...storage, remove: async () => {} };
+
+    await runStorageCleanup({ db, storage: ignoresRemove, logger });
+
+    expect(await row(path)).toMatchObject({ completedAt: null, attempts: 1 });
+    expect((await row(path)).lastError).toContain('still there');
+  });
+
+  it('tries the rows that have failed before after the fresh ones, and leaves completed rows alone', async () => {
+    const failedBefore = `${RUN}/failed-before.pdf`;
+    const fresh = `${RUN}/fresh.pdf`;
+    const finished = `${RUN}/finished.pdf`;
+    await queueDeletion(failedBefore, { attempts: 3 }); // older than `fresh`, but it has failed more often
+    await queueDeletion(fresh);
+    await queueDeletion(finished, { completedAt: new Date() });
+    const tried: string[] = [];
+    const recording: StorageAdapter = {
+      ...storage,
+      remove: async (bucket, paths) => {
+        tried.push(...paths);
+        return storage.remove(bucket, paths);
+      },
+    };
+
+    await runStorageCleanup({ db, storage: recording, logger });
+
+    expect(tried.filter((path) => path.startsWith(`${RUN}/f`))).toEqual([fresh, failedBefore]);
+    expect((await row(finished)).attempts).toBe(0);
+  });
+});
+
+describe('the worker (startJobs)', () => {
+  let boss: PgBoss;
+  const pending = `${RUN}/pending-at-start.pdf`;
+  let staleVersionId: string;
+
+  beforeAll(async () => {
+    // Work waiting before the worker starts: an object in the outbox, and an upload opened 25 hours ago.
+    await putObject(pending);
+    await queueDeletion(pending);
+    const instructor = await db.user.create({ data: userData('instructor', 'INSTRUCTOR') });
+    const student = await db.user.create({ data: userData('student', 'STUDENT') });
+    const cls = await db.class.create({ data: { instructorId: instructor.id, name: 'Jobs test', joinCode: newJoinCode(), attestedAt: new Date() } });
+    const assignment = await db.assignment.create({
+      data: { classId: cls.id, title: 'Jobs test', criteriaText: 'Clear thesis.', dueAt: new Date(Date.now() + 86_400_000), timezone: 'UTC', scoringFormat: 'POINTS', maxScore: 100, maxResubmissions: 3, status: 'PUBLISHED', publishedAt: new Date() },
+    });
+    const submission = await db.submission.create({ data: { assignmentId: assignment.id, studentId: student.id } });
+    const stale = await db.submissionVersion.create({ data: { submissionId: submission.id, versionNo: 1, createdAt: new Date(Date.now() - 25 * 3_600_000) } });
+    staleVersionId = stale.id;
+
+    // This connects as the test project's owner. In production the worker connects as `app_runtime`, which cannot log in on
+    // the test project, so the grants in Backend Schema §11.1 are not exercised here (progress tracker, Up next).
+    boss = await startJobs(testDatabaseUrl(), { db, storage, bucket: BUCKET, logger });
+  });
+
+  afterAll(async () => {
+    await boss.stop();
+  });
+
+  function userData(name: string, role: 'INSTRUCTOR' | 'STUDENT') {
+    return { email: `${name}-${RUN}@example.test`, firstName: 'Ada', lastName: 'Lovelace', role, termsAcceptedAt: new Date(), termsVersion: TERMS_VERSION };
+  }
+
+  it('creates every queue of TRD §10.1, with grading limited to one running job per key', async () => {
+    const queues = (await boss.getQueues()).map((queue) => queue.name);
+    expect(queues).toEqual(
+      expect.arrayContaining(['grade.submission', 'regrade.assignment', 'send.email', 'digest.flush', 'retention.sweep', STAGED_CLEANUP, STORAGE_CLEANUP]),
+    );
+    expect(await boss.getQueue('grade.submission')).toMatchObject({ policy: 'singleton', retryLimit: 2, retryDelay: 5, retryBackoff: true, retryDelayMax: 60 });
+    expect(await boss.getQueue('send.email')).toMatchObject({ retryLimit: 5 });
+  });
+
+  it('puts both jobs on their schedules', async () => {
+    const schedules = await boss.getSchedules();
+    expect(schedules.find((s) => s.name === STAGED_CLEANUP)?.cron).toBe('0 * * * *');
+    expect(schedules.find((s) => s.name === STORAGE_CLEANUP)?.cron).toBe('*/5 * * * *');
+  });
+
+  it('runs each job once at start', async () => {
+    await vi.waitFor(async () => expect((await row(pending)).completedAt).not.toBeNull(), { timeout: 20_000, interval: 250 });
+    expect(await storage.exists(BUCKET, pending)).toBe(false);
+    await vi.waitFor(async () => expect(await db.submissionVersion.count({ where: { id: staleVersionId } })).toBe(0), { timeout: 20_000, interval: 250 });
+  });
+
+  it('runs a job that is sent to a queue', async () => {
+    const path = `${RUN}/sent-later.pdf`;
+    await putObject(path);
+    await queueDeletion(path);
+
+    await boss.send(STORAGE_CLEANUP);
+
+    await vi.waitFor(async () => expect((await row(path)).completedAt).not.toBeNull(), { timeout: 20_000, interval: 250 });
+    expect(await storage.exists(BUCKET, path)).toBe(false);
+  });
+});

@@ -235,7 +235,7 @@ These are the shapes used across endpoints. Each has a matching component in `op
 | `files` | `FileView[]` for the current version (empty before upload) |
 | `grade` | `GradeView` or null. Shown when `state` is `AI_GENERATED` or `INSTRUCTOR_APPROVED` |
 | `instructorComment` | String or null. Shown only when approved (App Flow 6, step 9) |
-| `draftVersion` | `VersionView` or null when an upload is open |
+| `draftVersion` | `DraftVersion` or null when an upload is open |
 
 **`DisplayState`** (student-facing; the mapping keeps causes and internal states off student screens):
 
@@ -269,9 +269,11 @@ Students never receive `manualReviewCause`, `criteriaChanged`, or re-grade detai
 | `files` | `FileView[]` for the current version |
 | `reviewHistory` | Last 50 `ReviewActionView` entries, newest first |
 
-**`FileView`**: `{ id, ordinal, displayName, mimeType, sizeBytes, pageCount, status, failureCode }`. Files are downloaded through FILE-01, never by URL in this object.
+**`FileView`**: `{ id, clientFileId, ordinal, displayName, mimeType, sizeBytes, pageCount, status, failureCode }`. `clientFileId` is the key the browser gave the file: how SUB-03 and SUB-04 address it and how finalize lists it. Files are downloaded through FILE-01, never by URL in this object.
 
 **`VersionView`**: `{ id, versionNo, status, createdAt, storedAt }`.
+
+**`DraftVersion`**: a `VersionView` plus `files` (`FileView[]`, the files stored in the open upload so far, in order). It lets the page pick an upload up again after a reload or a visit to another page.
 
 **`ReferenceFileView`**: `{ id, ordinal, label, mimeType, sizeBytes, visibleToStudents }`. `label` is "Reference file N" (the schema stores no display name for reference files; see A10).
 
@@ -317,8 +319,8 @@ Edits that do not change criteria or files (title, instructions, label, limits, 
 
 Uploads are a three-step flow so that a retry never loses files and a submission exists only when every file is stored (FR-SUB-03).
 
-1. **Open a version.** `POST /api/assignments/{assignmentId}/versions` (SUB-02). Returns the open `VersionView`. If a version is already `UPLOADING`, it returns that one (idempotent).
-2. **Send each file.** `PUT /api/versions/{versionId}/files/{clientFileId}` (SUB-03). The body is the raw file bytes (`Content-Type` set to the file's MIME type, which the server re-checks against the content). `X-File-Name` carries the display name, URL-encoded, at most 255 bytes. The server streams the body to a temporary file, enforces the 10 MiB limit while streaming, sniffs the content (PDF, JPEG, PNG, HEIC), converts HEIC to JPEG, counts PDF pages, and stores the result. Re-sending the same `clientFileId` replaces that file's row (idempotent). The response is the `FileView`, with `status: "STORED"` or `status: "FAILED"` and a `failureCode`.
+1. **Open a version.** `POST /api/assignments/{assignmentId}/versions` (SUB-02). Returns the open `VersionView`. If a version is already `UPLOADING`, it returns that one (idempotent). A page that finds `draftVersion` in SUB-01 already knows the open version and its stored files, so it does not need to ask. An upload that is not finalized within 24 hours of being opened is deleted with its files (TRD §9.3).
+2. **Send each file.** `PUT /api/versions/{versionId}/files/{clientFileId}` (SUB-03). The body is the raw file bytes (`Content-Type` set to the file's MIME type, which the server re-checks against the content). `X-File-Name` carries the display name, URL-encoded, at most 255 bytes. The server streams the body to a temporary file, enforces the 10 MiB limit while streaming, sniffs the content (PDF, JPEG, PNG, HEIC), converts HEIC to JPEG, counts PDF pages, and stores the result. Re-sending the same `clientFileId` replaces that file's row (idempotent). The response is the `FileView` of the stored file. A file the server refuses stores nothing, and the answer is the error.
 3. **Finalize.** `POST /api/versions/{versionId}/finalize` (SUB-05) with the list of `clientFileId`s the client expects. The server checks that every expected file is `STORED`, re-checks the attempt count inside a locked transaction, and only then queues grading.
 
 **Why raw bytes, not multipart, for the per-file PUT.** One file per request keeps each request small and retryable on mobile networks, and it lets the client show per-file progress. The reference-file and announcement endpoints use `multipart/form-data` because they accept several files or a title in the same request.
@@ -987,7 +989,7 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
 `GET /api/assignments/{assignmentId}/me`
 - **Access:** `ACTIVE` student in the class, for a published assignment.
 - **FR:** FR-SUB-06, FR-SUB-09, FR-AI-03, FR-AI-07, FR-SUB-04, FR-REV-09.
-- **Response:** `200` `StudentSubmission`. `state` uses the student `DisplayState` (A5); `grade` is present for `AI_GENERATED` and `INSTRUCTOR_APPROVED`; `instructorComment` only when approved; `attemptsLeft` is `null` with `unlimited: true` for Unlimited.
+- **Response:** `200` `StudentSubmission`. `state` uses the student `DisplayState` (A5); `grade` is present for `AI_GENERATED` and `INSTRUCTOR_APPROVED`; `instructorComment` only when approved; `attemptsLeft` is `null` with `unlimited: true` for Unlimited. `state` is `UPLOADING` only while an upload is open and no version is stored yet. Once a version is stored the state stays the submission's, and an upload opened for a resubmission is reported in `draftVersion`. While an upload is open, `draftVersion.files` lists the files stored in it, so a student who reloads or comes back sees them again (SUB-04).
 - **Errors:** `NOT_FOUND`, `ENROLLMENT_PENDING`, STD-AUTH.
 - **Effects:** none.
 - **Polling:** every 5 seconds while `state` is `GRADING` or `UPLOADING` (A13).
@@ -1003,7 +1005,7 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
   - `200` with the existing `VersionView` when one is already `UPLOADING` (idempotent; the client resumes it).
 - **Errors:**
   - `ATTEMPTS_EXHAUSTED` (409) when a resubmission is needed and `attemptsLeft` is 0.
-  - `LATE_CLOSED` (409) when the due date has passed, late is closed, and `lateAllowed` is false.
+  - `LATE_CLOSED` (409) when the due date has passed, late is closed, and `lateAllowed` is false. It is checked before an upload that is already open is returned, and for a resubmission as well as a first submission. Sending a file (SUB-03) does not check it; finalize does.
   - `LOCKED_APPROVED` (409) when the submission is approved.
   - `CLASS_ARCHIVED` (409).
   - `NOT_FOUND`, `ENROLLMENT_PENDING`.
@@ -1019,15 +1021,15 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
 - **Request:** raw file bytes. Headers: `Content-Type` (the file's MIME type), `X-File-Name` (URL-encoded display name, at most 255 bytes), `Content-Length` (required; the server rejects chunked bodies over 10 MiB without reading past the limit). A missing or unreadable `X-File-Name` becomes "file", control characters are removed, and a longer name is cut to 255 bytes. A declared `Content-Length` over 10 MiB is refused with `FILE_TOO_LARGE` before the body is read, and the connection is closed.
 - **Response:**
   - `201` `FileView` for a new file. `200` when `clientFileId` already exists and is replaced (idempotent).
-  - `422` `FILE_ERROR` with `details.file` (a `FileView` with `status: "FAILED"`) for a password-protected or corrupt PDF. Only these failures store a `FAILED` row, so the student sees the file and can replace it. Rejections for type, size, and count store no row.
+  - A refused file stores nothing: no row and no object. The answer is the error, and the student sends another file.
 - **Errors:**
   - `FILE_TYPE` (415): the content is not PDF, JPEG, PNG, or HEIC (checked by magic bytes, not the extension; HEIC is converted to JPEG, PRD A12).
   - `FILE_TOO_LARGE` (413): over 10 MiB while streaming.
-  - `FILE_LIMIT` (422): `details.limit` is `files` (more than 10 in the version), `total-size` (more than 15 MiB), or `pages` (more than 20).
+  - `FILE_LIMIT` (422): `details.limit` is `files` (more than 10 in the version), `total-size` (the version's files would add up to more than 15 MiB; a file being replaced is not counted twice), or `pages` (a PDF of more than 20).
   - `UPLOAD_NOT_OPEN` (409): the version is not `UPLOADING`.
   - `UNSUPPORTED_MEDIA_TYPE` (415): the request is not a file upload.
-  - `FILE_ERROR`.
-- **Effects:** streams to a temporary file, converts HEIC, counts PDF pages, computes SHA-256, stores the object under a server-generated path (TRD §9.1), writes the `submission_files` row. A replaced file's old object goes to the outbox.
+  - `FILE_ERROR` (422): a PDF that is password-protected or cannot be read. `details.failureCode` is `PASSWORD` or `CORRUPT`.
+- **Effects:** streams to a temporary file, converts HEIC, counts PDF pages (kept on the file as `pageCount`), computes SHA-256, stores the object under a server-generated path (TRD §9.1), writes the `submission_files` row. A replaced file's old object goes to the outbox.
 - **Concurrency:** `(version_id, client_file_id)` is unique; the same ID twice is a replace, not a duplicate.
 - **Limit:** 60 per minute per user.
 - **Test:** `upload.spec` (every fixture in the TRD §16.2a table).
@@ -1036,23 +1038,27 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
 `DELETE /api/versions/{versionId}/files/{clientFileId}` · Standard set: `STD-MUT` minus `VALIDATION`
 - **Access:** the owning student.
 - **FR:** FR-SUB-03.
-- **Response:** `204`. Removing a file that is already gone also returns `204`.
-- **Errors:** `UPLOAD_NOT_OPEN` (409).
-- **Effects:** deletes the row; the object goes to the outbox.
+- **Response:** `204`. Removing a file that is already gone, or that was never stored, also returns `204`.
+- **Errors:** `UPLOAD_NOT_OPEN` (409) when the version is not `UPLOADING`; `NOT_FOUND` for anyone but the owning student (a removed student, an instructor and a missing version included). It does not check `CLASS_ARCHIVED`, as SUB-03 does not.
+- **Effects:** deletes the row; the object goes to the outbox. The place the file held is free again for the next file sent.
+- **Concurrency:** the submission row is locked, as in finalize, so a removal and a finalize at the same moment run one after the other.
+- **Limit:** none of its own (the general 120 per minute).
 - **Test:** `upload.spec` (reorder and remove).
 
 #### SUB-05 · Finalize the upload
 `POST /api/versions/{versionId}/finalize` · Standard set: `STD-MUT`
 - **Access:** the owning student.
 - **FR:** FR-SUB-03, FR-SUB-04, FR-SUB-05, FR-SUB-07, FR-AI-02, FR-SUB-09.
-- **Request:** `{ expectedFileIds: string[] }` (1 to 10 `clientFileId`s, in the order shown to the student). The server does not trust the list alone; it checks the stored rows.
+- **Request:** `{ expectedFileIds: string[] }` (1 to 10 `clientFileId`s, in the order shown to the student). The server does not trust the list alone; it checks the stored rows. The list is the final set of files: a file stored in the version but not in the list is dropped, and the files take the list's order as their `ordinal`.
 - **Response:** `200` `StudentSubmission` with `state: "GRADING"` (display `GRADING`, database `QUEUED`).
 - **Errors:**
   - `UPLOAD_INCOMPLETE` (409): `details.missing` lists the `clientFileId`s that are absent or `FAILED`.
-  - `UPLOAD_NOT_OPEN` (409): the version was already stored (finalize is idempotent only through the response of the first call; a second call returns `200` with the same body).
+  - `UPLOAD_NOT_OPEN` (409): the version was replaced by a newer one. A second finalize of the version that is already the submission's current version is not an error: it returns `200` with the same body and changes nothing.
   - `ATTEMPTS_EXHAUSTED`, `LATE_CLOSED`, `LOCKED_APPROVED` (409), re-checked inside the lock.
-  - `FILE_LIMIT` (422) when the grading budget is exceeded (`details.limit: "grading-budget"`, A7).
+  - `CLASS_ARCHIVED` (409).
+  - `FILE_LIMIT` (422): `details.limit` is `total-size` (the files add up to more than 15 MiB) or `grading-budget` (the files plus the assignment's reference files add up to more than 15 MiB, A7).
 - **Effects, in one transaction:**
+  - Files in the version that are not in `expectedFileIds` are deleted and their objects go to the storage outbox.
   - The version becomes `STORED`, `stored_at` is set, and `current_version_id` points to it.
   - `first_submitted_at` is set on the first version; `latest_submitted_at` is always set.
   - `resubmissions_used` increases by 1 for every version after the first (FR-SUB-05).

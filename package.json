@@ -13,6 +13,7 @@
     "test": "vitest run --project unit",
     "test:int": "vitest run --project integration",
     "build": "pnpm -r --if-present build",
+    "db:boss:init": "pnpm --filter @edugemini/api db:boss:init",
     "dev:api": "pnpm --filter @edugemini/api dev",
     "dev:web": "pnpm --filter @edugemini/web dev"
   },

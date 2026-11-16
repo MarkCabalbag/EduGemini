@@ -1,7 +1,10 @@
-import { LIMITS, type ErrorCode } from '@edugemini/shared';
+import { LIMITS, MiB, type ErrorCode } from '@edugemini/shared';
 
 // One lookup from an error code to what the user reads (UX Brief §11.2, API Spec A4). Components never show `message`.
 const TEXT: Partial<Record<ErrorCode | 'NETWORK', string>> = {
+  UPLOAD_INCOMPLETE: "Some files haven't finished uploading.",
+  ATTEMPTS_EXHAUSTED: "You've used all your resubmissions. Your instructor can give you more.",
+  LATE_CLOSED: 'Late submissions are closed for this assignment.',
   FILE_TYPE: "This file type isn't supported. Use PDF, JPG, or PNG.",
   FILE_TOO_LARGE: 'This file is larger than 10 MB.',
   FILE_ERROR: "This file couldn't be read. Try re-saving it or choosing a different file.",
@@ -24,6 +27,11 @@ const GENERIC = 'Something went wrong.';
 
 /** `details` is the error's own, for the codes whose text depends on it: FILE_LIMIT names the limit that was passed (API Spec A4). */
 export function errorText(code: ErrorCode | 'NETWORK', details?: Record<string, unknown>): string {
-  if (code === 'FILE_LIMIT' && details?.['limit'] === 'files') return `You can upload up to ${LIMITS.filesPerSubmission} files.`;
+  if (code === 'FILE_LIMIT') {
+    if (details?.['limit'] === 'files') return `You can upload up to ${LIMITS.filesPerSubmission} files.`;
+    if (details?.['limit'] === 'pages') return `This PDF has more than ${LIMITS.maxPdfPages} pages.`;
+    if (details?.['limit'] === 'total-size') return `Your files add up to more than ${LIMITS.maxSubmissionBytes / MiB} MB.`;
+    if (details?.['limit'] === 'grading-budget') return 'These files are too large to grade together. Remove one and try again.';
+  }
   return TEXT[code] ?? GENERIC;
 }
