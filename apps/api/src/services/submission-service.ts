@@ -5,17 +5,34 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { Prisma, type PrismaClient, type SubmissionFile, type SubmissionVersion } from '@prisma/client';
-import { LIMITS, SNIFF_BYTES, sniffFileType, type FileView, type VersionView } from '@edugemini/shared';
+import {
+  Prisma,
+  type Assignment,
+  type PrismaClient,
+  type SubmissionFile,
+  type SubmissionState,
+  type SubmissionVersion,
+} from '@prisma/client';
+import {
+  LIMITS,
+  SNIFF_BYTES,
+  sniffFileType,
+  type DisplayState,
+  type FileView,
+  type StudentSubmission,
+  type VersionView,
+} from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
+import { lockSubmission } from '../lib/lock';
 import { countPdfPages } from '../lib/pdf-pages';
 import { measure, type StorageAdapter } from '../lib/storage';
 import { authorize, type Actor } from '../policy/policy';
 import { enrollmentOf } from './assignment-service';
 
 /**
- * Uploading a submission, steps 1 and 2 of API Spec A7: open a version, then send its files. Finalizing is SUB-05, so
- * nothing here makes a submission or starts grading, and the limits on attempts and late work come with their tickets.
+ * A student's submission, the three steps of API Spec A7: open a version, send its files, finalize. Finalize makes the
+ * submission and queues it, but nothing grades yet (no job queue, FND-09), and late work (SUB-06) and the lock after
+ * approval (SUB-08) come with their tickets.
  */
 
 const toVersionView = (row: SubmissionVersion): VersionView => ({
@@ -38,6 +55,10 @@ const toFileView = (row: SubmissionFile): FileView => ({
 });
 
 const isUniqueViolation = (error: unknown) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+
+/** Resubmissions left, or null when the assignment allows unlimited (Backend Schema §8.1). */
+const attemptsLeft = (maxResubmissions: number | null, extraAttempts: number, used: number): number | null =>
+  maxResubmissions === null ? null : Math.max(0, maxResubmissions + extraAttempts - used);
 
 /**
  * Open an upload for the student (API Spec SUB-02). While one is open, asking again gives that same one. The database
@@ -68,6 +89,10 @@ export async function openVersion(
     create: { assignmentId, studentId: actor.id },
     update: {},
   });
+  // A student who has submitted and has no resubmissions left cannot open another upload (finalize checks again).
+  if (submission.currentVersionId && attemptsLeft(assignment.maxResubmissions, submission.extraAttempts, submission.resubmissionsUsed) === 0) {
+    throw new AppError('ATTEMPTS_EXHAUSTED');
+  }
   const last = await db.submissionVersion.findFirst({
     where: { submissionId: submission.id },
     orderBy: { versionNo: 'desc' },
@@ -179,4 +204,124 @@ export async function storeFile(
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+// The student's view of the database state (API Spec A5). Causes and internal states never reach the student.
+const DISPLAY_STATE: Record<SubmissionState, DisplayState> = {
+  QUEUED: 'GRADING',
+  GRADING: 'GRADING',
+  AI_GENERATED: 'AI_GENERATED',
+  NEEDS_MANUAL_REVIEW: 'AWAITING_REVIEW',
+  INSTRUCTOR_APPROVED: 'INSTRUCTOR_APPROVED',
+};
+
+/**
+ * The student's own submission for one assignment (API Spec SUB-01), read through `db`, which may be a transaction.
+ * `UPLOADING` shows only while nothing is stored yet; after that the state is the submission's, and an upload opened
+ * for a resubmission is `draftVersion`. `closed` is only reported here; refusing late work is SUB-06.
+ */
+async function studentSubmissionOf(db: Prisma.TransactionClient, studentId: string, assignment: Assignment): Promise<StudentSubmission> {
+  const submission = await db.submission.findUnique({ where: { assignmentId_studentId: { assignmentId: assignment.id, studentId } } });
+  const draft = submission ? await db.submissionVersion.findFirst({ where: { submissionId: submission.id, status: 'UPLOADING' } }) : null;
+  const current = submission?.currentVersionId
+    ? await db.submissionVersion.findUnique({ where: { id: submission.currentVersionId }, include: { files: { orderBy: { ordinal: 'asc' } } } })
+    : null;
+
+  const latest = submission?.latestSubmittedAt ?? null;
+  const left = attemptsLeft(assignment.maxResubmissions, submission?.extraAttempts ?? 0, submission?.resubmissionsUsed ?? 0);
+  return {
+    state: submission?.state ? DISPLAY_STATE[submission.state] : draft ? 'UPLOADING' : 'NOT_SUBMITTED',
+    isLate: latest !== null && latest > assignment.dueAt,
+    closed: !assignment.acceptLate && Date.now() > assignment.dueAt.getTime() && !submission?.lateAllowed,
+    attemptsLeft: left,
+    unlimited: left === null,
+    firstSubmittedAt: submission?.firstSubmittedAt?.toISOString() ?? null,
+    latestSubmittedAt: latest?.toISOString() ?? null,
+    files: current?.files.map(toFileView) ?? [],
+    draftVersion: draft ? toVersionView(draft) : null,
+  };
+}
+
+/** The student's own submission (API Spec SUB-01). Access is the same as for reading the assignment: an approved student, a published assignment. */
+export async function getMySubmission(db: PrismaClient, actor: Actor, assignmentId: string): Promise<StudentSubmission> {
+  const assignment = await db.assignment.findUnique({ where: { id: assignmentId } });
+  if (!assignment) throw new AppError('NOT_FOUND');
+  authorize(actor, 'assignment.view', { enrollment: await enrollmentOf(db, actor, assignment.classId) });
+  if (assignment.status !== 'PUBLISHED') throw new AppError('NOT_FOUND');
+  return studentSubmissionOf(db, actor.id, assignment);
+}
+
+/**
+ * Finalize an upload (API Spec SUB-05): the open version becomes the submission's current one and the submission is queued
+ * for grading. Everything runs in one transaction on the locked submission row, so two taps, or a finalize racing another
+ * write, run one after the other. The listed files are the final set (a stored file that is not listed is dropped), and a
+ * resubmission uses one attempt and removes the previous version's files. Nothing enqueues grading yet (AI-08).
+ */
+export async function finalizeVersion(
+  db: PrismaClient,
+  bucket: string,
+  actor: Actor,
+  versionId: string,
+  expectedFileIds: string[],
+): Promise<StudentSubmission> {
+  const found = await db.submissionVersion.findUnique({
+    where: { id: versionId },
+    include: { submission: { include: { assignment: { select: { classId: true } } } } },
+  });
+  if (!found || found.submission.studentId !== actor.id) throw new AppError('NOT_FOUND');
+  authorize(actor, 'submission.upload', { enrollment: await enrollmentOf(db, actor, found.submission.assignment.classId) });
+
+  return db.$transaction(async (tx) => {
+    await lockSubmission(tx, found.submissionId);
+    const submission = await tx.submission.findUniqueOrThrow({ where: { id: found.submissionId } });
+    const version = await tx.submissionVersion.findUniqueOrThrow({ where: { id: versionId }, include: { files: true } });
+    const assignment = await tx.assignment.findUniqueOrThrow({
+      where: { id: submission.assignmentId },
+      include: { class: { select: { archivedAt: true } }, referenceFiles: { select: { sizeBytes: true } } },
+    });
+
+    // A second finalize of the version that is already stored gives the same answer and changes nothing.
+    if (version.status === 'STORED') return studentSubmissionOf(tx, actor.id, assignment);
+    if (version.status !== 'UPLOADING') throw new AppError('UPLOAD_NOT_OPEN');
+    if (assignment.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
+
+    const listed = new Set(expectedFileIds);
+    const missing = expectedFileIds.filter((id) => version.files.find((file) => file.clientFileId === id)?.status !== 'STORED');
+    if (missing.length > 0) throw new AppError('UPLOAD_INCOMPLETE', { details: { missing } });
+    const kept = version.files.filter((file) => listed.has(file.clientFileId));
+    const dropped = version.files.filter((file) => !listed.has(file.clientFileId));
+
+    // Each file was checked when it arrived; the total is checked again here because two files can arrive at the same moment.
+    const filesBytes = kept.reduce((sum, file) => sum + Number(file.sizeBytes ?? 0), 0);
+    if (filesBytes > LIMITS.maxSubmissionBytes) throw new AppError('FILE_LIMIT', { details: { limit: 'total-size' } });
+    const referenceBytes = assignment.referenceFiles.reduce((sum, file) => sum + Number(file.sizeBytes), 0);
+    if (filesBytes + referenceBytes > LIMITS.maxSubmissionBytes) throw new AppError('FILE_LIMIT', { details: { limit: 'grading-budget' } });
+
+    const previousId = submission.currentVersionId;
+    if (previousId && attemptsLeft(assignment.maxResubmissions, submission.extraAttempts, submission.resubmissionsUsed) === 0) {
+      throw new AppError('ATTEMPTS_EXHAUSTED');
+    }
+
+    // Files that leave: the ones not listed and the previous version's. Their objects go to the outbox (Backend Schema §10.2a).
+    const leaving = previousId ? [...dropped, ...(await tx.submissionFile.findMany({ where: { versionId: previousId } }))] : dropped;
+    const objectPaths = leaving.flatMap((file) => (file.storagePath ? [file.storagePath] : []));
+    await tx.storageDeletion.createMany({ data: objectPaths.map((objectPath) => ({ bucket, objectPath })), skipDuplicates: true });
+    await tx.submissionFile.deleteMany({ where: { id: { in: leaving.map((file) => file.id) } } });
+    if (previousId) await tx.submissionVersion.update({ where: { id: previousId }, data: { status: 'REPLACED' } });
+
+    const now = new Date();
+    await tx.submissionVersion.update({ where: { id: version.id }, data: { status: 'STORED', storedAt: now } });
+    await tx.submission.update({
+      where: { id: submission.id },
+      data: {
+        state: 'QUEUED',
+        manualReviewCause: null, // a resubmission after manual review starts again (the cause belongs to that state only)
+        currentVersionId: version.id,
+        latestSubmittedAt: now,
+        firstSubmittedAt: submission.firstSubmittedAt ?? now,
+        resubmissionsUsed: previousId ? { increment: 1 } : undefined,
+      },
+    });
+    return studentSubmissionOf(tx, actor.id, assignment);
+  });
 }

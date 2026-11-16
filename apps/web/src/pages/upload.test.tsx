@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AssignmentDetail, ClassSummary, Me } from '@edugemini/shared';
+import type { AssignmentDetail, ClassSummary, Me, StudentSubmission } from '@edugemini/shared';
 import { LIMITS } from '@edugemini/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { failure, renderAt } from '../test/helpers';
@@ -60,17 +60,44 @@ let calls: Call[];
 let archived: boolean;
 let openUpload: () => Response | Promise<Response>;
 let sendFile: (call: Call) => Response | Promise<Response>;
+let mine: StudentSubmission;
+let mineAnswer: () => Response;
+let finalizeAnswer: (call: Call) => Response | Promise<Response>;
 
 const callsTo = (method: string, pathStart: string) => calls.filter((c) => c.method === method && c.path.startsWith(pathStart));
 const input = () => screen.getByLabelText('Add photos or PDF');
 const fileView = (ordinal = 1) => ({ id: crypto.randomUUID(), ordinal, displayName: 'x', mimeType: 'application/pdf', sizeBytes: 8, pageCount: null, status: 'STORED', failureCode: null });
 const version = { id: VERSION_ID, versionNo: 1, status: 'UPLOADING', createdAt: '2026-11-16T01:00:00.000Z', storedAt: null };
 
+const submission = (overrides: Partial<StudentSubmission> = {}): StudentSubmission => ({
+  state: 'NOT_SUBMITTED',
+  isLate: false,
+  closed: false,
+  attemptsLeft: 3,
+  unlimited: false,
+  firstSubmittedAt: null,
+  latestSubmittedAt: null,
+  files: [],
+  draftVersion: null,
+  ...overrides,
+});
+/** What the server answers once the files are submitted: queued for grading, with the files named. */
+const submitted = (names: string[]) =>
+  submission({
+    state: 'GRADING',
+    firstSubmittedAt: '2026-11-16T06:00:00.000Z',
+    latestSubmittedAt: '2026-11-16T06:00:00.000Z',
+    files: names.map((name, i) => ({ ...fileView(i + 1), displayName: name, status: 'STORED' as const })),
+  });
+
 beforeEach(() => {
   calls = [];
   archived = false;
   openUpload = () => Response.json(version, { status: 201 });
   sendFile = () => Response.json(fileView(), { status: 201 });
+  mine = submission();
+  mineAnswer = () => Response.json(mine);
+  finalizeAnswer = () => Response.json(submitted(['a.pdf']));
 
   vi.stubGlobal(
     'fetch',
@@ -83,6 +110,8 @@ beforeEach(() => {
       if (path === '/me') return Response.json(student);
       if (path === `/classes/${CLASS_ID}`) return Response.json(aClass(archived ? 'ARCHIVED' : 'ACTIVE'));
       if (method === 'GET' && path === `/assignments/${ASSIGNMENT_ID}`) return Response.json(assignment);
+      if (method === 'GET' && path === `/assignments/${ASSIGNMENT_ID}/me`) return mineAnswer();
+      if (method === 'POST' && path === `/versions/${VERSION_ID}/finalize`) return finalizeAnswer(call);
       if (method === 'POST' && path === `/assignments/${ASSIGNMENT_ID}/versions`) return openUpload();
       if (method === 'PUT' && path.startsWith(`/versions/${VERSION_ID}/files/`)) return sendFile(call);
       return failure(404, 'NOT_FOUND');
@@ -244,5 +273,130 @@ describe('the student upload control', () => {
     await openPage();
     await userEvent.upload(input(), pdf());
     expect(await screen.findByText('This class is archived and read-only.')).toBeTruthy();
+  });
+});
+
+describe('submitting the files', () => {
+  const submitButton = () => screen.getByRole('button', { name: 'Submit files' }) as HTMLButtonElement;
+
+  it('keeps Submit disabled until every file is stored, and says why', async () => {
+    let release = () => {};
+    sendFile = () => new Promise<Response>((resolve) => (release = () => resolve(Response.json(fileView(), { status: 201 }))));
+    await openPage();
+    expect(submitButton().disabled).toBe(true);
+    expect(screen.getByText('Add a file to submit.')).toBeTruthy();
+
+    await userEvent.upload(input(), pdf());
+    expect(await screen.findByText('Waiting for 1 file to finish uploading')).toBeTruthy();
+    expect(submitButton().disabled).toBe(true);
+
+    release();
+    expect(await screen.findByText('1 file ready to submit')).toBeTruthy();
+    expect(submitButton().disabled).toBe(false);
+  });
+
+  it('keeps Submit disabled while a file was refused, until it is removed', async () => {
+    await openPage();
+    fireEvent.change(input(), { target: { files: [new File(['just some text'], 'notes.pdf', { type: 'application/pdf' })] } });
+
+    expect(await screen.findByText("1 file couldn't be uploaded. Retry or remove it.")).toBeTruthy();
+    expect(submitButton().disabled).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove notes.pdf' }));
+    expect(screen.getByText('Add a file to submit.')).toBeTruthy();
+  });
+
+  it('lets a file that could not be sent be removed, so it cannot hold Submit back for good', async () => {
+    sendFile = () => failure(500, 'INTERNAL');
+    await openPage();
+    await userEvent.upload(input(), pdf());
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove essay.pdf' }));
+    expect(screen.queryByText('essay.pdf')).toBeNull();
+  });
+
+  it('sends the stored files in the order shown, then shows the receipt in place of the upload control', async () => {
+    finalizeAnswer = () => Response.json(submitted(['a.pdf', 'b.png']));
+    await openPage();
+    await userEvent.upload(input(), [pdf('a.pdf'), png('b.png')]);
+    await waitFor(() => expect(screen.getAllByText('Uploaded')).toHaveLength(2));
+
+    await userEvent.click(submitButton());
+
+    expect(await screen.findByRole('heading', { name: 'Your submission' })).toBeTruthy();
+    const sent = callsTo('PUT', '/versions/').map((call) => call.path.split('/').pop());
+    const finalize = callsTo('POST', `/versions/${VERSION_ID}/finalize`);
+    expect(finalize).toHaveLength(1);
+    expect(JSON.parse(finalize[0]!.init!.body as string)).toEqual({ expectedFileIds: sent });
+    expect(screen.getByText('Grading in progress, usually about a minute')).toBeTruthy();
+    expect(screen.getByText(/^Submitted /)).toBeTruthy();
+    expect(screen.getByText('a.pdf')).toBeTruthy();
+    expect(screen.getByText('b.png')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Your files' })).toBeNull();
+  });
+
+  it('shows why it failed and keeps the files, so Submit can be pressed again', async () => {
+    finalizeAnswer = () => failure(409, 'UPLOAD_INCOMPLETE', undefined, { missing: ['x'] });
+    await openPage();
+    await userEvent.upload(input(), pdf());
+    await screen.findByText('Uploaded');
+    await userEvent.click(submitButton());
+
+    expect((await screen.findByRole('alert')).textContent).toContain("Some files haven't finished uploading.");
+    expect(screen.getByText('essay.pdf')).toBeTruthy();
+    expect(submitButton().disabled).toBe(false);
+  });
+
+  it.each([
+    [409, 'ATTEMPTS_EXHAUSTED', undefined, "You've used all your resubmissions. Your instructor can give you more."],
+    [422, 'FILE_LIMIT', { limit: 'total-size' }, 'Your files add up to more than 15 MB.'],
+    [422, 'FILE_LIMIT', { limit: 'grading-budget' }, 'These files are too large to grade together. Remove one and try again.'],
+    [409, 'CLASS_ARCHIVED', undefined, 'This class is archived and read-only.'],
+  ])('says what went wrong for %s %s', async (status, code, details, text) => {
+    finalizeAnswer = () => failure(status as number, code as string, undefined, details);
+    await openPage();
+    await userEvent.upload(input(), pdf());
+    await screen.findByText('Uploaded');
+    await userEvent.click(submitButton());
+    expect((await screen.findByRole('alert')).textContent).toContain(text);
+  });
+});
+
+describe('a student who has already submitted', () => {
+  it('sees the receipt and no upload control when they come back', async () => {
+    mine = submitted(['essay.pdf', 'page2.png']);
+    renderAt(`/assignments/${ASSIGNMENT_ID}`);
+
+    expect(await screen.findByRole('heading', { name: 'Your submission' })).toBeTruthy();
+    expect(screen.getByText('Grading in progress, usually about a minute')).toBeTruthy();
+    expect(screen.getByText('essay.pdf')).toBeTruthy();
+    expect(screen.getByText('page2.png')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Your files' })).toBeNull();
+  });
+
+  it('sees the receipt in an archived class too, read-only', async () => {
+    archived = true;
+    mine = submitted(['essay.pdf']);
+    renderAt(`/assignments/${ASSIGNMENT_ID}`);
+    expect(await screen.findByRole('heading', { name: 'Your submission' })).toBeTruthy();
+  });
+
+  it('marks a late submission Late', async () => {
+    mine = { ...submitted(['essay.pdf']), isLate: true };
+    renderAt(`/assignments/${ASSIGNMENT_ID}`);
+    expect(await screen.findByText('Late')).toBeTruthy();
+  });
+
+  it('still sees the upload control for an upload that is open and has nothing stored yet', async () => {
+    mine = submission({ state: 'UPLOADING', draftVersion: { ...version, status: 'UPLOADING' } });
+    await openPage();
+    expect(screen.queryByRole('heading', { name: 'Your submission' })).toBeNull();
+  });
+
+  it('offers Try again when the submission cannot be read, and shows no upload control meanwhile', async () => {
+    mineAnswer = () => failure(500, 'INTERNAL');
+    renderAt(`/assignments/${ASSIGNMENT_ID}`);
+
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Your files' })).toBeNull();
   });
 });

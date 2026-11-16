@@ -987,7 +987,7 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
 `GET /api/assignments/{assignmentId}/me`
 - **Access:** `ACTIVE` student in the class, for a published assignment.
 - **FR:** FR-SUB-06, FR-SUB-09, FR-AI-03, FR-AI-07, FR-SUB-04, FR-REV-09.
-- **Response:** `200` `StudentSubmission`. `state` uses the student `DisplayState` (A5); `grade` is present for `AI_GENERATED` and `INSTRUCTOR_APPROVED`; `instructorComment` only when approved; `attemptsLeft` is `null` with `unlimited: true` for Unlimited.
+- **Response:** `200` `StudentSubmission`. `state` uses the student `DisplayState` (A5); `grade` is present for `AI_GENERATED` and `INSTRUCTOR_APPROVED`; `instructorComment` only when approved; `attemptsLeft` is `null` with `unlimited: true` for Unlimited. `state` is `UPLOADING` only while an upload is open and no version is stored yet. Once a version is stored the state stays the submission's, and an upload opened for a resubmission is reported in `draftVersion`.
 - **Errors:** `NOT_FOUND`, `ENROLLMENT_PENDING`, STD-AUTH.
 - **Effects:** none.
 - **Polling:** every 5 seconds while `state` is `GRADING` or `UPLOADING` (A13).
@@ -1045,14 +1045,16 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
 `POST /api/versions/{versionId}/finalize` · Standard set: `STD-MUT`
 - **Access:** the owning student.
 - **FR:** FR-SUB-03, FR-SUB-04, FR-SUB-05, FR-SUB-07, FR-AI-02, FR-SUB-09.
-- **Request:** `{ expectedFileIds: string[] }` (1 to 10 `clientFileId`s, in the order shown to the student). The server does not trust the list alone; it checks the stored rows.
+- **Request:** `{ expectedFileIds: string[] }` (1 to 10 `clientFileId`s, in the order shown to the student). The server does not trust the list alone; it checks the stored rows. The list is the final set of files: a file stored in the version but not in the list is dropped.
 - **Response:** `200` `StudentSubmission` with `state: "GRADING"` (display `GRADING`, database `QUEUED`).
 - **Errors:**
   - `UPLOAD_INCOMPLETE` (409): `details.missing` lists the `clientFileId`s that are absent or `FAILED`.
-  - `UPLOAD_NOT_OPEN` (409): the version was already stored (finalize is idempotent only through the response of the first call; a second call returns `200` with the same body).
+  - `UPLOAD_NOT_OPEN` (409): the version was replaced by a newer one. A second finalize of the version that is already the submission's current version is not an error: it returns `200` with the same body and changes nothing.
   - `ATTEMPTS_EXHAUSTED`, `LATE_CLOSED`, `LOCKED_APPROVED` (409), re-checked inside the lock.
-  - `FILE_LIMIT` (422) when the grading budget is exceeded (`details.limit: "grading-budget"`, A7).
+  - `CLASS_ARCHIVED` (409).
+  - `FILE_LIMIT` (422): `details.limit` is `total-size` (the files add up to more than 15 MiB) or `grading-budget` (the files plus the assignment's reference files add up to more than 15 MiB, A7).
 - **Effects, in one transaction:**
+  - Files in the version that are not in `expectedFileIds` are deleted and their objects go to the storage outbox.
   - The version becomes `STORED`, `stored_at` is set, and `current_version_id` points to it.
   - `first_submitted_at` is set on the first version; `latest_submitted_at` is always set.
   - `resubmissions_used` increases by 1 for every version after the first (FR-SUB-05).

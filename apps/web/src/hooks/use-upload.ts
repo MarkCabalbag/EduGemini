@@ -1,10 +1,11 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
-import { LIMITS, type FileView, type VersionView } from '@edugemini/shared';
+import { LIMITS, type FileView, type StudentSubmission, type VersionView } from '@edugemini/shared';
 import { api, ApiRequestError } from '../lib/api';
 import { errorText } from '../lib/error-text';
 import { resizeImage } from '../lib/resize-image';
 import { checkFile } from '../lib/upload-files';
+import { submissionKeys } from './use-submission';
 
 /**
  * One file the student chose. `ready` waits its turn, `stored` is on the server, `failed` can be tried again (the network
@@ -22,6 +23,8 @@ export type UploadItem = {
 // Answers that say "try again", as opposed to the server refusing the file itself.
 const RETRYABLE = ['NETWORK', 'INTERNAL', 'SERVICE_UNAVAILABLE', 'RATE_LIMITED'];
 
+const textOf = (error: unknown) => (error instanceof ApiRequestError ? errorText(error.code, error.details) : errorText('INTERNAL'));
+
 function failureOf(error: unknown): Pick<UploadItem, 'state' | 'message'> {
   if (error instanceof ApiRequestError && !RETRYABLE.includes(error.code)) {
     return { state: 'rejected', message: errorText(error.code, error.details) };
@@ -30,16 +33,22 @@ function failureOf(error: unknown): Pick<UploadItem, 'state' | 'message'> {
 }
 
 /**
- * The files of one upload (API Spec A7, steps 1 and 2). The upload is opened when the first file is sent, and files go one
- * at a time, so a phone is never holding several photos in flight. Choosing the files does not submit anything: that is
- * the finalize step, which comes with its own ticket.
+ * The files of one upload (API Spec A7). The upload is opened when the first file is sent, and files go one at a time, so a
+ * phone is never holding several photos in flight. Choosing files submits nothing: `submit` finalizes the upload with the
+ * files that were stored, and the answer is the receipt, which replaces this control on the page.
  */
 export function useUpload(assignmentId: string) {
+  const queryClient = useQueryClient();
   const [items, setItems] = useState<UploadItem[]>([]);
   const open = useMutation({ mutationFn: () => api<VersionView>(`/assignments/${assignmentId}/versions`, { method: 'POST' }) });
   const send = useMutation({
     mutationFn: ({ versionId, id, blob, name }: { versionId: string; id: string; blob: Blob; name: string }) =>
       api<FileView>(`/versions/${versionId}/files/${id}`, { method: 'PUT', file: { blob, name } }),
+  });
+  const finalize = useMutation({
+    mutationFn: ({ versionId, ids }: { versionId: string; ids: string[] }) =>
+      api<StudentSubmission>(`/versions/${versionId}/finalize`, { method: 'POST', body: { expectedFileIds: ids } }),
+    onSuccess: (submission) => queryClient.setQueryData(submissionKeys.mine(assignmentId), submission),
   });
   const versionId = useRef<Promise<string>>(undefined);
   const lastInLine = useRef<Promise<void>>(Promise.resolve());
@@ -89,6 +98,17 @@ export function useUpload(assignmentId: string) {
     added.filter((item) => item.state === 'ready').forEach(enqueue);
   }
 
+  // Submit waits until every file is stored. A failed or refused file has to be retried or removed first.
+  const stored = items.filter((item) => item.state === 'stored');
+  const waiting = items.filter((item) => item.state === 'ready' || item.state === 'uploading').length;
+  const stuck = items.length - stored.length - waiting;
+
+  /** Finalize with the stored files, in the order shown (API Spec SUB-05). The version is already open, since a file is stored in it. */
+  async function submit() {
+    const versionId = await openUpload();
+    await finalize.mutateAsync({ versionId, ids: stored.map((item) => item.id) }).catch(() => undefined); // the error is `submitError`
+  }
+
   return {
     items,
     addFiles,
@@ -96,7 +116,12 @@ export function useUpload(assignmentId: string) {
       const item = items.find((candidate) => candidate.id === id);
       if (item) enqueue(item);
     },
-    /** Only for a file that was never stored. A stored file is removed with the upload's own endpoint (a later ticket). */
+    /** Only for a file that is not stored as far as the page knows. A stored file is removed with the upload's own endpoint (a later ticket). */
     remove: (id: string) => setItems((list) => list.filter((item) => item.id !== id)),
+    submit,
+    submitting: finalize.isPending,
+    submitError: finalize.error ? textOf(finalize.error) : undefined,
+    /** How many files are stored, still on their way, and failed or refused. */
+    counts: { stored: stored.length, waiting, stuck },
   };
 }

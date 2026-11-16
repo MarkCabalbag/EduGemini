@@ -37,13 +37,26 @@ function State({ item, onRetry }: { item: UploadItem; onRetry: () => void }) {
   }
 }
 
+const files = (count: number) => (count === 1 ? '1 file' : `${count} files`);
+
+/** Why Submit is disabled, or how many files it will send (UX Brief, Upload). */
+function submitHelp({ stored, waiting, stuck }: { stored: number; waiting: number; stuck: number }): string {
+  if (waiting > 0) return `Waiting for ${files(waiting)} to finish uploading`;
+  if (stuck > 0) return `${files(stuck)} couldn't be uploaded. Retry or remove ${stuck === 1 ? 'it' : 'them'}.`;
+  if (stored === 0) return 'Add a file to submit.';
+  return `${files(stored)} ready to submit`;
+}
+
 /**
  * The student's upload control (App Flow §6 step 4, UX Brief Upload). Each file is checked when it is chosen, then sent on
- * its own. Thumbnails, reordering, progress in percent and Submit come with the tickets for them.
+ * its own, and Submit sends the stored ones as the submission. Thumbnails, reordering and progress in percent come with
+ * the tickets for them.
  */
 export function UploadFiles({ assignmentId }: { assignmentId: string }) {
-  const { items, addFiles, retry, remove } = useUpload(assignmentId);
+  const { items, addFiles, retry, remove, submit, submitting, submitError, counts } = useUpload(assignmentId);
   const inputId = useId();
+  const helpId = useId();
+  const canSubmit = counts.stored > 0 && counts.waiting === 0 && counts.stuck === 0;
 
   return (
     <section className="space-y-3">
@@ -80,7 +93,7 @@ export function UploadFiles({ assignmentId }: { assignmentId: string }) {
               <div role="status" className="text-small">
                 <State item={item} onRetry={() => retry(item.id)} />
               </div>
-              {item.state === 'rejected' && (
+              {(item.state === 'rejected' || item.state === 'failed') && (
                 <Button variant="secondary" onClick={() => remove(item.id)} aria-label={`Remove ${item.file.name}`}>
                   Remove
                 </Button>
@@ -89,6 +102,21 @@ export function UploadFiles({ assignmentId }: { assignmentId: string }) {
           ))}
         </ul>
       )}
+
+      <div className="space-y-2">
+        <p id={helpId} className="text-small text-muted">
+          {submitHelp(counts)}
+        </p>
+        <Button onClick={() => void submit()} disabled={!canSubmit} loading={submitting} aria-describedby={helpId}>
+          Submit files
+        </Button>
+        {submitError && (
+          <p role="alert" className="inline-flex items-center gap-1 text-error-fg">
+            <AlertCircle aria-hidden size={16} />
+            {submitError}
+          </p>
+        )}
+      </div>
     </section>
   );
 }

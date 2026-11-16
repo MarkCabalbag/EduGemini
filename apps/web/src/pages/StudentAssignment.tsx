@@ -8,10 +8,12 @@ import { StatusChip } from '../components/ui/StatusChip';
 import { useAssignment } from '../hooks/use-assignments';
 import { useMe } from '../hooks/use-auth';
 import { useClass } from '../hooks/use-classes';
+import { useMySubmission } from '../hooks/use-submission';
 import { ApiRequestError } from '../lib/api';
 import { scoringText } from '../lib/assignment-meta';
 import { browserTimeZone, formatDue } from '../lib/zoned-time';
 import { NotFound } from './NotFound';
+import { SubmissionReceipt } from './SubmissionReceipt';
 import { UploadFiles } from './UploadFiles';
 
 // The exact wording of UX Brief §11.3 (PRD FR-AI-07). Every page that shows a score or will show one carries it, never behind a tooltip.
@@ -24,6 +26,19 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <p className="whitespace-pre-line">{children}</p>
     </section>
   );
+}
+
+/**
+ * The student's part of the page: the upload control until they have submitted, then the receipt. A resubmit control and
+ * the result block come with their tickets, so for now a submitted student sees the receipt only.
+ */
+function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; canUpload: boolean }) {
+  const mine = useMySubmission(assignmentId);
+  if (mine.isPending) return <PageLoading />;
+  if (mine.isError) return <ErrorState error={mine.error} onRetry={() => void mine.refetch()} />;
+  const { state } = mine.data;
+  if (state === 'NOT_SUBMITTED' || state === 'UPLOADING') return canUpload ? <UploadFiles assignmentId={assignmentId} /> : null;
+  return <SubmissionReceipt submission={mine.data} />;
 }
 
 /**
@@ -51,7 +66,7 @@ function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
       </div>
       {assignment.instructions && <Section title="Instructions">{assignment.instructions}</Section>}
       <Section title="Criteria">{assignment.criteriaText}</Section>
-      {cls.data?.status === 'ACTIVE' && <UploadFiles assignmentId={assignment.id} />}
+      <SubmissionArea assignmentId={assignment.id} canUpload={cls.data?.status === 'ACTIVE'} />
       <p className="text-small text-muted">{DISCLOSURE}</p>
     </div>
   );

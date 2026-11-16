@@ -902,6 +902,9 @@ paths:
       operationId: SUB-01
       tags: [Student submission]
       summary: Get my submission for an assignment
+      description: >-
+        state is UPLOADING only while an upload is open and nothing is stored yet. Once a version is stored the state is the
+        submission's, and an upload open for a resubmission is draftVersion.
       responses:
         '200':
           description: My state, attempts, grade (when shown), and files.
@@ -996,6 +999,11 @@ paths:
       operationId: SUB-05
       tags: [Student submission]
       summary: Finalize the upload and queue grading
+      description: >-
+        The listed files are the final set: a stored file that is not listed is dropped. A second call for the version that
+        is already stored returns the same 200 and changes nothing. 409 is UPLOAD_INCOMPLETE (details.missing),
+        UPLOAD_NOT_OPEN, ATTEMPTS_EXHAUSTED, LATE_CLOSED, LOCKED_APPROVED or CLASS_ARCHIVED; 422 is FILE_LIMIT with
+        details.limit total-size or grading-budget.
       requestBody:
         required: true
         content:

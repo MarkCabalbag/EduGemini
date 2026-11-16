@@ -1,16 +1,17 @@
 import type { PrismaClient } from '@prisma/client';
 import { Router } from 'express';
-import { AssignmentParamsSchema, FileParamsSchema, LIMITS } from '@edugemini/shared';
+import { AssignmentParamsSchema, FileParamsSchema, FinalizeSchema, LIMITS, VersionParamsSchema } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import type { StorageAdapter } from '../lib/storage';
 import { requireAction } from '../middleware/authorize';
 import { limiters } from '../middleware/rate-limit';
 import { requireAuth } from '../middleware/session';
 import { validate, validated } from '../middleware/validate';
-import { openVersion, storeFile } from '../services/submission-service';
+import { finalizeVersion, getMySubmission, openVersion, storeFile } from '../services/submission-service';
 
 const open = { params: AssignmentParamsSchema };
 const send = { params: FileParamsSchema };
+const finalize = { params: VersionParamsSchema, body: FinalizeSchema };
 
 const MAX_NAME_BYTES = 255;
 
@@ -28,13 +29,19 @@ function displayNameFrom(header: string | undefined): string {
 }
 
 /**
- * Open an upload and send its files (API Spec SUB-02, SUB-03). Students only. Whether this student may upload to this
- * class is the service's call, so the role check is "any student", as `class.join` is for joining.
+ * A student's submission: read it, open an upload, send its files, finalize (API Spec SUB-01, SUB-02, SUB-03, SUB-05).
+ * Students only. Whether this student may use this class is the service's call, so the role check is "any student", as
+ * `class.join` is for joining.
  */
 export function uploadsRouter({ db, storage, bucket }: { db: PrismaClient; storage: StorageAdapter; bucket: string }): Router {
   const router = Router();
   const guard = [requireAuth, requireAction('class.listEnrolled')];
   const uploadLimit = limiters.uploadByUser(); // one counter for opening a version and for sending its files
+
+  router.get('/assignments/:assignmentId/me', ...guard, validate(open), async (req, res) => {
+    const { params } = validated(res, open);
+    res.json(await getMySubmission(db, req.auth!.user, params.assignmentId));
+  });
 
   router.post('/assignments/:assignmentId/versions', ...guard, validate(open), uploadLimit, async (req, res) => {
     const { params } = validated(res, open);
@@ -54,6 +61,11 @@ export function uploadsRouter({ db, storage, bucket }: { db: PrismaClient; stora
       displayName: displayNameFrom(req.get('X-File-Name')),
     });
     res.status(created ? 201 : 200).json(file);
+  });
+
+  router.post('/versions/:versionId/finalize', ...guard, validate(finalize), async (req, res) => {
+    const { params, body } = validated(res, finalize);
+    res.json(await finalizeVersion(db, bucket, req.auth!.user, params.versionId, body.expectedFileIds));
   });
 
   return router;
