@@ -13,3 +13,9 @@ export type AssignmentStatus = z.infer<typeof AssignmentStatusSchema>;
 
 export const ScoringFormatSchema = z.enum(['POINTS', 'PERCENTAGE', 'LETTER_NUMERIC']);
 export type ScoringFormat = z.infer<typeof ScoringFormatSchema>;
+
+export const VersionStatusSchema = z.enum(['UPLOADING', 'STORED', 'REPLACED']);
+export type VersionStatus = z.infer<typeof VersionStatusSchema>;
+
+export const FileStatusSchema = z.enum(['STORED', 'FAILED']);
+export type FileStatus = z.infer<typeof FileStatusSchema>;

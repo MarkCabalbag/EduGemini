@@ -732,6 +732,7 @@ These strings must match the App Flow exactly. A string marked **(new)** was wri
 | Attempts left | N resubmissions left |
 | Unlimited | Unlimited resubmissions |
 | Attempts used up | You've used all your resubmissions. Your instructor can give you more. *(new)* |
+| Too many files (`FILE_LIMIT`, `details.limit: files`) | You can upload up to 10 files. *(new)* |
 | No access | You don't have access to this page. |
 | Item gone | This item is no longer available. |
 | Account suspended | Account suspended. |

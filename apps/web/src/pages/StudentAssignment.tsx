@@ -12,6 +12,7 @@ import { ApiRequestError } from '../lib/api';
 import { scoringText } from '../lib/assignment-meta';
 import { browserTimeZone, formatDue } from '../lib/zoned-time';
 import { NotFound } from './NotFound';
+import { UploadFiles } from './UploadFiles';
 
 // The exact wording of UX Brief §11.3 (PRD FR-AI-07). Every page that shows a score or will show one carries it, never behind a tooltip.
 const DISCLOSURE = 'Scores and feedback are AI-generated and reviewed by your instructor. Questions about grades go to your instructor.';
@@ -25,7 +26,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** What an approved student reads about one published assignment (App Flow §6 step 3). The upload comes with the submission tickets. */
+/**
+ * What an approved student reads about one published assignment (App Flow §6 step 3), and the control to upload their files.
+ * An archived class is read-only, so it has no upload control (UX Brief, student pages). The result block comes with grading.
+ */
 function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
   // The class gives the name for the way back, and says whether it is archived (read-only). The page works without it.
   const cls = useClass(assignment.classId);
@@ -47,6 +51,7 @@ function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
       </div>
       {assignment.instructions && <Section title="Instructions">{assignment.instructions}</Section>}
       <Section title="Criteria">{assignment.criteriaText}</Section>
+      {cls.data?.status === 'ACTIVE' && <UploadFiles assignmentId={assignment.id} />}
       <p className="text-small text-muted">{DISCLOSURE}</p>
     </div>
   );

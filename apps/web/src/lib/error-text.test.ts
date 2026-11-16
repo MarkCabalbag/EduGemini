@@ -8,6 +8,14 @@ describe('errorText', () => {
     expect(errorText('NOT_A_CODE' as ErrorCode)).toBe('Something went wrong.');
   });
 
+  it('has the file messages from API Spec A4, and names the limit that was passed', () => {
+    expect(errorText('FILE_TYPE')).toBe("This file type isn't supported. Use PDF, JPG, or PNG.");
+    expect(errorText('FILE_TOO_LARGE')).toBe('This file is larger than 10 MB.');
+    expect(errorText('FILE_ERROR')).toBe("This file couldn't be read. Try re-saving it or choosing a different file.");
+    expect(errorText('FILE_LIMIT', { limit: 'files' })).toBe('You can upload up to 10 files.');
+    expect(errorText('FILE_LIMIT', { limit: 'pages' })).toBe('Something went wrong.'); // the other limits come with SUB-02
+  });
+
   it('has the three join messages from API Spec A4', () => {
     expect(errorText('INVALID_JOIN_CODE')).toBe("That code didn't work. Check it and try again.");
     expect(errorText('JOIN_BLOCKED')).toBe("You can't join this class right now. Contact the instructor.");

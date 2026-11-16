@@ -373,7 +373,7 @@ The breaking-change check compares the previous `openapi.yaml` with the new one 
 | Password reset request, per email | 3 per hour | Same response for known and unknown emails |
 | Join code attempts, per user | 10 failed attempts per hour | Any refused join counts (`INVALID_JOIN_CODE`, `JOIN_BLOCKED`); a successful join and a code of the wrong length do not |
 | Join link preview, per IP | 30 failed tries per hour | Only failed tries count, for the same reason as sign-in. Not part of the general limit below |
-| Uploads (PUT), per user | 60 per minute | |
+| Uploads (PUT), per user | 60 per minute | Opening a version (SUB-02) and sending a file (SUB-03) share one count |
 | Grading triggers, per user | 30 per minute | Pacing per instructor key is separate (TRD §10.2) |
 | Bulk actions, per instructor | 10 per minute | |
 | Class creation, per user | 20 per hour | Counted after validation, so a request with errors does not use it up |
@@ -1016,7 +1016,7 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
 `PUT /api/versions/{versionId}/files/{clientFileId}`
 - **Access:** the student who owns the version.
 - **FR:** FR-SUB-01, FR-SUB-02, FR-SUB-03, FR-SUB-08, FR-AI-05, PRD A12.
-- **Request:** raw file bytes. Headers: `Content-Type` (the file's MIME type), `X-File-Name` (URL-encoded display name, at most 255 bytes), `Content-Length` (required; the server rejects chunked bodies over 10 MiB without reading past the limit).
+- **Request:** raw file bytes. Headers: `Content-Type` (the file's MIME type), `X-File-Name` (URL-encoded display name, at most 255 bytes), `Content-Length` (required; the server rejects chunked bodies over 10 MiB without reading past the limit). A missing or unreadable `X-File-Name` becomes "file", control characters are removed, and a longer name is cut to 255 bytes. A declared `Content-Length` over 10 MiB is refused with `FILE_TOO_LARGE` before the body is read, and the connection is closed.
 - **Response:**
   - `201` `FileView` for a new file. `200` when `clientFileId` already exists and is replaced (idempotent).
   - `422` `FILE_ERROR` with `details.file` (a `FileView` with `status: "FAILED"`) for a password-protected or corrupt PDF. Only these failures store a `FAILED` row, so the student sees the file and can replace it. Rejections for type, size, and count store no row.

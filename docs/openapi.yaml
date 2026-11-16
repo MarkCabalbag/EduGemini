@@ -955,7 +955,7 @@ paths:
       tags: [Student submission]
       summary: Send one file (raw bytes; idempotent per clientFileId)
       parameters:
-        - { name: X-File-Name, in: header, required: true, schema: { type: string, maxLength: 340 } }
+        - { name: X-File-Name, in: header, required: false, description: 'Without it the name shown is "file".', schema: { type: string, maxLength: 340 } }
       requestBody:
         required: true
         content:

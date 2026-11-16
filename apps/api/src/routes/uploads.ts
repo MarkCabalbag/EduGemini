@@ -1,0 +1,60 @@
+import type { PrismaClient } from '@prisma/client';
+import { Router } from 'express';
+import { AssignmentParamsSchema, FileParamsSchema, LIMITS } from '@edugemini/shared';
+import { AppError } from '../lib/app-error';
+import type { StorageAdapter } from '../lib/storage';
+import { requireAction } from '../middleware/authorize';
+import { limiters } from '../middleware/rate-limit';
+import { requireAuth } from '../middleware/session';
+import { validate, validated } from '../middleware/validate';
+import { openVersion, storeFile } from '../services/submission-service';
+
+const open = { params: AssignmentParamsSchema };
+const send = { params: FileParamsSchema };
+
+const MAX_NAME_BYTES = 255;
+
+/** The name to show for the file, from X-File-Name (URL-encoded, at most 255 bytes). It is only text, so a missing or broken one becomes "file". */
+function displayNameFrom(header: string | undefined): string {
+  let name = '';
+  try {
+    name = decodeURIComponent(header ?? '');
+  } catch {
+    // a broken encoding counts as no name
+  }
+  const characters = [...name.replace(/\p{Cc}/gu, '').trim()]; // by code point, so a cut never leaves half an emoji
+  while (Buffer.byteLength(characters.join('')) > MAX_NAME_BYTES) characters.pop();
+  return characters.join('') || 'file';
+}
+
+/**
+ * Open an upload and send its files (API Spec SUB-02, SUB-03). Students only. Whether this student may upload to this
+ * class is the service's call, so the role check is "any student", as `class.join` is for joining.
+ */
+export function uploadsRouter({ db, storage, bucket }: { db: PrismaClient; storage: StorageAdapter; bucket: string }): Router {
+  const router = Router();
+  const guard = [requireAuth, requireAction('class.listEnrolled')];
+  const uploadLimit = limiters.uploadByUser(); // one counter for opening a version and for sending its files
+
+  router.post('/assignments/:assignmentId/versions', ...guard, validate(open), uploadLimit, async (req, res) => {
+    const { params } = validated(res, open);
+    const { created, version } = await openVersion(db, req.auth!.user, params.assignmentId);
+    res.status(created ? 201 : 200).json(version);
+  });
+
+  // The body is the file itself, read by the service (json-body.ts lets this one route through).
+  router.put('/versions/:versionId/files/:clientFileId', ...guard, validate(send), uploadLimit, async (req, res) => {
+    const { params } = validated(res, send);
+    if (req.is(['json', 'multipart', 'urlencoded'])) throw new AppError('UNSUPPORTED_MEDIA_TYPE');
+    if (Number(req.headers['content-length']) > LIMITS.maxFileBytes) {
+      throw new AppError('FILE_TOO_LARGE', { headers: { Connection: 'close' } }); // refused without reading the body
+    }
+    const { created, file } = await storeFile(db, storage, bucket, req.auth!.user, params.versionId, params.clientFileId, {
+      body: req,
+      displayName: displayNameFrom(req.get('X-File-Name')),
+    });
+    res.status(created ? 201 : 200).json(file);
+  });
+
+  return router;
+}

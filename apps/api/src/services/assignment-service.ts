@@ -40,7 +40,7 @@ const toDetail = (row: Assignment): AssignmentDetail => ({
 });
 
 /** A student's status in the class. Anyone else has none, so no lookup is made for them. */
-async function enrollmentOf(db: PrismaClient, actor: Actor, classId: string) {
+export async function enrollmentOf(db: PrismaClient, actor: Actor, classId: string) {
   if (actor.role !== 'STUDENT') return undefined;
   const row = await db.enrollment.findUnique({
     where: { classId_studentId: { classId, studentId: actor.id } },

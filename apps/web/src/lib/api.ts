@@ -14,17 +14,30 @@ export class ApiRequestError extends Error {
   }
 }
 
-type Options = { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown };
+type Options = {
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT';
+  body?: unknown;
+  /** A file sent as it is, with its own type and its name in X-File-Name (API Spec SUB-03). Use instead of `body`. */
+  file?: { blob: Blob; name: string };
+};
 
 /** The only place the web app calls fetch (code-standards §8). Same origin: the base is a relative /api. */
-export async function api<T = undefined>(path: string, { method = 'GET', body }: Options = {}): Promise<T> {
+export async function api<T = undefined>(path: string, { method = 'GET', body, file }: Options = {}): Promise<T> {
+  const init: RequestInit = file
+    ? {
+        method,
+        headers: { 'Content-Type': file.blob.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
+        body: file.blob,
+      }
+    : {
+        method,
+        headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      };
+
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, {
-      method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    response = await fetch(`/api${path}`, init);
   } catch {
     throw new ApiRequestError('NETWORK', 0);
   }
