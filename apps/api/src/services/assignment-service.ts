@@ -14,7 +14,7 @@ import { AppError } from '../lib/app-error';
 import { decodeCursor, encodeCursor } from '../lib/cursor';
 import { authorize, type Action, type Actor } from '../policy/policy';
 
-/** Assignments for the owning instructor (API Spec ASG-01 to ASG-04, ASG-06). Students see them with the student tickets (ASG-03). */
+/** Assignments (API Spec ASG-01 to ASG-04, ASG-06). The owning instructor does everything; an approved student can read published ones. */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PLACEHOLDER_DAYS = 7; // a draft's due date until the instructor sets one (API Spec B.6)
@@ -39,22 +39,35 @@ const toDetail = (row: Assignment): AssignmentDetail => ({
   criteriaText: row.criteriaText,
 });
 
-/** The class, if the action is the caller's to do in it. Someone else's class looks the same as a missing one (API Spec A3). */
-async function ownClass(db: PrismaClient, actor: Actor, classId: string, action: Action) {
+/** A student's status in the class. Anyone else has none, so no lookup is made for them. */
+async function enrollmentOf(db: PrismaClient, actor: Actor, classId: string) {
+  if (actor.role !== 'STUDENT') return undefined;
+  const row = await db.enrollment.findUnique({
+    where: { classId_studentId: { classId, studentId: actor.id } },
+    select: { status: true },
+  });
+  return row?.status;
+}
+
+/**
+ * The class, if the action is the caller's to do in it: the owning instructor, or for viewing an approved student (a
+ * pending one is told so). Anyone else's class looks the same as a missing one (API Spec A3).
+ */
+async function classFor(db: PrismaClient, actor: Actor, classId: string, action: Action) {
   const row = await db.class.findUnique({ where: { id: classId } });
   if (!row) throw new AppError('NOT_FOUND');
-  authorize(actor, action, { classInstructorId: row.instructorId });
+  authorize(actor, action, { classInstructorId: row.instructorId, enrollment: await enrollmentOf(db, actor, classId) });
   return row;
 }
 
-/** The assignment with its class's owner and archive state, if the class is the caller's. */
-async function ownAssignment(db: PrismaClient, actor: Actor, assignmentId: string, action: Action) {
+/** The assignment with its class's owner and archive state, if the action is the caller's to do in that class (as `classFor`). */
+async function assignmentFor(db: PrismaClient, actor: Actor, assignmentId: string, action: Action) {
   const row = await db.assignment.findUnique({
     where: { id: assignmentId },
     include: { class: { select: { instructorId: true, archivedAt: true } } },
   });
   if (!row) throw new AppError('NOT_FOUND');
-  authorize(actor, action, { classInstructorId: row.class.instructorId });
+  authorize(actor, action, { classInstructorId: row.class.instructorId, enrollment: await enrollmentOf(db, actor, row.classId) });
   return row;
 }
 
@@ -68,7 +81,7 @@ export async function createAssignment(
   classId: string,
   input: CreateAssignment,
 ): Promise<AssignmentDetail> {
-  const cls = await ownClass(db, actor, classId, 'assignment.write');
+  const cls = await classFor(db, actor, classId, 'assignment.write');
   if (cls.archivedAt) throw new AppError('CLASS_ARCHIVED'); // read-only (FR-CLS-06)
 
   const scoringFormat = input.scoringFormat ?? 'POINTS';
@@ -89,23 +102,35 @@ export async function createAssignment(
   return toDetail(row);
 }
 
+/**
+ * One assignment (API Spec ASG-03). A student sees published ones only: a draft or an archived assignment looks the same as
+ * a missing one. The class is checked first, so a pending student is told they are pending and nothing about the assignment.
+ */
 export async function getAssignment(db: PrismaClient, actor: Actor, assignmentId: string): Promise<AssignmentDetail> {
-  return toDetail(await ownAssignment(db, actor, assignmentId, 'assignment.view'));
+  const row = await assignmentFor(db, actor, assignmentId, 'assignment.view');
+  if (actor.role === 'STUDENT' && row.status !== 'PUBLISHED') throw new AppError('NOT_FOUND');
+  return toDetail(row);
 }
 
-/** A class's assignments, nearest due date first (API Spec ASG-01). */
+/**
+ * A class's assignments, nearest due date first (API Spec ASG-01). A student is always limited to published ones, so a
+ * status filter that leaves them out gives an empty page.
+ */
 export async function listAssignments(
   db: PrismaClient,
   actor: Actor,
   classId: string,
   query: ListAssignmentsQuery,
 ): Promise<AssignmentPage> {
-  await ownClass(db, actor, classId, 'assignment.view');
+  await classFor(db, actor, classId, 'assignment.view');
+  const student = actor.role === 'STUDENT';
+  if (student && query.status && query.status !== 'PUBLISHED') return { items: [], nextCursor: null };
 
   const after = query.cursor ? decodeCursor(query.cursor) : undefined;
+  const status = student ? 'PUBLISHED' : query.status;
   const where: Prisma.AssignmentWhereInput = {
     classId,
-    ...(query.status && { status: query.status }),
+    ...(status && { status }),
     ...(after && { OR: [{ dueAt: { gt: after.at } }, { dueAt: after.at, id: { gt: after.id } }] }),
   };
 
@@ -129,7 +154,7 @@ export async function updateAssignment(
   assignmentId: string,
   input: UpdateAssignment,
 ): Promise<AssignmentDetail> {
-  const row = await ownAssignment(db, actor, assignmentId, 'assignment.write');
+  const row = await assignmentFor(db, actor, assignmentId, 'assignment.write');
   if (row.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
 
   const scoringFormat = input.scoringFormat ?? row.scoringFormat;
@@ -159,7 +184,7 @@ export async function updateAssignment(
  * submissions wait for manual review (App Flow F16, PRD A8).
  */
 export async function publishAssignment(db: PrismaClient, actor: Actor, assignmentId: string): Promise<PublishedAssignment> {
-  const row = await ownAssignment(db, actor, assignmentId, 'assignment.write');
+  const row = await assignmentFor(db, actor, assignmentId, 'assignment.write');
   if (row.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
   if (row.status === 'ARCHIVED') throw new AppError('CONFLICT');
 

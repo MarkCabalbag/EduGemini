@@ -13,6 +13,7 @@ import { Privacy, Terms } from './pages/Legal';
 import { NotFound } from './pages/NotFound';
 import { SignIn } from './pages/SignIn';
 import { SignUp } from './pages/SignUp';
+import { StudentAssignment } from './pages/StudentAssignment';
 import { StudentClass } from './pages/StudentClass';
 
 /** One address, two views: a student sees the class as a member, an instructor as its owner. */
@@ -38,6 +39,7 @@ export function App() {
           <Route path="/classes/new" element={<CreateClass />} />
           <Route path="/classes/:classId" element={<ClassPage />} />
           <Route path="/classes/:classId/assignments/new" element={<NewAssignment />} />
+          <Route path="/assignments/:assignmentId" element={<StudentAssignment />} />
           <Route path="/assignments/:assignmentId/edit" element={<EditAssignment />} />
         </Route>
         <Route path="*" element={<NotFound />} />

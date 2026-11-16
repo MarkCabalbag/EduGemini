@@ -112,6 +112,8 @@ beforeEach(() => {
         const { searchParams } = new URL(path, 'http://x');
         return listResult(searchParams.get('cursor'), searchParams.get('status'));
       }
+      // The student class page lists the class's assignments; these tests are not about them.
+      if (method === 'GET' && /^\/classes\/[^/?]+\/assignments\?/.test(path)) return Response.json({ items: [], nextCursor: null });
       const change = /^\/classes\/([^/?]+)\/(archive|restore)$/.exec(path);
       if (method === 'POST' && change) return changeResult(change[1] ?? '', change[2] as 'archive' | 'restore');
       const one = /^\/classes\/([^/?]+)$/.exec(path);

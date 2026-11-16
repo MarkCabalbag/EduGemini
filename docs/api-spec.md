@@ -823,7 +823,7 @@ Drafts need a few fields before the wizard has collected them. The rule for all 
 `GET /api/classes/{classId}/assignments?status=&labelId=&cursor=&limit=&sort=dueAt`
 - **Access:** owning instructor (all statuses, including drafts), or an `ACTIVE` student (published only).
 - **FR:** FR-ASG-03, FR-ASG-08, FR-GB-06, FR-SUB-09, FR-AUTH-08.
-- **Response:** `200` `Page<AssignmentSummary>`. Students get `my` on each row. Default order is nearest due date first (App Flow §6 step 2).
+- **Response:** `200` `Page<AssignmentSummary>`. Students get `my` on each row. Default order is nearest due date first (App Flow §6 step 2). A student is always limited to published assignments, so a `status` filter that leaves them out gives an empty page.
 - **Errors:** `ENROLLMENT_PENDING` (403), `NOT_FOUND`, `VALIDATION` (unknown filter), STD-AUTH.
 - **Test:** `assignment.spec`, `grading.spec` (student row chips).
 
@@ -844,7 +844,7 @@ Drafts need a few fields before the wizard has collected them. The rule for all 
 - **Response:** `200` `AssignmentDetail`.
   - Instructors also get `counts` (`turnedIn`, `late`, `missing`, `notYetDue`, `needsReview`, and `submissions` as the total, used for the deletion confirmation) and every reference file.
   - Students get `my` and only the reference files marked visible.
-- **Errors:** `NOT_FOUND` (students on drafts and archived assignments), `ENROLLMENT_PENDING`.
+- **Errors:** `NOT_FOUND` (students on drafts and archived assignments), `ENROLLMENT_PENDING`. The class is checked first: a pending student gets `ENROLLMENT_PENDING` for any assignment that exists in it, a draft included, and learns nothing else.
 - **Test:** `assignment.spec`.
 
 #### ASG-04 · Edit assignment
