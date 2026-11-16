@@ -6,6 +6,7 @@ import { getEnv } from './lib/env';
 import { startJobs } from './jobs';
 import { createLogger } from './lib/logger';
 import { devFilesRouter } from './routes/dev-files';
+import { keyRouter } from './routes/key';
 import { uploadsRouter } from './routes/uploads';
 
 const env = getEnv();
@@ -22,6 +23,7 @@ const app = createApp({
     await prisma.user.findFirst({ select: { id: true } });
   },
   routers: [
+    keyRouter({ db: prisma, env }),
     uploadsRouter({ db: prisma, storage, bucket: env.STORAGE_BUCKET }),
     // Opens the links the local storage signs. Not registered with Supabase storage (env.ts refuses local in production).
     ...(env.STORAGE_DRIVER === 'local' ? [devFilesRouter({ dir: env.STORAGE_LOCAL_DIR, secret: env.SESSION_SECRET })] : []),

@@ -22,6 +22,11 @@ export function Layout() {
           {canSignOut ? (
             <div className="flex items-center gap-3">
               {me && <NotificationBell />}
+              {me?.role === 'INSTRUCTOR' && (
+                <Link to="/settings/ai" className="font-semibold text-primary underline">
+                  Settings
+                </Link>
+              )}
               {me && (
                 <span className="hidden text-small text-muted sm:inline">
                   {me.firstName} {me.lastName}

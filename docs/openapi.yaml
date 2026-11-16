@@ -2070,10 +2070,11 @@ components:
       type: object
       required: [connected]
       properties:
-        connected: { type: boolean }
+        connected: { type: boolean, description: "A key is saved." }
         status:
           type: [string, 'null']
           enum: [CONNECTED, NEEDS_ATTENTION, QUOTA_REACHED, null]
+          description: "Null when no key is saved, and until the key is first checked with Gemini (EG-KEY-03)."
         last4: { type: [string, 'null'], minLength: 4, maxLength: 4 }
         lastSuccessAt: { type: [string, 'null'], format: date-time }
         disclosureAckAt: { type: [string, 'null'], format: date-time }

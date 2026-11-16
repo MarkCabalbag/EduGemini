@@ -12,6 +12,7 @@ import { Landing } from './pages/Landing';
 import { Privacy, Terms } from './pages/Legal';
 import { NotFound } from './pages/NotFound';
 import { Notifications } from './pages/Notifications';
+import { SettingsAi } from './pages/SettingsAi';
 import { SignIn } from './pages/SignIn';
 import { SignUp } from './pages/SignUp';
 import { StudentAssignment } from './pages/StudentAssignment';
@@ -43,6 +44,7 @@ export function App() {
           <Route path="/assignments/:assignmentId" element={<StudentAssignment />} />
           <Route path="/assignments/:assignmentId/edit" element={<EditAssignment />} />
           <Route path="/notifications" element={<Notifications />} />
+          <Route path="/settings/ai" element={<SettingsAi />} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Route>

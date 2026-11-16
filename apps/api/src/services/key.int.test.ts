@@ -108,6 +108,28 @@ describe('saving a key (EG-KEY-01)', () => {
     expect(await loadApiKey(db, ENV, actor.id)).toBe(second);
   });
 
+  it('refuses a first save with no acknowledgement, stores nothing, and then accepts one with it (EG-KEY-04)', async () => {
+    const actor = await makeUser('noack');
+    const apiKey = newApiKey();
+
+    await expect(saveKey(db, ENV, actor, apiKey, null)).rejects.toMatchObject({ code: 'VALIDATION', fields: { disclosureAcknowledged: expect.any(String) } });
+    expect(await rowsOf(actor)).toHaveLength(0);
+
+    await saveKey(db, ENV, actor, apiKey, ACK);
+    expect(await rowsOf(actor)).toHaveLength(1);
+  });
+
+  it('replaces a saved key with no acknowledgement, and keeps the first one', async () => {
+    const actor = await makeUser('replace-noack');
+    await saveKey(db, ENV, actor, newApiKey(), ACK);
+    const second = newApiKey();
+
+    const info = await saveKey(db, ENV, actor, second, null);
+
+    expect(info).toMatchObject({ last4: second.slice(-4), disclosureAckAt: ACK.toISOString() });
+    expect(await loadApiKey(db, ENV, actor.id)).toBe(second);
+  });
+
   it('keeps one row when two saves arrive together', async () => {
     const actor = await makeUser('together');
     const keys = [newApiKey(), newApiKey()];

@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { AppError } from '../lib/app-error';
 import type { Env } from '../lib/env';
 import { decryptKey, encryptKey, lastFour } from '../lib/key-crypto';
 import { lockInstructorKey } from '../lib/lock';
@@ -27,14 +28,21 @@ const toKeyInfo = (row: { last4: string; lastSuccessAt: Date | null; disclosureA
 const secretOf = (env: KeyEnv) => Buffer.from(env.ENCRYPTION_KEY, 'base64');
 
 /**
- * Save the instructor's key, replacing any earlier one (API Spec KEY-02, Effects and Concurrency). The first save records
- * `disclosureAckAt`; a replace keeps the first one. The caller has already checked the key with Gemini.
+ * Save the instructor's key, replacing any earlier one (API Spec KEY-02, Effects and Concurrency). The first save needs the
+ * acknowledgement (`disclosureAckAt`, null when the instructor did not tick it) and records it; a replace keeps the first one.
+ * Checking the key with Gemini is EG-KEY-03; until it exists the key is stored unchecked.
  */
-export async function saveKey(db: PrismaClient, env: KeyEnv, actor: Actor, apiKey: string, disclosureAckAt: Date): Promise<KeyInfo> {
+export async function saveKey(db: PrismaClient, env: KeyEnv, actor: Actor, apiKey: string, disclosureAckAt: Date | null): Promise<KeyInfo> {
   authorize(actor, 'key.manage');
   const stored = { ...encryptKey(apiKey, secretOf(env)), keyVersion: env.ENCRYPTION_KEY_VERSION, last4: lastFour(apiKey) };
   const row = await db.$transaction(async (tx) => {
     await lockInstructorKey(tx, actor.id);
+    const saved = await tx.instructorKey.findUnique({ where: { instructorId: actor.id }, select: { id: true } });
+    if (saved) return tx.instructorKey.update({ where: { instructorId: actor.id }, data: stored, select: INFO_FIELDS });
+    if (!disclosureAckAt) {
+      throw new AppError('VALIDATION', { fields: { disclosureAcknowledged: 'Tick "I understand" to save your key.' } });
+    }
+    // An upsert, not a create: two first saves at once have no row to lock, and the unique index must leave one row.
     return tx.instructorKey.upsert({
       where: { instructorId: actor.id },
       create: { instructorId: actor.id, ...stored, disclosureAckAt },
