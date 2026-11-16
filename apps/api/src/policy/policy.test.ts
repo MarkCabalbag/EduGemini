@@ -37,6 +37,7 @@ const allowed: Record<Action, CallerName[]> = {
   'class.edit': ['ownerInstructor'],
   'class.archive': ['ownerInstructor', 'admin'],
   'class.delete': ['ownerInstructor', 'admin'],
+  'assignment.view': ['ownerInstructor'],
   'assignment.write': ['ownerInstructor'],
   'assignment.remove': ['ownerInstructor'],
   'label.write': ['ownerInstructor'],

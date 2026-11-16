@@ -4,6 +4,8 @@ import { Layout } from './components/Layout';
 import { useMe } from './hooks/use-auth';
 import { ClassOverview } from './pages/ClassOverview';
 import { CreateClass } from './pages/CreateClass';
+import { EditAssignment } from './pages/assignment/EditAssignment';
+import { NewAssignment } from './pages/assignment/NewAssignment';
 import { Dashboard } from './pages/Dashboard';
 import { JoinLink } from './pages/JoinLink';
 import { Landing } from './pages/Landing';
@@ -35,6 +37,8 @@ export function App() {
           <Route path="/classes" element={<Dashboard />} />
           <Route path="/classes/new" element={<CreateClass />} />
           <Route path="/classes/:classId" element={<ClassPage />} />
+          <Route path="/classes/:classId/assignments/new" element={<NewAssignment />} />
+          <Route path="/assignments/:assignmentId/edit" element={<EditAssignment />} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Route>

@@ -338,7 +338,7 @@ Layout notes:
 │ Assignments                                   [Label ▾]  [+ New assignment] │
 │                                                                            │
 │ Drafts (1)                                                                 │
-│   Lab report 3   Draft · last saved 10:42          [Resume]  [Delete]      │
+│   Lab report 3   Draft                             [Resume]  [Delete]      │
 │                                                                            │
 │ Published                                                                  │
 │ ┌────────────────────────────────────────────────────────────────────────┐ │
@@ -386,6 +386,8 @@ Layout notes:
 - "Draft saved" appears after each autosave (App Flow 5.1, step 1 and F15). It is `status-approved` text with a check icon, not a toast.
 - The visibility toggle is labeled in full ("Visible to students"), and the helper text under the list states who sees the file.
 - On phones, the stepper collapses to "Step 2 of 5: Criteria" with a progress bar.
+- Publishing returns to the Assignments tab, where an info message says "<Title> is published. Approved students can see it now." Each warning follows on its own line: "The due date has already passed, so every submission will be marked Late." and "No Gemini key is connected, so submissions will wait for your review instead of being graded by AI."
+- "Save as draft" on the Review step only leaves the wizard, because every step has already saved the draft.
 
 **Submission screen (wireframe, desktop; App Flow 7, F19)**
 

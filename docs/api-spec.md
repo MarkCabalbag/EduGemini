@@ -193,7 +193,7 @@ These are the shapes used across endpoints. Each has a matching component in `op
 
 | Field | Notes |
 |---|---|
-| `id`, `title`, `dueAt`, `timezone` | |
+| `id`, `classId`, `title`, `dueAt`, `timezone` | `classId` lets an assignment page link back to its class |
 | `label` | `{ id, name }` or null |
 | `status` | `DRAFT` \| `PUBLISHED` \| `ARCHIVED`. Drafts appear to instructors only |
 | `scoringFormat`, `maxScore` | |
@@ -418,6 +418,7 @@ This table maps the PRD §5.1 matrix onto endpoint IDs. Each row has a test in t
 | Archive class | CLS-05, CLS-06 | — | ✓ | ✓ (ADM-07) |
 | Edit class details | CLS-04 | — | ✓ | — |
 | Delete class | CLS-07, CLS-11 | — | ✓ | ✓ (ADM-08) |
+| View assignments | ASG-01, ASG-03 | ✓ (approved, published only) | ✓ | — |
 | Create or edit assignment | ASG-02, ASG-04 | — | ✓ | — |
 | Delete or archive assignment | ASG-07, ASG-09 | — | ✓ | — |
 | Labels | ASG-10 to ASG-12 | — | ✓ | — |

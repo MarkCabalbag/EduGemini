@@ -13,6 +13,7 @@ import { useArchiveClass, useClass } from '../hooks/use-classes';
 import { ApiRequestError } from '../lib/api';
 import { classMeta } from '../lib/class-meta';
 import { errorText } from '../lib/error-text';
+import { Assignments } from './Assignments';
 import { NotFound } from './NotFound';
 import { People } from './People';
 
@@ -74,7 +75,10 @@ function ArchiveCard({ cls }: { cls: ClassSummary }) {
 export function ClassOverview() {
   const classId = useParams<'classId'>().classId!; // the route has :classId
   const cls = useClass(classId);
-  const onPeople = useSearchParams()[0].get('tab') === 'people';
+  const tab = useSearchParams()[0].get('tab');
+  const onAssignments = tab === 'assignments';
+  const onPeople = tab === 'people';
+  const onOverview = !onAssignments && !onPeople;
 
   if (cls.isPending) return <PageLoading />;
   if (cls.isError) {
@@ -100,23 +104,27 @@ export function ClassOverview() {
         {description && <p className="whitespace-pre-line">{description}</p>}
       </div>
       <nav aria-label="Class sections" className="flex border-b border-border">
-        <SectionLink to={`/classes/${classId}`} current={!onPeople}>
+        <SectionLink to={`/classes/${classId}`} current={onOverview}>
           Overview
+        </SectionLink>
+        <SectionLink to={`/classes/${classId}?tab=assignments`} current={onAssignments}>
+          Assignments
         </SectionLink>
         <SectionLink to={`/classes/${classId}?tab=people`} current={onPeople}>
           People
         </SectionLink>
       </nav>
+      {onAssignments && <Assignments cls={cls.data} />}
       {onPeople && <People cls={cls.data} />}
       {/* An archived class's code does not work, so it is not offered for sharing. */}
-      {!onPeople && !archived && joinCode && joinLink && (
+      {onOverview && !archived && joinCode && joinLink && (
         <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
           <h2 className="text-title font-semibold">Class code</h2>
           <CopyField label="Class code" value={joinCode} />
           <CopyField label="Join link" value={joinLink} />
         </section>
       )}
-      {!onPeople && <ArchiveCard cls={cls.data} />}
+      {onOverview && <ArchiveCard cls={cls.data} />}
     </div>
   );
 }

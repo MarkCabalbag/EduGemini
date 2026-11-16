@@ -105,6 +105,7 @@ Target users are individual instructors and teachers who sign up independently. 
 | Remove a student from a class | No | Yes | No |
 | Archive class | No | Yes | Yes |
 | Edit class details | No | Yes | No |
+| View assignments | Yes (approved; published only) | Yes (own class) | No |
 | Create / edit assignment | No | Yes | No |
 | Delete or archive assignment | No | Yes | No |
 | Create / delete assignment labels | No | Yes | No |
