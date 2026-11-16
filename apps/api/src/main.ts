@@ -3,10 +3,10 @@ import { createApp } from './app';
 import { warmUpPasswordHashing } from './auth/password';
 import { createStorage } from './lib/create-storage';
 import { getEnv } from './lib/env';
+import { startJobs } from './jobs';
 import { createLogger } from './lib/logger';
 import { devFilesRouter } from './routes/dev-files';
 import { uploadsRouter } from './routes/uploads';
-import { deleteStagedUploads } from './services/submission-service';
 
 const env = getEnv();
 const logger = createLogger(env.LOG_LEVEL, env.NODE_ENV);
@@ -32,22 +32,22 @@ warmUpPasswordHashing().catch((error: unknown) => logger.error({ event: 'passwor
 
 const server = app.listen(env.PORT, () => logger.info({ event: 'server.listening', port: env.PORT }));
 
-// Uploads left open for 24 hours are deleted (TRD §12, `staged.cleanup`). A plain timer until the job queue (FND-09) takes
-// this over. It also runs once at start, because a free host that sleeps may never stay up for a whole hour.
-const HOUR_MS = 60 * 60 * 1000;
-const sweepStagedUploads = () =>
-  deleteStagedUploads(prisma, env.STORAGE_BUCKET)
-    .then((deleted) => logger.info({ event: 'staged.cleanup', deleted }))
-    .catch((error: unknown) => logger.error({ event: 'staged.cleanup_failed', err: error }));
-void sweepStagedUploads();
-const sweepTimer = setInterval(() => void sweepStagedUploads(), HOUR_MS);
-sweepTimer.unref(); // never keeps the process alive
+// The worker runs in this process, after the HTTP server starts (TRD §3). Without the pg-boss schema (`pnpm db:boss:init`)
+// it fails to start, and so does the API: a missing worker should not go unnoticed.
+const boss = await startJobs(env.PGBOSS_URL, { db: prisma, storage, bucket: env.STORAGE_BUCKET, logger }).catch((error: unknown) => {
+  logger.error({ event: 'jobs.start_failed', err: error });
+  process.exit(1);
+});
 
 function shutdown(signal: string) {
   logger.info({ event: 'server.shutdown', signal });
-  clearInterval(sweepTimer);
   server.close(() => {
-    void prisma.$disconnect().finally(() => process.exit(0));
+    // Let a running job finish (up to 8 seconds), then close the database.
+    void boss
+      .stop({ timeout: 8_000 })
+      .catch((error: unknown) => logger.error({ event: 'jobs.stop_failed', err: error }))
+      .then(() => prisma.$disconnect())
+      .finally(() => process.exit(0));
   });
   setTimeout(() => process.exit(1), 10_000).unref();
 }

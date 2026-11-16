@@ -112,7 +112,7 @@ Rules that follow from this shape:
 Prisma and pg-boss need different connection modes:
 - `DATABASE_URL`: transaction pooler (port 6543) with `?pgbouncer=true`. Used by Prisma at runtime. Prisma prepared statements are disabled for this mode.
 - `DIRECT_URL`: session pooler (port 5432), owner role. Used by `prisma migrate deploy` and `db:boss:init`.
-- `PGBOSS_URL`: session pooler (port 5432), runtime role. Used by pg-boss at runtime. pg-boss relies on `LISTEN/NOTIFY` and advisory locks, which need session semantics.
+- `PGBOSS_URL`: session pooler (port 5432), runtime role. Used by pg-boss at runtime. pg-boss uses advisory locks, which need session semantics. `LISTEN/NOTIFY` is off (pg-boss's default), so workers poll every 2 seconds. The pool is 4 connections.
 - Database roles and grants are in [Backend Schema](backend-schema.md) §12.
 - The direct connection host on free projects has historically been IPv6-only, and Render free instances may not reach IPv6. Use the pooler host for every URL and confirm in spike S2.
 
@@ -321,7 +321,7 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 
 | Queue | Payload | Behavior |
 |---|---|---|
-| `grade.submission` | `{ submissionId, versionId, mode: "first" \| "resubmit" \| "regrade_criteria" \| "rerun" \| "regrade_approved" }` | One grading attempt chain (Section 10.3). Singleton key `grade:<submissionId>` so only one job runs per submission |
+| `grade.submission` | `{ submissionId, versionId, mode: "first" \| "resubmit" \| "regrade_criteria" \| "rerun" \| "regrade_approved" }` | One grading attempt chain (Section 10.3). Queue policy `singleton` and singleton key `grade:<submissionId>`, so only one job runs per submission. Retries as in Section 10.7 |
 | `regrade.assignment` | `{ assignmentId, criteriaVersion }` | Debounced fan-out to `grade.submission` for unapproved submissions (Section 10.5) |
 | `send.email` | `{ notificationId, to, template, data }` | Email with retries (`retryLimit: 5`) |
 | `digest.flush` | none | Hourly digests (Section 13) |
@@ -426,11 +426,12 @@ Google may use free-tier content to improve its products (disclosed to instructo
 |---|---|---|---|
 | `digest.flush` | Hourly | Send batched emails: instructor digests for new submissions, manual-review items, and join requests (Could, FR-NTF-03), and announcement digests for students (FR-ANN-04) | Each digest row is marked sent in the same transaction |
 | `retention.sweep` | Daily, 03:00 UTC | (a) For classes with `archivedAt <= now - 335 days` and no `retentionNoticeAt`: send the 30-day notice (A15) and set `retentionNoticeAt`. (b) For classes with `archivedAt <= now - 365 days`: delete through the class-deletion path (Section 5.5) | Notice flag set once; delete is a no-op if the class is gone. (c) Delete `AuditLog` rows older than 12 months | Notice flag set once; delete is a no-op if the class is gone |
-| `staged.cleanup` | Hourly | Delete versions in `UPLOADING` opened more than 24 hours ago, with their files (the objects go to the `storage.cleanup` outbox) | Checks status again on the locked submission row before deleting, so a version finalized meanwhile is left alone |
-| `storage.cleanup` | Queued after commits | Delete storage objects listed by a finished delete | Missing objects are ignored |
+| `staged.cleanup` | Hourly, and once when the API starts | Delete versions in `UPLOADING` opened more than 24 hours ago, with their files (the objects go to the `storage.cleanup` outbox) | Checks status again on the locked submission row before deleting, so a version finalized meanwhile is left alone |
+| `storage.cleanup` | Every 5 minutes, and once when the API starts | Delete the objects of the pending `storage_deletions` rows, 500 at most per run, and mark each row complete once its object is gone. A failed row keeps its error and is tried again, after the rows that have failed less often | Missing objects are ignored |
 | `token.cleanup` | Daily | Delete expired email tokens and sessions | Idempotent by definition |
 
-- Until the job queue exists (FND-09), `staged.cleanup` runs from a timer in the API process (`main.ts`): once at start, then every hour. The queue replaces the timer.
+- Each job runs once when the API starts, because a free host that sleeps may never stay up for a whole schedule interval. `storage.cleanup` is a schedule, not a job sent after each commit: the outbox table is the list of work, so a delete that forgets to send a job, or a crash after the commit, still gets cleaned up. Schedules are in UTC, and each job is a file in `apps/api/src/jobs`.
+- If the pg-boss schema is not installed (`pnpm db:boss:init`), the API does not start.
 - Instructor deletion archives the classes at that moment, so the 12-month clock starts then (A10).
 - Notices for an instructor whose account is a tombstone are not sent (PRD Section 10).
 

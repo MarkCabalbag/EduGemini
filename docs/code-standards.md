@@ -77,7 +77,7 @@ Folder names inside each app are set by this file. Imports go one way: apps impo
 
 ## 6. Jobs and AI
 
-- Jobs live in `apps/api/src/jobs`, one file per queue in TRD §10.1. A handler is safe to run twice and checks the submission version before and after the Gemini call (TRD §10.3).
+- Jobs live in `apps/api/src/jobs`, one file per queue in TRD §10.1, and each is added to the list in `jobs/index.ts`, which creates its queue, worker and schedule. A handler is safe to run twice and checks the submission version before and after the Gemini call (TRD §10.3).
 - Gemini generation is called only from the `grade.submission` job, never from a route. The key check (model list) runs on save and goes through the same adapter (TRD §11.5).
 - The model name and prompt version are single constants (`GEMINI_MODEL`, `PROMPT_VERSION`) stored with every result. Prompts live in `packages/ai/prompts`, are versioned, and treat student and reference content as data (TRD §10.4).
 - AI tests use only the fake adapter.

@@ -31,7 +31,7 @@ import { enrollmentOf } from './assignment-service';
 
 /**
  * A student's submission, the three steps of API Spec A7: open a version, send its files, finalize. Finalize makes the
- * submission and queues it, but nothing grades yet (no job queue, FND-09), and the lock after approval (SUB-08) comes
+ * submission and queues it, but nothing grades yet (the grading job comes with AI-08), and the lock after approval (SUB-08) comes
  * with its ticket. Open and finalize both refuse late work when it is closed (SUB-06).
  */
 
@@ -249,7 +249,7 @@ const STAGED_MAX_AGE_MS = 24 * 60 * 60 * 1000;
  * Delete uploads that were opened more than 24 hours ago and never finalized, with their files (TRD §12, `staged.cleanup`).
  * The objects go to the storage outbox. Each upload is checked again on its locked submission row, so one that was
  * finalized in the meantime is left alone. The submission row stays: an instructor's allowance may be on it. Returns how many
- * uploads were deleted. `main.ts` runs it at start and every hour, until the job queue (FND-09) takes over.
+ * uploads were deleted. The `staged.cleanup` job (`jobs/staged-cleanup.job.ts`) runs it at start and every hour.
  */
 export async function deleteStagedUploads(db: PrismaClient, bucket: string, now = new Date()): Promise<number> {
   const stale = await db.submissionVersion.findMany({
