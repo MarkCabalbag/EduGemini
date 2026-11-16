@@ -855,7 +855,7 @@ Drafts need a few fields before the wizard has collected them. The rule for all 
 `PATCH /api/assignments/{assignmentId}` · Standard set: `STD-MUT`
 - **Access:** owning instructor.
 - **FR:** FR-ASG-02, FR-ASG-04, FR-ASG-05, FR-ASG-06, FR-ASG-08, FR-ASG-09, FR-ASG-10, FR-ASG-11.
-- **Request:** a partial `AssignmentInput`. If `criteriaText` changes, `impactToken` is required (A6). Changing `scoringFormat` is allowed only before any submission exists.
+- **Request:** a partial `AssignmentInput`. If `criteriaText` changes, `impactToken` is required (A6). Changing `scoringFormat` is allowed only before any submission exists (an upload that is still open is not a submission until it is finalized).
 - **Response:** `200` `AssignmentDetail`.
 - **Errors:**
   - `CONFIRMATION_REQUIRED` (422) when criteria change without a token.

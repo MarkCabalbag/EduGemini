@@ -15,6 +15,7 @@ import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createLogger } from '../lib/logger';
 import { createTestDb } from '../test/test-db';
 import { newJoinCode } from './class-service';
+import { getMySubmission } from './submission-service';
 
 // Runs against the test database. Every email carries this run's ID, so tests never collide and cleanup is exact.
 const APP_URL = 'http://localhost:5173';
@@ -362,8 +363,8 @@ describe('edit a draft (API Spec ASG-04)', () => {
     expect(res.body.error.fields).toHaveProperty(['title']);
   });
 
-  it('leaves a published assignment alone for now (CONFLICT)', async () => {
-    const row = await seedAssignment(cls.id, { status: 'PUBLISHED', publishedAt: new Date() });
+  it('leaves an archived assignment alone (CONFLICT)', async () => {
+    const row = await seedAssignment(cls.id, { status: 'ARCHIVED', publishedAt: new Date() });
     const res = await patch(owner.cookie, row.id, { title: 'Changed' });
 
     expect(res.status).toBe(409);
@@ -389,6 +390,157 @@ describe('edit a draft (API Spec ASG-04)', () => {
 
     expect(res.status).toBe(404);
     expect((await db.assignment.findUniqueOrThrow({ where: { id: row.id } })).title).toBe(row.title);
+  });
+});
+
+describe('edit a published assignment (API Spec ASG-04, EG-ASG-05)', () => {
+  const patch = (cookie: string, id: string, body: object) => send(build(), 'patch', `/assignments/${id}`, cookie, body);
+  const published = { status: 'PUBLISHED', publishedAt: new Date() } as const;
+
+  /** A student approved in the class, with a submission handed in `minutesAgo` minutes ago. The submission is made straight in the database. */
+  async function submitted(classId: string, assignmentId: string, minutesAgo: number, overrides: Partial<Prisma.SubmissionUncheckedUpdateInput> = {}) {
+    const who = await signedInUser(`submitted-${++seeded}`, 'STUDENT');
+    await db.enrollment.create({ data: { classId, studentId: who.user.id, status: 'ACTIVE' } });
+    const at = new Date(Date.now() - minutesAgo * 60_000);
+    const submission = await db.submission.create({ data: { assignmentId, studentId: who.user.id } });
+    const version = await db.submissionVersion.create({ data: { submissionId: submission.id, versionNo: 1, status: 'STORED', storedAt: at } });
+    await db.submission.update({
+      where: { id: submission.id },
+      data: { currentVersionId: version.id, state: 'QUEUED', firstSubmittedAt: at, latestSubmittedAt: at, ...overrides },
+    });
+    return who;
+  }
+  // The student's own view (API Spec SUB-01). Its route is wired in `main.ts` with the uploads, so the service is called here.
+  const mine = (who: { user: { id: string } }, id: string) => getMySubmission(db, { id: who.user.id, role: 'STUDENT' }, id);
+
+  it('changes the title, instructions, due date, time zone, limit and late policy, and stays published', async () => {
+    const row = await seedAssignment(cls.id, published);
+    const res = await patch(owner.cookie, row.id, {
+      title: 'New title',
+      instructions: 'New instructions.',
+      dueAt: '2027-05-01T10:00:00.000Z',
+      timezone: 'Asia/Manila',
+      maxResubmissions: null,
+      acceptLate: false,
+    });
+
+    expect(res.status).toBe(200);
+    expect(AssignmentDetailSchema.parse(res.body)).toMatchObject({
+      status: 'PUBLISHED',
+      title: 'New title',
+      instructions: 'New instructions.',
+      dueAt: '2027-05-01T10:00:00.000Z',
+      timezone: 'Asia/Manila',
+      maxResubmissions: null,
+      acceptLate: false,
+      criteriaText: row.criteriaText,
+      criteriaVersion: 1, // nothing is re-graded
+    });
+    expect((await db.assignment.findUniqueOrThrow({ where: { id: row.id } })).publishedAt).toEqual(row.publishedAt);
+  });
+
+  it('accepts the criteria it already has, so a form may send every field', async () => {
+    const row = await seedAssignment(cls.id, published);
+    const res = await patch(owner.cookie, row.id, { criteriaText: row.criteriaText, title: 'Same criteria' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe('Same criteria');
+  });
+
+  it('refuses a criteria change with CONFIRMATION_REQUIRED and changes nothing, not even the other fields sent with it', async () => {
+    const row = await seedAssignment(cls.id, published);
+    const res = await patch(owner.cookie, row.id, { criteriaText: 'Different criteria.', title: 'Changed' });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('CONFIRMATION_REQUIRED');
+    const after = await db.assignment.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after).toMatchObject({ title: row.title, criteriaText: row.criteriaText, criteriaVersion: 1 });
+  });
+
+  it('recomputes Late from the new due date: a submission becomes Late when the date moves before it, and on time when it moves after', async () => {
+    const row = await seedAssignment(cls.id, { ...published, dueAt: new Date(Date.now() + DAY_MS) });
+    const handedIn = await submitted(cls.id, row.id, 60);
+    expect((await mine(handedIn, row.id)).isLate).toBe(false);
+
+    await patch(owner.cookie, row.id, { dueAt: new Date(Date.now() - 2 * 60 * 60_000).toISOString() });
+    expect((await mine(handedIn, row.id)).isLate).toBe(true);
+
+    await patch(owner.cookie, row.id, { dueAt: new Date(Date.now() + DAY_MS).toISOString() });
+    expect((await mine(handedIn, row.id)).isLate).toBe(false);
+  });
+
+  it('closes and reopens late work with the due date when late work is not accepted', async () => {
+    const row = await seedAssignment(cls.id, { ...published, acceptLate: false, dueAt: new Date(Date.now() + DAY_MS) });
+    const waiting = await signedInUser(`waiting-${++seeded}`, 'STUDENT');
+    await db.enrollment.create({ data: { classId: cls.id, studentId: waiting.user.id, status: 'ACTIVE' } });
+    expect((await mine(waiting, row.id)).closed).toBe(false);
+
+    await patch(owner.cookie, row.id, { dueAt: new Date(Date.now() - 60_000).toISOString() });
+    expect((await mine(waiting, row.id)).closed).toBe(true);
+
+    await patch(owner.cookie, row.id, { dueAt: new Date(Date.now() + DAY_MS).toISOString() });
+    expect((await mine(waiting, row.id)).closed).toBe(false);
+  });
+
+  it('never takes back attempts already used when the limit is lowered', async () => {
+    const row = await seedAssignment(cls.id, { ...published, maxResubmissions: 5 });
+    const handedIn = await submitted(cls.id, row.id, 10, { resubmissionsUsed: 3 });
+
+    const res = await patch(owner.cookie, row.id, { maxResubmissions: 1 });
+    expect(res.status).toBe(200);
+    expect((await db.submission.findFirstOrThrow({ where: { assignmentId: row.id, studentId: handedIn.user.id } })).resubmissionsUsed).toBe(3);
+    expect((await mine(handedIn, row.id)).attemptsLeft).toBe(0);
+  });
+
+  it('changes the scoring format while no submission exists, and an upload that is still open does not count as one', async () => {
+    const row = await seedAssignment(cls.id, { ...published, maxScore: 50 });
+    const waiting = await signedInUser(`opened-${++seeded}`, 'STUDENT');
+    await db.submission.create({ data: { assignmentId: row.id, studentId: waiting.user.id } }); // the row an opened upload makes: no state yet
+
+    const res = await patch(owner.cookie, row.id, { scoringFormat: 'PERCENTAGE' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ scoringFormat: 'PERCENTAGE', maxScore: 100 });
+  });
+
+  it('locks the scoring format once a submission exists (FORMAT_LOCKED) and changes nothing', async () => {
+    const row = await seedAssignment(cls.id, { ...published, maxScore: 50 });
+    await submitted(cls.id, row.id, 10);
+    const res = await patch(owner.cookie, row.id, { scoringFormat: 'LETTER_NUMERIC', title: 'Changed' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('FORMAT_LOCKED');
+    const after = await db.assignment.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after).toMatchObject({ title: row.title, scoringFormat: 'POINTS' });
+    expect(after.maxScore.toNumber()).toBe(50);
+  });
+
+  it('still takes the other fields when the format is sent along unchanged after a submission exists', async () => {
+    const row = await seedAssignment(cls.id, { ...published, maxScore: 50 });
+    await submitted(cls.id, row.id, 10);
+    const res = await patch(owner.cookie, row.id, { scoringFormat: 'POINTS', dueAt: '2027-06-01T10:00:00.000Z' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ scoringFormat: 'POINTS', dueAt: '2027-06-01T10:00:00.000Z' });
+  });
+
+  it.each([
+    ['a student', () => student.cookie],
+    ['another instructor', () => other.cookie],
+  ])('gives %s NOT_FOUND and changes nothing', async (_label, cookie) => {
+    const row = await seedAssignment(cls.id, published);
+    const res = await patch(cookie(), row.id, { title: 'Changed' });
+
+    expect(res.status).toBe(404);
+    expect((await db.assignment.findUniqueOrThrow({ where: { id: row.id } })).title).toBe(row.title);
+  });
+
+  it('is refused on an archived class', async () => {
+    const archived = await seedClass(owner.user.id, { archivedAt: new Date() });
+    const row = await seedAssignment(archived.id, published);
+    const res = await patch(owner.cookie, row.id, { dueAt: '2027-06-01T10:00:00.000Z' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CLASS_ARCHIVED');
   });
 });
 

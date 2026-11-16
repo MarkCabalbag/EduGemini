@@ -355,6 +355,7 @@ Layout notes:
 - The Drafts section sits above published assignments and is visible only to the instructor (App Flow 4, step 3).
 - Each row shows the counts that drive the next action ("1 to review").
 - Row click opens the tracker (App Flow 8). Archive and delete live in a row menu, not as visible buttons, to keep the list calm.
+- A published row has an Edit button (not in an archived class). It opens one page with the title, "This assignment is published, so changes apply right away. The grading criteria cannot be changed yet.", and three sections, Basics, Due date and scoring, and Rules, each with its own "Save changes". After a save, "<Section> saved." (for example "Rules saved.") shows under the title in `status-approved` text with a check icon, and goes when the next save starts. *(new, pending owner approval; EG-ASG-05)*
 
 **Assignment wizard, step 2 of 5: Criteria (wireframe, desktop)**
 

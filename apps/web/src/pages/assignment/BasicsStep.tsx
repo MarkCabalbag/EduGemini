@@ -26,7 +26,7 @@ export function BasicsFields({ register, errors }: { register: UseFormRegister<B
   );
 }
 
-export function BasicsStep({ assignment, onSaved }: StepProps) {
+export function BasicsStep({ assignment, onSaved, submitLabel }: StepProps) {
   const { register, handleSubmit, setError, formState } = useForm({
     resolver: zodResolver(BasicsSchema),
     mode: 'onBlur',
@@ -35,7 +35,7 @@ export function BasicsStep({ assignment, onSaved }: StepProps) {
   const { save, saving, formError } = useStepSave(assignment.id, setError, ['title', 'instructions'], onSaved);
 
   return (
-    <StepForm onSubmit={handleSubmit(save)} saving={saving} formError={formError}>
+    <StepForm onSubmit={handleSubmit(save)} saving={saving} formError={formError} submitLabel={submitLabel}>
       <BasicsFields register={register} errors={formState.errors} />
     </StepForm>
   );

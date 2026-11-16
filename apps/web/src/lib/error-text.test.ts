@@ -18,6 +18,10 @@ describe('errorText', () => {
     expect(errorText('FILE_LIMIT')).toBe('Something went wrong.'); // a limit it does not know by name
   });
 
+  it('has the locked scoring format message from API Spec A4', () => {
+    expect(errorText('FORMAT_LOCKED')).toBe("Scoring can't change after submissions exist.");
+  });
+
   it('has the three join messages from API Spec A4', () => {
     expect(errorText('INVALID_JOIN_CODE')).toBe("That code didn't work. Check it and try again.");
     expect(errorText('JOIN_BLOCKED')).toBe("You can't join this class right now. Contact the instructor.");

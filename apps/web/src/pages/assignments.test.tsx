@@ -75,6 +75,7 @@ let assignments: AssignmentDetail[];
 let pageSize: number;
 let denied: (() => Response) | undefined; // makes one assignment read fail
 let publishResult: (assignment: AssignmentDetail) => Response;
+let refuseSave: (() => Response) | undefined; // makes a save (PATCH) fail
 
 beforeEach(() => {
   calls = [];
@@ -83,6 +84,7 @@ beforeEach(() => {
   assignments = [];
   pageSize = 100;
   denied = undefined;
+  refuseSave = undefined;
   publishResult = (assignment) => {
     assignment.status = 'PUBLISHED';
     return Response.json({ ...assignment, warnings: [] satisfies PublishWarning[] });
@@ -123,6 +125,7 @@ beforeEach(() => {
       if (method === 'GET') return Response.json(found);
       if (method === 'POST' && one[2]) return publishResult(found);
       if (method === 'PATCH') {
+        if (refuseSave) return refuseSave();
         Object.assign(found, body as UpdateAssignment);
         return Response.json(found);
       }
@@ -168,21 +171,23 @@ describe('the Assignments tab', () => {
     const published = screen.getByText('Essay 2').closest('li')!;
     expect(published.textContent).toContain('Percentage · No resubmissions');
     expect(within(published).queryByText('Draft')).toBeNull();
-    expect(within(published).queryByRole('link', { name: /Resume/ })).toBeNull(); // not editable yet
+    expect(within(published).queryByRole('link', { name: /Resume/ })).toBeNull();
+    expect(within(published).getByRole('link', { name: 'Edit Essay 2' }).getAttribute('href')).toBe(`/assignments/${assignments[1]?.id}/edit`);
 
     const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(headings).toEqual(['Drafts', 'Published']);
     expect(screen.getByRole('link', { name: 'New assignment' })).toBeTruthy(); // in the header once there are assignments
   });
 
-  it('is read-only for an archived class: nothing to create or resume', async () => {
+  it('is read-only for an archived class: nothing to create, resume or edit', async () => {
     cls = aClass({ status: 'ARCHIVED' });
-    assignments = [anAssignment({ title: 'Lab report' })];
+    assignments = [anAssignment({ title: 'Lab report' }), anAssignment({ title: 'Essay 2', status: 'PUBLISHED' })];
     open();
 
     expect(await screen.findByText('Lab report')).toBeTruthy();
+    expect(await screen.findByText('Essay 2')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'New assignment' })).toBeNull();
-    expect(screen.queryByRole('link', { name: /Resume/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Resume|Edit/ })).toBeNull();
   });
 
   it('says there are none for an archived class with no assignments', async () => {
@@ -396,19 +401,108 @@ describe('the assignment wizard', () => {
     expect(callsTo('PATCH', '/assignments')).toHaveLength(0);
   });
 
-  it('shows a published assignment as published, not as a form', async () => {
-    const published = anAssignment({ status: 'PUBLISHED' });
-    assignments = [published];
-    renderAt(`/assignments/${published.id}/edit`);
+  it('says an archived assignment cannot be edited, with no form', async () => {
+    const archived = anAssignment({ status: 'ARCHIVED' });
+    assignments = [archived];
+    renderAt(`/assignments/${archived.id}/edit`);
 
-    expect(await screen.findByText(/cannot be edited yet/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+    expect(await screen.findByText(/archived and cannot be edited/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Continue|Save changes/ })).toBeNull();
   });
 
   it('shows the same page as a missing one for an assignment that is not found', async () => {
     renderAt(`/assignments/${crypto.randomUUID()}/edit`);
 
     expect(await screen.findByText(/couldn.t find that page/i)).toBeTruthy();
+  });
+});
+
+describe('editing a published assignment', () => {
+  const published = () => anAssignment({ status: 'PUBLISHED', criteriaText: 'Thesis is clear (10 points).', timezone: 'Asia/Manila' });
+  const section = (name: string) => within(screen.getByRole('region', { name }));
+  const patches = (id: string) => callsTo('PATCH', `/assignments/${id}`);
+
+  it('shows the title, the instructions, the due date and scoring, and the rules, each with its own Save changes, and no criteria', async () => {
+    const assignment = published();
+    assignments = [assignment];
+    renderAt(`/assignments/${assignment.id}/edit`);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Essay 2' })).toBeTruthy();
+    expect(screen.getByText(/published, so changes apply right away/)).toBeTruthy();
+    expect(screen.getByText(/criteria cannot be changed yet/)).toBeTruthy();
+    expect(screen.getAllByRole('region').map((r) => r.querySelector('h2')?.textContent)).toEqual(['Basics', 'Due date and scoring', 'Rules']);
+    expect(screen.getAllByRole('button', { name: 'Save changes' })).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+    expect(screen.queryByLabelText('Grading criteria')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Assignments' }).getAttribute('href')).toBe(`/classes/${CLASS_ID}?tab=assignments`);
+  });
+
+  it('saves a new due date on the clock of its zone, sends no criteria, and says what was saved', async () => {
+    const assignment = published();
+    assignments = [assignment];
+    const user = userEvent.setup();
+    renderAt(`/assignments/${assignment.id}/edit`);
+
+    fireEvent.change(await screen.findByLabelText('Due date and time'), { target: { value: '2026-12-08T23:59' } });
+    await user.click(section('Due date and scoring').getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByText('Due date and scoring saved.')).toBeTruthy();
+    expect(bodyOf(patches(assignment.id)[0])).toEqual({
+      dueAt: '2026-12-08T15:59:00.000Z', // 23:59 in Manila is UTC+8
+      timezone: 'Asia/Manila',
+      scoringFormat: 'POINTS',
+      maxScore: 100,
+    });
+  });
+
+  it('saves the title and shows the new one at the top', async () => {
+    const assignment = published();
+    assignments = [assignment];
+    const user = userEvent.setup();
+    renderAt(`/assignments/${assignment.id}/edit`);
+
+    await user.clear(await screen.findByLabelText('Title'));
+    await user.type(screen.getByLabelText('Title'), 'Essay 3');
+    await user.click(section('Basics').getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Essay 3' })).toBeTruthy();
+    expect(screen.getByText('Basics saved.')).toBeTruthy();
+    expect(bodyOf(patches(assignment.id)[0])).toMatchObject({ title: 'Essay 3' });
+  });
+
+  it('saves the rules, and shows only the newest "saved"', async () => {
+    const assignment = published();
+    assignments = [assignment];
+    const user = userEvent.setup();
+    renderAt(`/assignments/${assignment.id}/edit`);
+
+    await screen.findByRole('heading', { level: 1, name: 'Essay 2' });
+    await user.click(section('Basics').getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('Basics saved.')).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText('Resubmissions allowed after the first submission'), '1');
+    await user.click(section('Rules').getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByText('Rules saved.')).toBeTruthy();
+    expect(screen.queryByText('Basics saved.')).toBeNull();
+    expect(bodyOf(patches(assignment.id)[1])).toEqual({ maxResubmissions: 1, acceptLate: true });
+  });
+
+  it('says the scoring format cannot change once there are submissions, and drops the earlier "saved"', async () => {
+    const assignment = published();
+    assignments = [assignment];
+    const user = userEvent.setup();
+    renderAt(`/assignments/${assignment.id}/edit`);
+
+    await screen.findByRole('heading', { level: 1, name: 'Essay 2' });
+    await user.click(section('Rules').getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('Rules saved.')).toBeTruthy();
+
+    refuseSave = () => failure(409, 'FORMAT_LOCKED');
+    await user.selectOptions(screen.getByLabelText('Scoring format'), 'PERCENTAGE');
+    await user.click(section('Due date and scoring').getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByText("Scoring can't change after submissions exist.")).toBeTruthy();
+    expect(screen.queryByText('Rules saved.')).toBeNull();
   });
 });
 

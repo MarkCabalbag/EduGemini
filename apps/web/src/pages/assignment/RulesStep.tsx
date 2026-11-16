@@ -8,7 +8,7 @@ const UNLIMITED = 'unlimited';
 const LIMITS = [...Array.from({ length: 11 }, (_, n) => String(n)), UNLIMITED]; // 0 to 10, or Unlimited (PRD FR-ASG-10)
 
 /** Step 4: how many resubmissions, and whether late work is accepted. Both are stored now; the submission tickets enforce them. */
-export function RulesStep({ assignment, onSaved, onBack }: StepProps) {
+export function RulesStep({ assignment, onSaved, onBack, submitLabel }: StepProps) {
   const { register, handleSubmit, setError } = useForm({
     defaultValues: {
       limit: assignment.maxResubmissions === null ? UNLIMITED : String(assignment.maxResubmissions),
@@ -23,6 +23,7 @@ export function RulesStep({ assignment, onSaved, onBack }: StepProps) {
       saving={saving}
       formError={formError}
       onBack={onBack}
+      submitLabel={submitLabel}
     >
       <SelectField
         label="Resubmissions allowed after the first submission"
