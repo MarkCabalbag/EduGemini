@@ -187,6 +187,8 @@ An instructor's Gemini API key, encrypted. One active key per instructor (FR-KEY
 | updated_at | timestamptz | |
 
 - **CK:** `octet_length(iv) = 12`; `octet_length(auth_tag) = 16`; `key_version >= 1`.
+- **Save:** a save replaces the row's key (new IV, new `last4`, `key_version` of the running `ENCRYPTION_KEY_VERSION`) and keeps the first `disclosure_ack_at`. Reading it back gives `last4`, `last_success_at` and `disclosure_ack_at`, never the ciphertext.
+- **`status`:** storing a key does not set `status` or `last_success_at`. The default `CONNECTED` means nothing until the key is checked with Gemini (EG-KEY-03), and a replace leaves the old values.
 - **Serves:** FR-KEY-01 to 06; FR-KEY-03 (never plaintext, never logged).
 
 ### 4.7 `classes`
@@ -1174,7 +1176,7 @@ Whether the project may create roles on the free tier must be confirmed in spike
 | Algorithm | AES-256-GCM |
 | Key | `ENCRYPTION_KEY` (32 bytes), environment only (TRD Appendix A) |
 | Per-row values | `ciphertext`, `iv` (12 random bytes, never reused), `auth_tag` (16 bytes) |
-| Versioning | `key_version` names the key that encrypted the row |
+| Versioning | `key_version` names the key that encrypted the row. Reading uses the current `ENCRYPTION_KEY` only, so a row from another version cannot be read until rotation is built |
 | Rotation | Deploy the new key as version N+1 while keeping version N. A job re-encrypts rows still on N, then N is removed |
 | Display | Only `last4` is ever returned by the API |
 | Logging | The key is never logged; pino redaction covers `ciphertext`, `key`, and `iv` (TRD §14) |

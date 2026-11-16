@@ -475,7 +475,7 @@ The Prisma enum `NotificationType` has the 19 notifiable events in PRD Section 1
 | Headers | helmet defaults. Content-Security-Policy for the SPA: `script-src 'self'`, `frame-ancestors 'none'`. The pdf.js worker is bundled and served from the same origin |
 | Cookies | `HttpOnly`, `Secure`, `SameSite=Lax`, short-lived signed cookies for pending state (Section 6) |
 | Passwords | argon2id; a dummy hash is checked when the email does not exist, so response time does not reveal accounts |
-| Instructor keys | AES-256-GCM. A random 12-byte IV per record and an auth tag stored with the ciphertext. `ENCRYPTION_KEY` (32 bytes, base64) comes from the environment; `keyVersion` allows rotation (re-encrypt on read with the old version, then write with the new one). Only `last4` is ever returned. Never logged |
+| Instructor keys | AES-256-GCM. A random 12-byte IV per record and an auth tag stored with the ciphertext. `ENCRYPTION_KEY` (32 bytes, base64) comes from the environment; `keyVersion` allows rotation (re-encrypt on read with the old version, then write with the new one). Only `last4` is ever returned. The plaintext is read only by the grading job. Never logged |
 | Logs | pino redaction: `authorization`, `cookie`, `password`, `token`, `key`, `ciphertext`, file contents. Request bodies are not logged |
 | Input | Zod on every request body and query. Size limits on JSON (100 KB) and multipart (per file limits, Section 9) |
 | SQL | Prisma parameterized queries. No raw SQL except the pg-boss schema and the row-lock helper (Section 8.1) |
