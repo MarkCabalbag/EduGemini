@@ -53,7 +53,7 @@ export const JoinResultSchema = z.object({
 });
 export type JoinResult = z.infer<typeof JoinResultSchema>;
 
-/** A class as the caller sees it (API Spec A5). The join fields are for the owning instructor only. */
+/** A class as the caller sees it (API Spec A5). The join fields and `counts` are for the owning instructor only; `instructorName` and `enrollment` for a student. */
 export const ClassSummarySchema = z.object({
   id: z.uuid(),
   name: z.string(),
@@ -67,6 +67,8 @@ export const ClassSummarySchema = z.object({
   joinCodeActive: z.boolean().optional(),
   requireApproval: z.boolean().optional(),
   counts: EnrollmentCountsSchema.optional(),
+  instructorName: z.string().optional(),
+  enrollment: z.object({ status: EnrollmentStatusSchema }).optional(),
 });
 export type ClassSummary = z.infer<typeof ClassSummarySchema>;
 
@@ -75,3 +77,24 @@ export const ClassPageSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 export type ClassPage = z.infer<typeof ClassPageSchema>;
+
+/** A student's Enrolled list (API Spec JOIN-03). */
+export const EnrolledQuerySchema = z.object(PageQuery);
+export type EnrolledQuery = z.infer<typeof EnrolledQuerySchema>;
+
+/** One class in the Enrolled list. Removed classes are not listed. `instructorName` is the first name and last initial. */
+export const EnrollmentSummarySchema = z.object({
+  classId: z.uuid(),
+  className: z.string(),
+  status: EnrollmentStatusSchema,
+  instructorName: z.string(),
+  archived: z.boolean(),
+  joinedAt: z.iso.datetime(),
+});
+export type EnrollmentSummary = z.infer<typeof EnrollmentSummarySchema>;
+
+export const EnrolledPageSchema = z.object({
+  items: z.array(EnrollmentSummarySchema),
+  nextCursor: z.string().nullable(),
+});
+export type EnrolledPage = z.infer<typeof EnrolledPageSchema>;

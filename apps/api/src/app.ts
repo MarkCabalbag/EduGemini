@@ -9,6 +9,7 @@ import { originCheck } from './middleware/origin-check';
 import { limiters } from './middleware/rate-limit';
 import { requestContext } from './middleware/request-id';
 import { loadSession } from './middleware/session';
+import { assignmentsRouter } from './routes/assignments';
 import { authRouter } from './routes/auth';
 import { classesRouter } from './routes/classes';
 import { healthRouter } from './routes/health';
@@ -50,6 +51,7 @@ export function createApp({ env, logger, db, checkDb, routers = [] }: AppDeps): 
   api.use(meRouter());
   api.use(classesRouter({ db, appUrl: env.APP_URL }));
   api.use(peopleRouter({ db }));
+  api.use(assignmentsRouter({ db }));
   for (const router of routers) api.use(router);
   app.use('/api', api);
 

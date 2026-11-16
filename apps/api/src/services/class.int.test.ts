@@ -3,7 +3,15 @@ import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ClassPageSchema, ClassSummarySchema, TERMS_VERSION, type CreateClass, type Role } from '@edugemini/shared';
+import {
+  ClassPageSchema,
+  ClassSummarySchema,
+  EnrolledPageSchema,
+  TERMS_VERSION,
+  type CreateClass,
+  type EnrollmentStatus,
+  type Role,
+} from '@edugemini/shared';
 import { createApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createLogger } from '../lib/logger';
@@ -370,14 +378,12 @@ describe('get one class (API Spec CLS-03)', () => {
     }
   });
 
-  it('is NOT_FOUND for a student even when the id is not a UUID, so the route does not reveal itself', async () => {
-    const res = await get(build(), student.cookie, '/classes/not-an-id');
-    expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('NOT_FOUND');
-  });
-
-  it('refuses an id that is not a UUID', async () => {
-    const res = await get(build(), owner.cookie, '/classes/not-an-id');
+  // Students use this route too (below), so it has no role check, and a student gets the same answers as an instructor.
+  it.each([
+    ['an instructor', () => owner.cookie],
+    ['a student', () => student.cookie],
+  ])('refuses an id that is not a UUID, for %s', async (_who, cookie) => {
+    const res = await get(build(), cookie(), '/classes/not-an-id');
     expect(res.status).toBe(400);
     expect(res.body.error.fields).toHaveProperty(['params.classId']);
   });
@@ -393,6 +399,249 @@ describe('get one class (API Spec CLS-03)', () => {
     const mine = await seed(owner.user.id);
     const res = await request(build()).get(`/api/classes/${mine.id}`);
     expect(res.status).toBe(401);
+  });
+});
+
+/** A student of their own, already in a class in the given state. */
+async function enrolled(name: string, classId: string, status: EnrollmentStatus, joinedAt?: Date) {
+  const who = await signedInUser(name, 'STUDENT');
+  await db.enrollment.create({ data: { classId, studentId: who.user.id, status, joinedAt } });
+  return who;
+}
+
+describe('a student views a class (API Spec CLS-03)', () => {
+  it('gives an approved student the details and the instructor name, and no join code, link or counts', async () => {
+    const klass = await seed(owner.user.id, { name: 'Chemistry', description: 'Atoms', section: 'B' });
+    const { cookie } = await enrolled('view-active', klass.id, 'ACTIVE');
+
+    const res = await get(build(), cookie, `/classes/${klass.id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      id: klass.id,
+      name: 'Chemistry',
+      description: 'Atoms',
+      section: 'B',
+      subject: null,
+      room: null,
+      status: 'ACTIVE',
+      instructorName: 'Ada L.', // first name and last initial only
+      enrollment: { status: 'ACTIVE' },
+    });
+  });
+
+  it('shows an archived class to an approved student, marked archived', async () => {
+    const klass = await seed(owner.user.id, { archivedAt: new Date() });
+    const { cookie } = await enrolled('view-archived', klass.id, 'ACTIVE');
+
+    expect((await get(build(), cookie, `/classes/${klass.id}`)).body.status).toBe('ARCHIVED');
+  });
+
+  it('tells a pending student the class name and nothing else (ENROLLMENT_PENDING)', async () => {
+    const klass = await seed(owner.user.id, { name: 'Secret club', description: 'Not for pending eyes' });
+    const { cookie } = await enrolled('view-pending', klass.id, 'PENDING');
+
+    const res = await get(build(), cookie, `/classes/${klass.id}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('ENROLLMENT_PENDING');
+    expect(res.body.error.details).toEqual({ className: 'Secret club' });
+    expect(JSON.stringify(res.body)).not.toContain('Not for pending eyes');
+  });
+
+  it.each(['DECLINED', 'REMOVED'] as const)('is NOT_FOUND for a %s student, as for a stranger', async (status) => {
+    const klass = await seed(owner.user.id);
+    const { cookie } = await enrolled(`view-${status.toLowerCase()}`, klass.id, status);
+
+    const res = await get(build(), cookie, `/classes/${klass.id}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('is NOT_FOUND for an approved student of a different class', async () => {
+    const mine = await seed(owner.user.id);
+    const theirs = await seed(owner.user.id);
+    const { cookie } = await enrolled('view-elsewhere', theirs.id, 'ACTIVE');
+
+    expect((await get(build(), cookie, `/classes/${mine.id}`)).status).toBe(404);
+  });
+});
+
+describe('a student lists their classes (API Spec JOIN-03)', () => {
+  const list = (cookie: string, query = '') => get(build(), cookie, `/me/enrollments${query}`);
+  const ids = (body: { items: { classId: string }[] }) => body.items.map((item) => item.classId);
+
+  it('lists their own classes with every status but removed, newest joined first', async () => {
+    const base = Date.now() - 60_000;
+    const [a, b, c, d, e] = await Promise.all(
+      ['A', 'B', 'C', 'D', 'E'].map((name, i) =>
+        seed(owner.user.id, { name: `Enrolled ${name}`, archivedAt: i === 4 ? new Date() : null }),
+      ),
+    );
+    const me = await enrolled('list-me', a!.id, 'ACTIVE', new Date(base));
+    const join = (klass: typeof a, status: EnrollmentStatus, seconds: number) =>
+      db.enrollment.create({ data: { classId: klass!.id, studentId: me.user.id, status, joinedAt: new Date(base + seconds * 1000) } });
+    await join(b, 'PENDING', 1);
+    await join(c, 'DECLINED', 2);
+    await join(d, 'REMOVED', 3);
+    await join(e, 'ACTIVE', 4);
+    await enrolled('list-someone-else', a!.id, 'ACTIVE'); // another student's enrollment never shows
+
+    const res = await list(me.cookie);
+
+    expect(res.status).toBe(200);
+    expect(EnrolledPageSchema.parse(res.body).items).toEqual([
+      { classId: e!.id, className: 'Enrolled E', status: 'ACTIVE', instructorName: 'Ada L.', archived: true, joinedAt: new Date(base + 4000).toISOString() },
+      { classId: c!.id, className: 'Enrolled C', status: 'DECLINED', instructorName: 'Ada L.', archived: false, joinedAt: new Date(base + 2000).toISOString() },
+      { classId: b!.id, className: 'Enrolled B', status: 'PENDING', instructorName: 'Ada L.', archived: false, joinedAt: new Date(base + 1000).toISOString() },
+      { classId: a!.id, className: 'Enrolled A', status: 'ACTIVE', instructorName: 'Ada L.', archived: false, joinedAt: new Date(base).toISOString() },
+    ]);
+    expect(res.body.nextCursor).toBeNull();
+  });
+
+  it('is an empty list for a student who has joined nothing', async () => {
+    const { cookie } = await signedInUser('list-none', 'STUDENT');
+
+    expect((await list(cookie)).body).toEqual({ items: [], nextCursor: null });
+  });
+
+  it('pages with a cursor', async () => {
+    const base = Date.now() - 60_000;
+    const classes = await Promise.all([1, 2, 3].map(() => seed(owner.user.id)));
+    const me = await signedInUser('list-pages', 'STUDENT');
+    for (const [i, klass] of classes.entries()) {
+      await db.enrollment.create({ data: { classId: klass.id, studentId: me.user.id, status: 'ACTIVE', joinedAt: new Date(base + i * 1000) } });
+    }
+
+    const first = await list(me.cookie, '?limit=2');
+    const second = await list(me.cookie, `?limit=2&cursor=${encodeURIComponent(first.body.nextCursor)}`);
+
+    expect(ids(first.body)).toEqual([classes[2]!.id, classes[1]!.id]);
+    expect(first.body.nextCursor).toEqual(expect.any(String));
+    expect(ids(second.body)).toEqual([classes[0]!.id]);
+    expect(second.body.nextCursor).toBeNull();
+  });
+
+  it.each(['?limit=0', '?limit=101', '?cursor=nonsense', '?foo=1'])('refuses the query %s', async (query) => {
+    const res = await list(student.cookie, query);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  it('is NOT_FOUND for an instructor, whatever they send, and needs a session', async () => {
+    expect((await list(owner.cookie)).status).toBe(404);
+    expect((await list(owner.cookie, '?limit=abc')).status).toBe(404);
+    expect((await request(build()).get('/api/me/enrollments')).status).toBe(401);
+  });
+});
+
+describe('archive and restore a class (API Spec CLS-05, CLS-06)', () => {
+  const post = (cookie: string | undefined, classId: string, action: 'archive' | 'restore') => {
+    const req = request(build()).post(`/api/classes/${classId}/${action}`).set('Origin', APP_URL);
+    return cookie ? req.set('Cookie', cookie) : req;
+  };
+  const stored = (classId: string) => db.class.findUniqueOrThrow({ where: { id: classId } });
+  const LONG_AGO = new Date('2026-01-01T00:00:00.000Z');
+
+  it('archives the class and keeps its code and link; the class leaves the default list and shows when archived classes are asked for', async () => {
+    const { user, cookie } = await signedInUser('archive-owner', 'INSTRUCTOR');
+    const klass = await seed(user.id);
+
+    const res = await post(cookie, klass.id, 'archive');
+
+    expect(res.status).toBe(200);
+    expect(ClassSummarySchema.parse(res.body)).toMatchObject({ id: klass.id, status: 'ARCHIVED', joinCode: klass.joinCode });
+    expect((await stored(klass.id)).archivedAt).not.toBeNull();
+    const active = ClassPageSchema.parse((await get(build(), cookie, '/classes')).body);
+    const archived = ClassPageSchema.parse((await get(build(), cookie, '/classes?status=ARCHIVED')).body);
+    expect(active.items).toEqual([]);
+    expect(archived.items.map((c) => c.id)).toEqual([klass.id]);
+  });
+
+  it('archiving an archived class changes nothing, so the archive date does not move', async () => {
+    const klass = await seed(owner.user.id, { archivedAt: LONG_AGO });
+
+    const res = await post(owner.cookie, klass.id, 'archive');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ARCHIVED');
+    expect((await stored(klass.id)).archivedAt).toEqual(LONG_AGO);
+  });
+
+  it('restores the class, and clears the retention notice with the archive date', async () => {
+    const noticeAt = new Date('2026-12-01T00:00:00.000Z');
+    const klass = await seed(owner.user.id, { archivedAt: LONG_AGO, retentionNoticeAt: noticeAt });
+
+    const res = await post(owner.cookie, klass.id, 'restore');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ACTIVE');
+    expect(await stored(klass.id)).toMatchObject({ archivedAt: null, retentionNoticeAt: null });
+  });
+
+  it('restoring an active class changes nothing', async () => {
+    const klass = await seed(owner.user.id);
+
+    const res = await post(owner.cookie, klass.id, 'restore');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ACTIVE');
+    expect((await stored(klass.id)).archivedAt).toBeNull();
+  });
+
+  it('stops the join code while archived and brings it back on restore', async () => {
+    const klass = await seed(owner.user.id);
+    const join = async (cookie: string) =>
+      request(build()).post('/api/join').set('Origin', APP_URL).set('Cookie', cookie).send({ code: klass.joinCode });
+    const first = await signedInUser('archive-join-1', 'STUDENT');
+    const second = await signedInUser('archive-join-2', 'STUDENT');
+
+    await post(owner.cookie, klass.id, 'archive');
+    const whileArchived = await join(first.cookie);
+    await post(owner.cookie, klass.id, 'restore');
+    const afterRestore = await join(second.cookie);
+
+    expect(whileArchived.status).toBe(404);
+    expect(whileArchived.body.error.code).toBe('INVALID_JOIN_CODE');
+    expect(afterRestore.status).toBe(201);
+  });
+
+  it('keeps an approved student in the class, read-only, and in their Enrolled list marked archived', async () => {
+    const klass = await seed(owner.user.id);
+    const { cookie } = await enrolled('archive-student', klass.id, 'ACTIVE');
+
+    await post(owner.cookie, klass.id, 'archive');
+
+    expect((await get(build(), cookie, `/classes/${klass.id}`)).body.status).toBe('ARCHIVED');
+    const list = EnrolledPageSchema.parse((await get(build(), cookie, '/me/enrollments')).body);
+    expect(list.items).toMatchObject([{ classId: klass.id, status: 'ACTIVE', archived: true }]);
+  });
+
+  it.each(['archive', 'restore'] as const)('is NOT_FOUND to another instructor, a student and a missing class on %s, and changes nothing', async (action) => {
+    const klass = await seed(owner.user.id, action === 'restore' ? { archivedAt: LONG_AGO } : {});
+    const before = (await stored(klass.id)).archivedAt;
+
+    const answers = [
+      await post(other.cookie, klass.id, action),
+      await post(student.cookie, klass.id, action),
+      await post(owner.cookie, randomUUID(), action),
+    ];
+
+    for (const res of answers) {
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('NOT_FOUND');
+    }
+    expect((await stored(klass.id)).archivedAt).toEqual(before);
+  });
+
+  it.each(['archive', 'restore'] as const)('needs a session and a class id on %s', async (action) => {
+    const klass = await seed(owner.user.id);
+
+    expect((await post(undefined, klass.id, action)).status).toBe(401);
+    const bad = await post(owner.cookie, 'not-an-id', action);
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('VALIDATION');
   });
 });
 

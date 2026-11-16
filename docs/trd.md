@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review |
+| **Status** | approved |
 | **Owner** | Project owner (sole developer) |
 | **Inputs** | [PRD v2.2](prd.md) (behavior; wins on conflict), [App Flow v2.2](app-flow.md) (screens) |
 | **Detail docs** | [Backend Schema](backend-schema.md) (wins on stored data), [API Spec](api-spec.md) (wins on request and response shapes), [UX Brief](ux-brief.md) (look and copy), [Code Standards](code-standards.md) (how code is written) |

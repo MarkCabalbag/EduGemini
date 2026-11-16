@@ -275,6 +275,142 @@ describe('approve all pending (API Spec PPL-03)', () => {
   });
 });
 
+describe('an archived class is read-only (API Spec PPL-02, PPL-03, EG-CLS-10)', () => {
+  const statusOf = async (id: string) => (await db.enrollment.findUniqueOrThrow({ where: { id } })).status;
+
+  it.each([
+    ['APPROVE', 'PENDING'],
+    ['DECLINE', 'PENDING'],
+    ['REMOVE', 'ACTIVE'],
+    ['REVERSE', 'DECLINED'],
+    ['REVERSE', 'REMOVED'],
+  ] as const)('refuses %s on a %s student with CLASS_ARCHIVED, and changes nothing', async (action, from) => {
+    const klass = await seedClass({ archivedAt: new Date() });
+    const row = await enroll(klass.id, from);
+
+    const res = await decide(row.id, action);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CLASS_ARCHIVED');
+    expect(await statusOf(row.id)).toBe(from);
+  });
+
+  it('refuses approve all pending, and approves nobody', async () => {
+    const klass = await seedClass({ archivedAt: new Date() });
+    const row = await enroll(klass.id, 'PENDING');
+
+    const res = await approveAll(klass.id);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CLASS_ARCHIVED');
+    expect(await statusOf(row.id)).toBe('PENDING');
+  });
+
+  it('still lists the people, with their counts', async () => {
+    const klass = await seedClass({ archivedAt: new Date() });
+    await enroll(klass.id, 'ACTIVE');
+
+    const res = await people(klass.id);
+
+    expect(res.status).toBe(200);
+    expect(PeoplePageSchema.parse(res.body).counts).toMatchObject({ approved: 1 });
+  });
+
+  it('works again once the class is restored', async () => {
+    const klass = await seedClass({ archivedAt: new Date() });
+    const row = await enroll(klass.id, 'PENDING');
+
+    await db.class.update({ where: { id: klass.id }, data: { archivedAt: null } });
+
+    expect((await decide(row.id, 'APPROVE')).status).toBe(200);
+    expect(await statusOf(row.id)).toBe('ACTIVE');
+  });
+
+  it('does not tell another instructor the class is archived: it is NOT_FOUND', async () => {
+    const klass = await seedClass({ archivedAt: new Date() });
+    const row = await enroll(klass.id, 'PENDING');
+
+    const res = await decide(row.id, 'APPROVE', other.cookie);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('a removed student (EG-CLS-09)', () => {
+  /** An approved student with a session of their own. */
+  async function approved(classId: string) {
+    const who = await signedInUser(`removal-${++seeded}`, 'STUDENT');
+    const row = await db.enrollment.create({ data: { classId, studentId: who.user.id, status: 'ACTIVE' } });
+    return { ...who, row };
+  }
+  const enrolledIds = async (cookie: string) =>
+    ((await send('get', '/me/enrollments', cookie)).body.items as { classId: string }[]).map((item) => item.classId);
+  const join = (code: string, cookie: string) => send('post', '/join', cookie).send({ code });
+
+  it('keeps the enrollment, records who removed them, and lists them under Removed', async () => {
+    const klass = await seedClass();
+    const kept = await approved(klass.id);
+    await approved(klass.id);
+
+    expect((await decide(kept.row.id, 'REMOVE')).status).toBe(200);
+
+    const row = await db.enrollment.findUniqueOrThrow({ where: { id: kept.row.id } }); // the same row: nothing is deleted
+    expect(row).toMatchObject({ status: 'REMOVED', decidedById: owner.user.id });
+    expect(row.decidedAt).not.toBeNull();
+    const res = await people(klass.id, '?status=REMOVED');
+    expect(res.body.items).toMatchObject([{ id: kept.row.id, status: 'REMOVED', student: { email: kept.user.email } }]);
+    expect(res.body.counts).toEqual({ approved: 1, pending: 0, declined: 0, removed: 1 });
+  });
+
+  it('takes the class off their list and their reach, and refuses their code', async () => {
+    const klass = await seedClass();
+    const gone = await approved(klass.id);
+    expect(await enrolledIds(gone.cookie)).toEqual([klass.id]);
+
+    await decide(gone.row.id, 'REMOVE');
+
+    expect(await enrolledIds(gone.cookie)).toEqual([]); // the class leaves their Enrolled list
+    expect((await send('get', `/classes/${klass.id}`, gone.cookie)).status).toBe(404);
+    const again = await join(klass.joinCode, gone.cookie);
+    expect(again.status).toBe(403);
+    expect(again.body.error.code).toBe('JOIN_BLOCKED');
+    expect((await db.enrollment.findUniqueOrThrow({ where: { id: gone.row.id } })).status).toBe('REMOVED');
+  });
+
+  it('brings everything back when they are reinstated', async () => {
+    const klass = await seedClass();
+    const back = await approved(klass.id);
+    await decide(back.row.id, 'REMOVE');
+
+    const res = await decide(back.row.id, 'REVERSE');
+
+    expect(res.body.status).toBe('ACTIVE');
+    expect(await enrolledIds(back.cookie)).toEqual([klass.id]);
+    const view = await send('get', `/classes/${klass.id}`, back.cookie);
+    expect(view.status).toBe(200);
+    expect(view.body.enrollment).toEqual({ status: 'ACTIVE' });
+    const joined = await join(klass.joinCode, back.cookie); // nothing new: they are already in
+    expect(joined.status).toBe(200);
+    expect(joined.body.status).toBe('ACTIVE');
+    expect(await db.enrollment.count({ where: { classId: klass.id, studentId: back.user.id } })).toBe(1);
+  });
+
+  it('changes nobody else, and none of the same student\'s other classes', async () => {
+    const first = await seedClass();
+    const second = await seedClass();
+    const gone = await approved(first.id);
+    await db.enrollment.create({ data: { classId: second.id, studentId: gone.user.id, status: 'ACTIVE' } });
+    const stays = await approved(first.id);
+
+    await decide(gone.row.id, 'REMOVE');
+
+    expect((await db.enrollment.findUniqueOrThrow({ where: { id: stays.row.id } })).status).toBe('ACTIVE');
+    expect(await enrolledIds(gone.cookie)).toEqual([second.id]); // still in the other class
+    expect(await enrolledIds(stays.cookie)).toEqual([first.id]);
+  });
+});
+
 describe('who may use these routes (API Spec A3)', () => {
   it('shows the owner the counts on the class itself', async () => {
     const klass = await seedClass();

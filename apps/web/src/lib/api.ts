@@ -7,6 +7,7 @@ export class ApiRequestError extends Error {
     readonly status: number,
     readonly fields?: Record<string, string>,
     readonly requestId?: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(code);
     this.name = 'ApiRequestError';
@@ -34,8 +35,8 @@ export async function api<T = undefined>(path: string, { method = 'GET', body }:
   if (!response.ok) {
     const envelope = ErrorEnvelopeSchema.safeParse(data);
     if (envelope.success) {
-      const { code, fields, requestId } = envelope.data.error;
-      throw new ApiRequestError(code, response.status, fields, requestId);
+      const { code, fields, requestId, details } = envelope.data.error;
+      throw new ApiRequestError(code, response.status, fields, requestId, details);
     }
     throw new ApiRequestError('INTERNAL', response.status);
   }

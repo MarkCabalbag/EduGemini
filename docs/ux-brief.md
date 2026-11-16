@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review |
+| **Status** | approved |
 | **Inputs** | [PRD v2.2](prd.md) (what and why), [App Flow v2.2](app-flow.md) (screens, states, copy), [TRD v1.0](trd.md) (stack, routes, accessibility) |
 | **Covers** | Look, feel, behavior, layout, and microcopy for every screen. Key screens have ASCII wireframes. |
 | **Does not cover** | Pixel-level Figma designs, illustration, marketing pages, or the admin area beyond layout notes |
@@ -338,7 +338,7 @@ Layout notes:
 │ Assignments                                   [Label ▾]  [+ New assignment] │
 │                                                                            │
 │ Drafts (1)                                                                 │
-│   Lab report 3   Draft · last saved 10:42          [Resume]  [Delete]      │
+│   Lab report 3   Draft                             [Resume]  [Delete]      │
 │                                                                            │
 │ Published                                                                  │
 │ ┌────────────────────────────────────────────────────────────────────────┐ │
@@ -386,6 +386,8 @@ Layout notes:
 - "Draft saved" appears after each autosave (App Flow 5.1, step 1 and F15). It is `status-approved` text with a check icon, not a toast.
 - The visibility toggle is labeled in full ("Visible to students"), and the helper text under the list states who sees the file.
 - On phones, the stepper collapses to "Step 2 of 5: Criteria" with a progress bar.
+- Publishing returns to the Assignments tab, where an info message says "<Title> is published. Approved students can see it now." Each warning follows on its own line: "The due date has already passed, so every submission will be marked Late." and "No Gemini key is connected, so submissions will wait for your review instead of being graded by AI."
+- "Save as draft" on the Review step only leaves the wizard, because every step has already saved the draft.
 
 **Submission screen (wireframe, desktop; App Flow 7, F19)**
 
@@ -502,11 +504,13 @@ Layout notes:
 - CSV export button in the header.
 
 **People (layout notes)**
-- Counts at the top: Approved, Pending, Declined.
+- Counts on the list buttons: Pending, Approved, Declined, Removed.
 - Join approval toggle in a settings card, off by default, with a note: "Turning this on doesn't change students who are already approved."
-- Lists: Pending (with Approve and Decline), Approved (with Remove), Declined (with Reverse). Each list is a tab.
+- Lists: Pending (with Approve and Decline), Approved (with Remove), Declined (with Reverse), Removed (with Reinstate). Each list is a tab.
+- Remove asks first, in a `ConfirmDialog` (Section 10.2) that names the student and the class and says their submissions are kept and they can be reinstated. Reinstate, Approve, Decline and Reverse do not ask.
 - "Approve all pending" appears only after the approval toggle is turned off with pending students still waiting (App Flow 4, step 4).
 - Shows name and email only (PRD Section 11).
+- On an archived class People is read-only: the toggle is disabled and the lists show no actions.
 
 **Announcements (Could, layout notes)**
 - Stream, newest first. A composer at the top with title, body, and optional attachment.
@@ -516,6 +520,7 @@ Layout notes:
 - Code and join link in `CopyField` components, each with a Copy button.
 - "Regenerate code" and "Disable code" in a card labeled Class code; both use confirm dialogs explaining that members are unaffected.
 - "Edit class details" opens a dialog. "Archive class" and "Delete class" are in a separate Danger zone card at the bottom.
+- "Archive class" asks first, in a `ConfirmDialog`: the class becomes read-only, students can still open it and see their work, the class code stops working, and it can be restored. On an archived class the card offers "Restore class" instead, which does not ask.
 - The first-run prompts (App Flow 4, step 1) appear as a short checklist card above the code, dismissible.
 
 **Create class (layout notes)**
@@ -652,7 +657,7 @@ Error pages never show stack traces, error codes, or the names of internal servi
 - Submit buttons stay enabled; the error explains what is missing. Disabled buttons are used only for the upload Submit (with a reason shown beside it).
 
 ### 10.2 Destructive actions
-- Delete, remove student, delete class, delete assignment, and delete account use `ConfirmDialog`.
+- Delete, remove student, archive class, delete class, delete assignment, and delete account use `ConfirmDialog`.
 - The dialog states the consequence with counts where the PRD requires them ("This removes 28 students' submissions and 3 assignments.").
 - Typed confirmation is required for: class deletion (class name), account deletion (`DELETE`), and assignment deletion (assignment name). Other confirmations are a plain "Remove" button with the destructive style.
 - The destructive button is never the default focused button in the dialog.

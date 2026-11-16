@@ -4,6 +4,8 @@ import type {
   ClassPage,
   ClassSummary,
   CreateClass,
+  EnrolledPage,
+  EnrolledQuery,
   EnrollmentCounts,
   EnrollmentStatus,
   JoinPreview,
@@ -12,7 +14,7 @@ import type {
 } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import { decodeCursor, encodeCursor } from '../lib/cursor';
-import { authorize, type Actor } from '../policy/policy';
+import { authorize, decide, type Actor } from '../policy/policy';
 import { enrollmentCounts } from './people-service';
 
 // 32 characters: letters without I and O, digits 2 to 9 (Backend Schema §4.7). No look-alikes (PRD FR-CLS-02).
@@ -29,16 +31,32 @@ export function newJoinCode(): string {
 /** The page students open to join (TRD §15.1). Plain joining, so a path in APP_URL is kept. */
 export const joinLinkFor = (appUrl: string, code: string) => `${appUrl.replace(/\/+$/, '')}/join/${code}`;
 
-/** The class as its owning instructor sees it. Students get their own view with the join tickets. */
+/** What a class shows to everyone who may see it. */
+const classDetails = (row: Class) => ({
+  id: row.id,
+  name: row.name,
+  description: row.description,
+  section: row.section,
+  subject: row.subject,
+  room: row.room,
+  status: row.archivedAt ? ('ARCHIVED' as const) : ('ACTIVE' as const),
+});
+
+/** First name and last initial, like "Maria R.": all a student learns about the instructor (UX Brief D-U4). */
+const instructorName = ({ firstName, lastName }: { firstName: string; lastName: string }) => `${firstName} ${[...lastName][0]}.`;
+
+const withInstructor = { instructor: { select: { firstName: true, lastName: true } } } as const;
+type ClassWithInstructor = Prisma.ClassGetPayload<{ include: typeof withInstructor }>;
+
+/** The class as a student in it sees it: no code, link or counts. */
+function toStudentClassSummary(row: ClassWithInstructor, status: EnrollmentStatus): ClassSummary {
+  return { ...classDetails(row), instructorName: instructorName(row.instructor), enrollment: { status } };
+}
+
+/** The class as its owning instructor sees it. */
 function toClassSummary(row: Class, appUrl: string, counts?: EnrollmentCounts): ClassSummary {
   return {
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    section: row.section,
-    subject: row.subject,
-    room: row.room,
-    status: row.archivedAt ? 'ARCHIVED' : 'ACTIVE',
+    ...classDetails(row),
     joinCode: row.joinCode,
     joinLink: joinLinkFor(appUrl, row.joinCode),
     joinCodeActive: row.joinCodeActive,
@@ -154,8 +172,75 @@ export async function joinClass(db: PrismaClient, actor: Actor, code: string): P
 }
 
 export async function getClass(db: PrismaClient, actor: Actor, classId: string, appUrl: string): Promise<ClassSummary> {
-  const row = await db.class.findUnique({ where: { id: classId } });
+  const row = await db.class.findUnique({ where: { id: classId }, include: withInstructor });
   if (!row) throw new AppError('NOT_FOUND');
+
+  if (actor.role === 'STUDENT') {
+    const mine = await db.enrollment.findUnique({ where: { classId_studentId: { classId, studentId: actor.id } } });
+    const decision = decide(actor, 'class.view', { classInstructorId: row.instructorId, enrollment: mine?.status });
+    // A pending student is told the class name and nothing else (API Spec CLS-03). Declined, removed and strangers find nothing.
+    if (decision === 'pending') throw new AppError('ENROLLMENT_PENDING', { details: { className: row.name } });
+    if (decision === 'not_found' || !mine) throw new AppError('NOT_FOUND');
+    return toStudentClassSummary(row, mine.status);
+  }
+
   authorize(actor, 'class.view', { classInstructorId: row.instructorId }); // someone else's class looks the same as a missing one
   return toClassSummary(row, appUrl, await enrollmentCounts(db, row.id));
+}
+
+/** Stops unless the class is the caller's to archive. Someone else's class looks the same as a missing one (API Spec A3). */
+async function authorizeArchive(db: PrismaClient, actor: Actor, classId: string) {
+  const row = await db.class.findUnique({ where: { id: classId }, select: { instructorId: true } });
+  if (!row) throw new AppError('NOT_FOUND');
+  authorize(actor, 'class.archive', { classInstructorId: row.instructorId });
+}
+
+/**
+ * Archive a class: read-only for everyone (API Spec CLS-05). Archiving an archived class changes nothing, so the date
+ * stays where it was and the retention clock is not extended.
+ */
+export async function archiveClass(db: PrismaClient, actor: Actor, classId: string, appUrl: string): Promise<ClassSummary> {
+  await authorizeArchive(db, actor, classId);
+  await db.class.updateMany({ where: { id: classId, archivedAt: null }, data: { archivedAt: new Date() } });
+  return toClassSummary(await db.class.findUniqueOrThrow({ where: { id: classId } }), appUrl);
+}
+
+/** Restore an archived class (API Spec CLS-06). The notice date goes with the archive date: the database allows no notice without one. */
+export async function restoreClass(db: PrismaClient, actor: Actor, classId: string, appUrl: string): Promise<ClassSummary> {
+  await authorizeArchive(db, actor, classId);
+  await db.class.updateMany({ where: { id: classId, archivedAt: { not: null } }, data: { archivedAt: null, retentionNoticeAt: null } });
+  return toClassSummary(await db.class.findUniqueOrThrow({ where: { id: classId } }), appUrl);
+}
+
+/** The student's own classes, newest joined first, whatever the status except removed (API Spec JOIN-03). */
+export async function listEnrollments(db: PrismaClient, actor: Actor, query: EnrolledQuery): Promise<EnrolledPage> {
+  authorize(actor, 'class.listEnrolled');
+
+  const after = query.cursor ? decodeCursor(query.cursor) : undefined;
+  const where: Prisma.EnrollmentWhereInput = {
+    studentId: actor.id,
+    status: { not: 'REMOVED' },
+    ...(after && { OR: [{ joinedAt: { lt: after.at } }, { joinedAt: after.at, id: { lt: after.id } }] }),
+  };
+
+  // One row more than the page, to learn whether there is a next page.
+  const rows = await db.enrollment.findMany({
+    where,
+    orderBy: [{ joinedAt: 'desc' }, { id: 'desc' }],
+    take: query.limit + 1,
+    include: { class: { include: withInstructor } },
+  });
+  const page = rows.slice(0, query.limit);
+  const last = page.at(-1);
+  return {
+    items: page.map((row) => ({
+      classId: row.classId,
+      className: row.class.name,
+      status: row.status,
+      instructorName: instructorName(row.class.instructor),
+      archived: row.class.archivedAt !== null,
+      joinedAt: row.joinedAt.toISOString(),
+    })),
+    nextCursor: rows.length > query.limit && last ? encodeCursor({ at: last.joinedAt, id: last.id }) : null,
+  };
 }

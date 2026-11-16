@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review |
+| **Status** | Approved |
 | **Owner** | Project owner (sole developer) |
 | **Inputs** | [TRD](trd.md) (stack, architecture), [Backend Schema](backend-schema.md), [API Spec](api-spec.md), [UX Brief](ux-brief.md) |
 

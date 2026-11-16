@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review |
+| **Status** | approved |
 | **Owner** | Project owner (sole developer) |
 | **Machine-readable contract** | [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1). Same operation IDs as this document |
 | **Precedence** | PRD v2.2 wins on behavior. Backend Schema wins on stored data and enums. This document wins on request and response shapes. `openapi.yaml` wins on exact field types once both are read |
@@ -193,7 +193,7 @@ These are the shapes used across endpoints. Each has a matching component in `op
 
 | Field | Notes |
 |---|---|
-| `id`, `title`, `dueAt`, `timezone` | |
+| `id`, `classId`, `title`, `dueAt`, `timezone` | `classId` lets an assignment page link back to its class |
 | `label` | `{ id, name }` or null |
 | `status` | `DRAFT` \| `PUBLISHED` \| `ARCHIVED`. Drafts appear to instructors only |
 | `scoringFormat`, `maxScore` | |
@@ -410,7 +410,7 @@ This table maps the PRD §5.1 matrix onto endpoint IDs. Each row has a test in t
 | Action (PRD §5.1) | Endpoints | Student | Instructor (own class) | Super Admin |
 |---|---|---|---|---|
 | Create class | CLS-02 | — | ✓ | — |
-| View own classes and class details | CLS-01, CLS-03 | ✓ (approved) | ✓ | — |
+| View own classes and class details | CLS-01, CLS-03, JOIN-03 | ✓ (approved; JOIN-03 lists a student's own classes with any status except removed) | ✓ | — |
 | Join via code | JOIN-01 | ✓ | — | — |
 | Approve, decline, remove joins | PPL-02, PPL-03 | — | ✓ | — |
 | Regenerate or disable code | CLS-08, CLS-09 | — | ✓ | — |
@@ -418,6 +418,7 @@ This table maps the PRD §5.1 matrix onto endpoint IDs. Each row has a test in t
 | Archive class | CLS-05, CLS-06 | — | ✓ | ✓ (ADM-07) |
 | Edit class details | CLS-04 | — | ✓ | — |
 | Delete class | CLS-07, CLS-11 | — | ✓ | ✓ (ADM-08) |
+| View assignments | ASG-01, ASG-03 | ✓ (approved, published only) | ✓ | — |
 | Create or edit assignment | ASG-02, ASG-04 | — | ✓ | — |
 | Delete or archive assignment | ASG-07, ASG-09 | — | ✓ | — |
 | Labels | ASG-10 to ASG-12 | — | ✓ | — |
@@ -680,7 +681,7 @@ Each endpoint has the same fields:
 - **Access:** owning instructor; the Super Admin uses ADM-07.
 - **FR:** FR-CLS-06.
 - **Response:** `200` `ClassSummary` with `status: ARCHIVED`. Archiving an archived class returns `200` with the same body (idempotent, A11).
-- **Effects:** the class becomes read-only for everyone. The review queue excludes its items (Backend Schema open question 3). Students keep read access (FR-CLS-06).
+- **Effects:** the class becomes read-only for everyone: the approval switch and the member routes (PPL-02, PPL-03) answer `CLASS_ARCHIVED`, and its join code reads as invalid. Archiving again does not move `archived_at`. The review queue excludes its items (Backend Schema open question 3). Students keep read access (FR-CLS-06).
 - **Test:** `class.spec`.
 
 #### CLS-06 · Restore class
@@ -688,7 +689,7 @@ Each endpoint has the same fields:
 - **Access:** owning instructor.
 - **FR:** FR-CLS-06.
 - **Response:** `200` `ClassSummary` with `status: ACTIVE`. Idempotent.
-- **Effects:** writes are allowed again. Retention clocks are not reset until the class is archived again, so a restore cancels nothing already sent. (Retention notices already sent stay sent.)
+- **Effects:** writes are allowed again. Restore clears `archived_at` and `retention_notice_at`, and archiving again starts a new 12-month clock. A retention notice already sent stays sent.
 - **Test:** `class.spec`.
 
 #### CLS-07 · Delete class
@@ -769,15 +770,15 @@ Each endpoint has the same fields:
 `GET /api/me/enrollments?cursor&limit`
 - **Access:** student.
 - **FR:** FR-CLS-08.
-- **Response:** `200` `Page<{ classId, className, status, instructorName, archived, joinedAt }>`. `REMOVED` rows are omitted (App Flow §3).
-- **Errors:** STD-AUTH.
+- **Response:** `200` `Page<{ classId, className, status, instructorName, archived, joinedAt }>`. `REMOVED` rows are omitted (App Flow §3). Newest joined first. `instructorName` is the first name and last initial.
+- **Errors:** STD-AUTH, `VALIDATION`.
 - **Test:** `class.spec` (Enrolled list).
 
 #### PPL-01 · List people in a class
 `GET /api/classes/{classId}/people?status=ACTIVE|PENDING|DECLINED|REMOVED&cursor&limit`
 - **Access:** owning instructor.
 - **FR:** FR-CLS-05, FR-CLS-07, FR-GB-01 (roster for the gradebook).
-- **Response:** `200` `{ counts: { approved, pending, declined, removed }, items: EnrollmentView[], nextCursor }`. The `counts` object is always complete, whatever the filter.
+- **Response:** `200` `{ counts: { approved, pending, declined, removed }, items: EnrollmentView[], nextCursor }`. The `counts` object is always complete, whatever the filter. Items are in join order, oldest first, so the longest-waiting request is at the top.
 - **Errors:** `NOT_FOUND` for students and other instructors.
 - **Effects:** none. `email` appears on each item (PRD §11: instructors see name and email only).
 - **Test:** `class.spec` (People view).
@@ -798,7 +799,7 @@ Each endpoint has the same fields:
   | `REMOVE` | `ACTIVE` | `REMOVED` |
 
 - **Response:** `200` `EnrollmentView`.
-- **Errors:** `CONFLICT` (409) with `details.currentState` when the transition is not allowed.
+- **Errors:** `CONFLICT` (409) with `details.currentState` when the transition is not allowed; `CLASS_ARCHIVED` (409) when the class is archived (it is read-only, FR-CLS-06).
 - **Effects:**
   - `APPROVE` and `DECLINE` create `JOIN_DECIDED` for the student (with the class name).
   - `REMOVE` creates no notification (the PRD matrix has none). The student's submissions leave the queue and tracker because the status is no longer `ACTIVE` (derived).
@@ -811,7 +812,7 @@ Each endpoint has the same fields:
 - **Access:** owning instructor.
 - **FR:** FR-CLS-07.
 - **Response:** `200` `{ approvedCount }`.
-- **Errors:** `CONFLICT` when join approval is still on (the action is only for after it is turned off, Backend Schema §6.2).
+- **Errors:** `CONFLICT` when join approval is still on (the action is only for after it is turned off, Backend Schema §6.2); `CLASS_ARCHIVED` (409) when the class is archived.
 - **Effects:** every pending row becomes `ACTIVE`, and each student gets `JOIN_DECIDED`. Runs in one transaction; for large classes it is processed in batches of 200 with the same final result.
 - **Test:** `class.spec`.
 ### B.6 Assignments and labels (12 endpoints)

@@ -2098,7 +2098,7 @@ components:
         subject: { type: [string, 'null'] }
         room: { type: [string, 'null'] }
         status: { type: string, enum: [ACTIVE, ARCHIVED] }
-        instructorName: { type: string, description: "First name and last initial (API-1, proposed)." }
+        instructorName: { type: string, description: "Students only: first name and last initial (API-1, UX D-U4)." }
         joinCode: { type: string, description: "Instructor only." }
         joinLink: { type: string, description: "Instructor only." }
         joinCodeActive: { type: boolean }
@@ -2251,9 +2251,10 @@ components:
 
     AssignmentSummary:
       type: object
-      required: [id, title, dueAt, timezone, status, scoringFormat, maxScore, maxResubmissions, acceptLate, criteriaVersion]
+      required: [id, classId, title, dueAt, timezone, status, scoringFormat, maxScore, maxResubmissions, acceptLate, criteriaVersion]
       properties:
         id: { type: string, format: uuid }
+        classId: { type: string, format: uuid }
         title: { type: string }
         dueAt: { type: string, format: date-time }
         timezone: { type: string }

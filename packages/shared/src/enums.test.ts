@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EnrollmentStatusSchema, RoleSchema } from './enums';
+import { AssignmentStatusSchema, EnrollmentStatusSchema, RoleSchema, ScoringFormatSchema } from './enums';
 
 const prisma = readFileSync(resolve(__dirname, '../../../apps/api/prisma/schema.prisma'), 'utf8').replace(/\r\n/g, '\n');
 
@@ -17,4 +17,6 @@ function prismaEnum(name: string): string[] {
 describe('shared enums match Prisma', () => {
   it('Role', () => expect(RoleSchema.options).toEqual(prismaEnum('Role')));
   it('EnrollmentStatus', () => expect(EnrollmentStatusSchema.options).toEqual(prismaEnum('EnrollmentStatus')));
+  it('AssignmentStatus', () => expect(AssignmentStatusSchema.options).toEqual(prismaEnum('AssignmentStatus')));
+  it('ScoringFormat', () => expect(ScoringFormatSchema.options).toEqual(prismaEnum('ScoringFormat')));
 });

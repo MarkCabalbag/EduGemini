@@ -97,9 +97,13 @@ export async function decideEnrollment(
   enrollmentId: string,
   input: Decision,
 ): Promise<EnrollmentView> {
-  const found = await db.enrollment.findUnique({ where: { id: enrollmentId }, include: { class: { select: { instructorId: true } } } });
+  const found = await db.enrollment.findUnique({
+    where: { id: enrollmentId },
+    include: { class: { select: { instructorId: true, archivedAt: true } } },
+  });
   if (!found) throw new AppError('NOT_FOUND');
   authorize(actor, 'class.manageMembers', { classInstructorId: found.class.instructorId });
+  if (found.class.archivedAt) throw new AppError('CLASS_ARCHIVED'); // read-only (FR-CLS-06)
 
   // The change only happens if the row is still in a state this action starts from. Two decisions at once cannot both
   // win: the second finds the new state and reads it back as a conflict.
@@ -116,6 +120,7 @@ export async function decideEnrollment(
 /** For after approval was turned off with students still waiting. Refused while approval is on, so new requests keep waiting. */
 export async function approvePending(db: PrismaClient, actor: Actor, classId: string): Promise<ApproveAllResult> {
   const row = await ownClass(db, actor, classId);
+  if (row.archivedAt) throw new AppError('CLASS_ARCHIVED');
   if (row.requireApproval) throw new AppError('CONFLICT');
   const { count } = await db.enrollment.updateMany({
     where: { classId, status: 'PENDING' },
