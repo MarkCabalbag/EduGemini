@@ -15,6 +15,7 @@ import type {
 } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import { decodeCursor, encodeCursor } from '../lib/cursor';
+import { lockClass } from '../lib/lock';
 import { authorize, decide, type Actor } from '../policy/policy';
 import { enrollmentCounts } from './people-service';
 
@@ -66,32 +67,42 @@ function toClassSummary(row: Class, appUrl: string, counts?: EnrollmentCounts): 
   };
 }
 
-/** The route also checks the role, earlier, so a student cannot tell the route exists (API Spec A3). */
-export async function createClass(db: PrismaClient, actor: Actor, input: CreateClass, appUrl: string): Promise<ClassSummary> {
-  authorize(actor, 'class.create');
-
+/**
+ * Save with a fresh join code, picking another when one is taken (API Spec CLS-02, CLS-08). The unique index on join_code
+ * is the source of truth, so two classes racing for one code cannot both win. A `save` that runs in a transaction must
+ * start it inside, so each try has its own.
+ */
+async function saveWithFreshCode<T>(save: (joinCode: string) => Promise<T>): Promise<T> {
   for (let retry = 0; retry <= CODE_RETRIES; retry++) {
     try {
-      const row = await db.class.create({
-        data: {
-          instructorId: actor.id,
-          name: input.name,
-          description: input.description || null,
-          section: input.section || null,
-          subject: input.subject || null,
-          room: input.room || null,
-          joinCode: newJoinCode(),
-          attestedAt: new Date(),
-        },
-      });
-      return toClassSummary(row, appUrl);
+      return await save(newJoinCode());
     } catch (error) {
-      // The unique index on join_code is the source of truth, so two classes racing for one code cannot both win.
       const codeTaken = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
       if (!codeTaken) throw error;
     }
   }
   throw new AppError('INTERNAL', { message: `No free join code after ${CODE_RETRIES + 1} tries` });
+}
+
+/** The route also checks the role, earlier, so a student cannot tell the route exists (API Spec A3). */
+export async function createClass(db: PrismaClient, actor: Actor, input: CreateClass, appUrl: string): Promise<ClassSummary> {
+  authorize(actor, 'class.create');
+
+  const row = await saveWithFreshCode((joinCode) =>
+    db.class.create({
+      data: {
+        instructorId: actor.id,
+        name: input.name,
+        description: input.description || null,
+        section: input.section || null,
+        subject: input.subject || null,
+        room: input.room || null,
+        joinCode,
+        attestedAt: new Date(),
+      },
+    }),
+  );
+  return toClassSummary(row, appUrl);
 }
 
 /** The caller's own classes, newest first. Archived classes only when asked for (API Spec CLS-01). */
@@ -241,6 +252,42 @@ export async function restoreClass(db: PrismaClient, actor: Actor, classId: stri
   await authorizeArchive(db, actor, classId);
   await db.class.updateMany({ where: { id: classId, archivedAt: { not: null } }, data: { archivedAt: null, retentionNoticeAt: null } });
   return toClassSummary(await db.class.findUniqueOrThrow({ where: { id: classId } }), appUrl);
+}
+
+/** The class, if its code is the caller's to change. Someone else's class looks the same as a missing one (API Spec A3). */
+async function ownClassForCode(db: PrismaClient, actor: Actor, classId: string) {
+  const row = await db.class.findUnique({ where: { id: classId } });
+  if (!row) throw new AppError('NOT_FOUND');
+  authorize(actor, 'class.regenerateCode', { classInstructorId: row.instructorId });
+  return row;
+}
+
+/**
+ * Give the class a new code and switch it on, which is also how a disabled code comes back (API Spec CLS-08). The old
+ * code stops working at once. The students are not touched. An archived class is read-only (FR-CLS-06).
+ */
+export async function regenerateCode(db: PrismaClient, actor: Actor, classId: string, appUrl: string): Promise<ClassSummary> {
+  await ownClassForCode(db, actor, classId);
+
+  const row = await saveWithFreshCode((joinCode) =>
+    db.$transaction(async (tx) => {
+      await lockClass(tx, classId);
+      // Read again under the lock: the class may have been archived or deleted while this request waited.
+      const current = await tx.class.findUnique({ where: { id: classId } });
+      if (!current) throw new AppError('NOT_FOUND');
+      if (current.archivedAt) throw new AppError('CLASS_ARCHIVED');
+      return tx.class.update({ where: { id: classId }, data: { joinCode, joinCodeActive: true } });
+    }),
+  );
+  return toClassSummary(row, appUrl);
+}
+
+/** Switch the code off, so it reads as invalid for everyone. Doing it again changes nothing (API Spec CLS-09). */
+export async function disableCode(db: PrismaClient, actor: Actor, classId: string, appUrl: string): Promise<ClassSummary> {
+  const row = await ownClassForCode(db, actor, classId);
+  if (row.archivedAt) throw new AppError('CLASS_ARCHIVED'); // read-only (FR-CLS-06)
+
+  return toClassSummary(await db.class.update({ where: { id: classId }, data: { joinCodeActive: false } }), appUrl);
 }
 
 /** The student's own classes, newest joined first, whatever the status except removed (API Spec JOIN-03). */

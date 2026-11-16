@@ -473,6 +473,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ClassSummary' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /api/classes/{classId}/settings:
     parameters:

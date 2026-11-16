@@ -17,3 +17,8 @@ export async function lockSubmission(tx: Prisma.TransactionClient, submissionId:
 export async function lockInstructorKey(tx: Prisma.TransactionClient, instructorId: string): Promise<void> {
   await tx.$queryRaw`SELECT id FROM instructor_keys WHERE instructor_id = ${instructorId}::uuid FOR UPDATE`;
 }
+
+/** The same for a class's row. Regenerating the code takes it (API Spec A11, CLS-08). */
+export async function lockClass(tx: Prisma.TransactionClient, classId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM classes WHERE id = ${classId}::uuid FOR UPDATE`;
+}

@@ -710,6 +710,7 @@ Each endpoint has the same fields:
 - **Access:** owning instructor.
 - **FR:** FR-CLS-04.
 - **Response:** `200` `ClassSummary` with the new `joinCode`, `joinLink`, and `joinCodeActive: true`.
+- **Errors:** `NOT_FOUND`, `CLASS_ARCHIVED` (an archived class is read-only, FR-CLS-06).
 - **Effects:** the old code stops working at once (it returns `INVALID_JOIN_CODE`). Members are unaffected. This is also how a disabled code is enabled again.
 - **Concurrency:** class row lock; collision retry as in CLS-02.
 - **Test:** `class.spec`.
@@ -719,7 +720,8 @@ Each endpoint has the same fields:
 - **Access:** owning instructor.
 - **FR:** FR-CLS-04.
 - **Response:** `200` `ClassSummary` with `joinCodeActive: false`. Idempotent.
-- **Effects:** the code reads as invalid for everyone (no class information is shown).
+- **Errors:** `NOT_FOUND`, `CLASS_ARCHIVED` (an archived class is read-only, FR-CLS-06).
+- **Effects:** the code reads as invalid for everyone (no class information is shown). The code stays on the class, so `joinCode` and `joinLink` do not change. Members are unaffected.
 - **Test:** `class.spec`.
 
 #### CLS-10 · Change join approval

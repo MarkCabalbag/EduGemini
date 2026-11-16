@@ -73,6 +73,15 @@ export function useArchiveClass(classId: string) {
   });
 }
 
+/** Regenerate the class code, or disable it (API Spec CLS-08, CLS-09). The class and every list of classes are read again. */
+export function useChangeCode(classId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (action: 'regenerate' | 'disable') => api<ClassSummary>(`/classes/${classId}/code/${action}`, { method: 'POST' }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: classKeys.all }),
+  });
+}
+
 /** Change a class's details (API Spec CLS-04). The class and every list of classes are read again, so the new name shows everywhere. */
 export function useUpdateClass(classId: string) {
   const queryClient = useQueryClient();

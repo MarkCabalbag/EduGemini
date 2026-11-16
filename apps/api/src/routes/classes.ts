@@ -15,10 +15,12 @@ import { validate, validated } from '../middleware/validate';
 import {
   archiveClass,
   createClass,
+  disableCode,
   getClass,
   joinClass,
   listClasses,
   listEnrollments,
+  regenerateCode,
   restoreClass,
   updateClass,
 } from '../services/class-service';
@@ -34,8 +36,8 @@ const edit = { params: ClassParamsSchema, body: UpdateClassSchema };
 const join = { body: JoinSchema };
 
 /**
- * Create, list, get, edit, archive and restore a class, join one by code, and a student's Enrolled list (API Spec CLS-01 to
- * CLS-06, JOIN-01, JOIN-03). The join link preview is in join-link.ts. Needs the session, so it is mounted
+ * Create, list, get, edit, archive and restore a class, regenerate or disable its code, join one by code, and a student's
+ * Enrolled list (API Spec CLS-01 to CLS-06, CLS-08, CLS-09, JOIN-01, JOIN-03). The join link preview is in join-link.ts. Needs the session, so it is mounted
  * after loadSession.
  * The role check comes first on every route but get-one, so a role that cannot use them cannot tell they exist. The
  * services check again, and decide whether a class is the caller's own.
@@ -86,6 +88,16 @@ export function classesRouter({ db, appUrl }: ClassDeps): Router {
   router.post('/classes/:classId/restore', requireAuth, requireAction('class.list'), validate(one), async (req, res) => {
     const { params } = validated(res, one);
     res.json(await restoreClass(db, req.auth!.user, params.classId, appUrl));
+  });
+
+  router.post('/classes/:classId/code/regenerate', requireAuth, requireAction('class.list'), validate(one), async (req, res) => {
+    const { params } = validated(res, one);
+    res.json(await regenerateCode(db, req.auth!.user, params.classId, appUrl));
+  });
+
+  router.post('/classes/:classId/code/disable', requireAuth, requireAction('class.list'), validate(one), async (req, res) => {
+    const { params } = validated(res, one);
+    res.json(await disableCode(db, req.auth!.user, params.classId, appUrl));
   });
 
   // The limit comes after validation, so a code of the wrong length does not use up an attempt.

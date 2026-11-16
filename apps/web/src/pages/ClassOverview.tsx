@@ -5,7 +5,6 @@ import type { ClassSummary } from '@edugemini/shared';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { CopyField } from '../components/ui/CopyField';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { StatusChip } from '../components/ui/StatusChip';
@@ -14,6 +13,7 @@ import { ApiRequestError } from '../lib/api';
 import { classMeta } from '../lib/class-meta';
 import { errorText } from '../lib/error-text';
 import { Assignments } from './Assignments';
+import { ClassCodeCard } from './ClassCodeCard';
 import { EditClassDetails } from './EditClassDetails';
 import { NotFound } from './NotFound';
 import { People } from './People';
@@ -88,7 +88,7 @@ export function ClassOverview() {
     return notFound ? <NotFound /> : <ErrorState error={cls.error} onRetry={() => void cls.refetch()} />;
   }
 
-  const { name, description, joinCode, joinLink } = cls.data;
+  const { name, description } = cls.data;
   const archived = cls.data.status === 'ARCHIVED';
   const meta = classMeta(cls.data);
 
@@ -117,14 +117,8 @@ export function ClassOverview() {
       </nav>
       {onAssignments && <Assignments cls={cls.data} />}
       {onPeople && <People cls={cls.data} />}
-      {/* An archived class's code does not work, so it is not offered for sharing. */}
-      {onOverview && !archived && joinCode && joinLink && (
-        <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
-          <h2 className="text-title font-semibold">Class code</h2>
-          <CopyField label="Class code" value={joinCode} />
-          <CopyField label="Join link" value={joinLink} />
-        </section>
-      )}
+      {/* An archived class's code does not work, and the class is read-only, so the code card is not shown. */}
+      {onOverview && !archived && <ClassCodeCard cls={cls.data} />}
       {/* An archived class is read-only, so its details cannot be edited until it is restored. */}
       {onOverview && !archived && <EditClassDetails cls={cls.data} />}
       {onOverview && <ArchiveCard cls={cls.data} />}

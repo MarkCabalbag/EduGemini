@@ -518,7 +518,7 @@ Layout notes:
 
 **Class Overview (layout notes)**
 - Code and join link in `CopyField` components, each with a Copy button.
-- "Regenerate code" and "Disable code" in a card labeled Class code; both use confirm dialogs explaining that members are unaffected.
+- "Regenerate code" and "Disable code" in a card labeled Class code; both use confirm dialogs explaining that members are unaffected. Regenerate also says the old code and link stop working at once. Disable also says nobody can join until the code is regenerated. While the code is disabled, the card shows "The class code is off. Nobody can join with the code or the join link. Regenerate the code to turn it on again." in place of the code and link, and offers only "Regenerate code". The card is not shown on an archived class.
 - A Class details card has "Edit class details", which opens a dialog with the five fields of Create class (name, description, section, subject, room) filled in, and Save changes and Cancel. Saving closes the dialog; a problem shows under its field or at the top of the dialog. The card is not shown on an archived class. "Archive class" and "Delete class" are in a separate Danger zone card at the bottom.
 - "Archive class" asks first, in a `ConfirmDialog`: the class becomes read-only, students can still open it and see their work, the class code stops working, and it can be restored. On an archived class the card offers "Restore class" instead, which does not ask.
 - The first-run prompts (App Flow 4, step 1) appear as a short checklist card above the code, dismissible.
@@ -659,7 +659,7 @@ Error pages never show stack traces, error codes, or the names of internal servi
 - Submit buttons stay enabled; the error explains what is missing. Disabled buttons are used only for the upload Submit (with a reason shown beside it).
 
 ### 10.2 Destructive actions
-- Delete, remove student, archive class, delete class, delete assignment, and delete account use `ConfirmDialog`.
+- Delete, remove student, archive class, regenerate or disable the class code, delete class, delete assignment, and delete account use `ConfirmDialog`.
 - The dialog states the consequence with counts where the PRD requires them ("This removes 28 students' submissions and 3 assignments.").
 - Typed confirmation is required for: class deletion (class name), account deletion (`DELETE`), and assignment deletion (assignment name). Other confirmations are a plain "Remove" button with the destructive style.
 - The destructive button is never the default focused button in the dialog.
