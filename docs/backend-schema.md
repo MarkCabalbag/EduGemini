@@ -459,7 +459,7 @@ In-app notifications are the source of truth. Email state lives on the same row 
 | id | Uuid | |
 | user_id | Uuid | FK `users` ON DELETE CASCADE |
 | type | notification_type | One of the 19 events in PRD Section 10 |
-| payload | jsonb | Identifiers and short labels only; never grades, feedback, or file names |
+| payload | jsonb | Identifiers and short labels only; never grades, feedback, or file names. Keys so far: `className` |
 | link | text | Relative in-app path (CK: starts with `/`, not `//`) |
 | read_at | timestamptz? | |
 | email_status | email_status | `PENDING`, `SENT`, `FAILED`, `SKIPPED`; default `SKIPPED` |

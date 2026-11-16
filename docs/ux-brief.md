@@ -163,7 +163,7 @@ Design note from the run: white text on the dark-theme primary `#6366F1` measure
 ## 6. Layout and navigation
 
 ### 6.1 App shell
-- **Header** (all signed-in screens): logo or wordmark on the left; on the right, in order: **Review Queue** (instructors only, with a count badge), **Notifications** (bell with unread count), **Settings**, and the account menu. Matches the App Flow Navigation Map.
+- **Header** (all signed-in screens): logo or wordmark on the left; on the right, in order: **Review Queue** (instructors only, with a count badge), **Notifications** (bell with the unread count beside it when above zero), **Settings**, and the account menu. Matches the App Flow Navigation Map.
 - **Class pages** add a second row of tabs: Overview, Assignments, People, Gradebook, Announcements (Could). Tabs scroll horizontally on phones rather than wrapping.
 - **Breadcrumb** under the header on deep pages (for example `Biology 101 / Essay 2 / Ana L.`). On phones, show only the back arrow and the current page name.
 - **Super Admin** uses a separate layout with a left sidebar: Accounts, Classes, Platform health, Audit log. It never shares the instructor or student header.
@@ -773,6 +773,35 @@ These strings must match the App Flow exactly. A string marked **(new)** was wri
 
 ### 11.5 Errors
 Pattern: **what happened**, **what it means for you**, **what to do**. Example: "This file couldn't be read. Your other files are saved. Try re-saving the photo or choosing a different file."
+
+### 11.6 Notifications
+An item shows its title, its body and a relative time (§11.4). The body is the class name when the event has one, otherwise nothing. Neither carries grades, feedback or file names. The page heading is "Notifications" and the count line is "N unread" *(new)*.
+
+Titles are the PRD §10 event names, shortened *(new, pending owner approval; NTF-05 sets the final wording when it adds the details each event needs, such as the decision or the new due date)*:
+
+| Type | Title |
+|---|---|
+| `SUBMISSION_GRADED` | Submission graded |
+| `GRADE_APPROVED` | Instructor approved grade |
+| `SUBMISSION_AWAITING_REVIEW` | New submission awaiting review |
+| `NEEDS_MANUAL_REVIEW_INSTRUCTOR` | Submission moved to Needs manual review |
+| `NEEDS_MANUAL_REVIEW_STUDENT` | Submitted, awaiting instructor review |
+| `KEY_NEEDS_ATTENTION` | Gemini key needs attention |
+| `REGRADE_COMPLETE` | Re-grade complete |
+| `SUBMISSION_REOPENED` | Submission reopened by instructor |
+| `JOIN_REQUEST_RECEIVED` | Join request received |
+| `JOIN_DECIDED` | Join request approved or declined |
+| `ATTEMPTS_GRANTED` | Extra resubmission attempts granted |
+| `LATE_ALLOWED` | Late submission allowed by instructor |
+| `ASSIGNMENT_PUBLISHED` | New assignment published |
+| `DUE_DATE_CHANGED` | Assignment due date changed |
+| `CLASS_DELETED` | Class deleted |
+| `INSTRUCTOR_ACCOUNT_DELETED` | Instructor account deleted |
+| `ACCOUNT_STATUS_CHANGED` | Account suspended or reinstated |
+| `RETENTION_NOTICE` | Archived-class data scheduled for deletion |
+| `ANNOUNCEMENT_POSTED` | New announcement |
+
+An item whose target is gone: the notification has no field that says so, so the list cannot show "This item is no longer available" beside it yet. The page the item opens shows it instead, in its full-page form ("This item is no longer available." with "Go to dashboard"). A page reached any other way still says "We couldn't find that page."
 
 ---
 

@@ -283,7 +283,7 @@ Students never receive `manualReviewCause`, `criteriaChanged`, or re-grade detai
 
 **`GradebookCell`**: `{ assignmentId, displayState, score, letter }`. Score is in the assignment's own format (PRD FR-GB-03).
 
-**`Notification`**: `{ id, type, title, body, link, readAt, createdAt }`. `title` and `body` come from the copy table in the UX Brief for the notification type. They never contain grades, feedback, or file names (Backend Schema §4.20).
+**`Notification`**: `{ id, type, title, body, link, readAt, createdAt }`. `title` and `body` come from the copy table in the UX Brief (§11.6) for the notification type. They never contain grades, feedback, or file names (Backend Schema §4.20).
 
 **`Announcement`**: `{ id, title, body, createdAt, author: { displayName }, files: [{ id, label, mimeType, sizeBytes }] }`. `label` is "Attachment N" (API-2).
 
@@ -379,7 +379,7 @@ The breaking-change check compares the previous `openapi.yaml` with the new one 
 | Grading triggers, per user | 30 per minute | Pacing per instructor key is separate (TRD §10.2) |
 | Bulk actions, per instructor | 10 per minute | |
 | Class creation, per user | 20 per hour | Counted after validation, so a request with errors does not use it up |
-| Notifications read and count, per user | 300 per minute | Polling-friendly |
+| Notifications read and count, per user | 300 per minute | Polling-friendly. One count for the four notification routes (NTF-01 to NTF-04); they are not part of the general limit below |
 | Admin, per admin | 60 per minute | |
 | Everything else, per user | 120 per minute | One shared counter per user across every route that has no row of its own above |
 

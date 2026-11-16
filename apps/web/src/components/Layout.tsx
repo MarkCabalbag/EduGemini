@@ -1,5 +1,6 @@
 import { Link, Outlet } from 'react-router';
 import { useMe, useSignOut } from '../hooks/use-auth';
+import { NotificationBell } from './NotificationBell';
 import { Alert } from './ui/Alert';
 import { Button } from './ui/Button';
 
@@ -20,6 +21,7 @@ export function Layout() {
           </Link>
           {canSignOut ? (
             <div className="flex items-center gap-3">
+              {me && <NotificationBell />}
               {me && (
                 <span className="hidden text-small text-muted sm:inline">
                   {me.firstName} {me.lastName}

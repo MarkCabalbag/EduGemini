@@ -441,7 +441,7 @@ Google may use free-tier content to improve its products (disclosed to instructo
 
 ### 13.1 Fan-out
 - Domain code calls `notify(type, recipients, payload)` in the same transaction as the event where possible.
-- `notify` writes one `Notification` row per recipient (in-app, source of truth) and, when the channel applies, enqueues `send.email`.
+- `notify` writes one `Notification` row per recipient (in-app, source of truth) and, when the channel applies, enqueues `send.email`. In code it takes the database client first, so it can join the caller's transaction, and its last argument carries `link` (stored in the row's `link` column) beside the labels (stored in the row's `payload`, Backend Schema §4.20). NTF-01 builds the in-app half; email is added by NTF-03.
 - Email is sent only if the recipient's address is verified, except the exceptions listed below. It is also skipped if the user disabled that category (FR-NTF-04).
 - Digest types (new submission, Needs manual review, and join request for instructors; announcements for students) go to `digest.flush`, not to `send.email`.
 
