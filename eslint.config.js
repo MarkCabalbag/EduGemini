@@ -49,7 +49,7 @@ export default tseslint.config(
       'no-restricted-syntax': ['error', PROCESS_ENV, RAW_SQL, LITERAL_COLOR],
     },
   },
-  { files: ['apps/web/src/lib/api.ts'], rules: { 'no-restricted-globals': 'off' } },
+  { files: ['apps/web/src/lib/api.ts', 'apps/web/src/test/fake-xhr.ts'], rules: { 'no-restricted-globals': 'off' } }, // the test stand-in for api.ts's file transport hands requests to the stubbed fetch
   { files: ['apps/web/public/**/*.js'], languageOptions: { globals: { ...globals.browser } } },
   // Admin area: only the adminQueries repository, no content models (TRD §7.3).
   {

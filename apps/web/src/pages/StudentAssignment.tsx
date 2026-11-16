@@ -30,7 +30,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /**
- * The student's part of the page: the upload control until they have submitted, then the receipt. When the due date has
+ * The student's part of the page: the upload control (with the files of an upload still open) until they have submitted, then the receipt. When the due date has
  * passed and late work is closed, a student who has not submitted sees that instead of the upload control. A resubmit
  * control and the result block come with their tickets, so for now a submitted student sees the receipt only.
  */
@@ -41,6 +41,9 @@ function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; can
   const { state, closed } = mine.data;
   if (state !== 'NOT_SUBMITTED' && state !== 'UPLOADING') return <SubmissionReceipt submission={mine.data} />;
   if (!canUpload) return null;
+  // The upload control reads the open upload's files once, when it appears. An answer cached from an earlier visit may not
+  // list files stored since, so it waits for the fresh one.
+  if (!mine.isFetchedAfterMount) return <PageLoading />;
   if (closed) {
     return (
       <section className="space-y-2">
@@ -50,7 +53,7 @@ function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; can
       </section>
     );
   }
-  return <UploadFiles assignmentId={assignmentId} />;
+  return <UploadFiles assignmentId={assignmentId} draft={mine.data.draftVersion} />;
 }
 
 /**

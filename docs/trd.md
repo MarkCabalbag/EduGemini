@@ -300,7 +300,7 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 
 ### 9.3 Storage and retention
 - Buckets are private. Only the API uses the service-role key.
-- Staged versions (status `UPLOADING`) older than 24 hours are deleted with their objects by the `staged.cleanup` job (Section 12).
+- Staged versions (status `UPLOADING`) opened more than 24 hours ago are deleted with their files and objects by the `staged.cleanup` job (Section 12). The submission row stays, because an instructor's allowance may be on it.
 - Stored files follow the retention rules in Section 5.5 and Section 12.
 - Downloads use signed URLs valid for 5 minutes, issued only after the authorization check (Section 7.4).
 
@@ -426,10 +426,11 @@ Google may use free-tier content to improve its products (disclosed to instructo
 |---|---|---|---|
 | `digest.flush` | Hourly | Send batched emails: instructor digests for new submissions, manual-review items, and join requests (Could, FR-NTF-03), and announcement digests for students (FR-ANN-04) | Each digest row is marked sent in the same transaction |
 | `retention.sweep` | Daily, 03:00 UTC | (a) For classes with `archivedAt <= now - 335 days` and no `retentionNoticeAt`: send the 30-day notice (A15) and set `retentionNoticeAt`. (b) For classes with `archivedAt <= now - 365 days`: delete through the class-deletion path (Section 5.5) | Notice flag set once; delete is a no-op if the class is gone. (c) Delete `AuditLog` rows older than 12 months | Notice flag set once; delete is a no-op if the class is gone |
-| `staged.cleanup` | Hourly | Delete versions in `UPLOADING` older than 24 hours and their files | Checks status before deleting |
+| `staged.cleanup` | Hourly | Delete versions in `UPLOADING` opened more than 24 hours ago, with their files (the objects go to the `storage.cleanup` outbox) | Checks status again on the locked submission row before deleting, so a version finalized meanwhile is left alone |
 | `storage.cleanup` | Queued after commits | Delete storage objects listed by a finished delete | Missing objects are ignored |
 | `token.cleanup` | Daily | Delete expired email tokens and sessions | Idempotent by definition |
 
+- Until the job queue exists (FND-09), `staged.cleanup` runs from a timer in the API process (`main.ts`): once at start, then every hour. The queue replaces the timer.
 - Instructor deletion archives the classes at that moment, so the 12-month clock starts then (A10).
 - Notices for an instructor whose account is a tombstone are not sent (PRD Section 10).
 

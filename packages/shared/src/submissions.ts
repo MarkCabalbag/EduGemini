@@ -20,6 +20,8 @@ export type VersionView = z.infer<typeof VersionViewSchema>;
 
 export const FileViewSchema = z.object({
   id: z.uuid(),
+  /** The browser's key for the file: how it is addressed to remove it and to list it at finalize. */
+  clientFileId: z.string(),
   ordinal: z.number().int().min(1),
   displayName: z.string(),
   mimeType: z.string().nullable(),
@@ -30,6 +32,10 @@ export const FileViewSchema = z.object({
   failureCode: z.string().nullable(),
 });
 export type FileView = z.infer<typeof FileViewSchema>;
+
+/** An upload that is open, with the files stored in it so far, so the page can pick it up after a reload. */
+export const DraftVersionSchema = VersionViewSchema.extend({ files: z.array(FileViewSchema) });
+export type DraftVersion = z.infer<typeof DraftVersionSchema>;
 
 /** Finalize (API Spec SUB-05): the files the student saw, by their `clientFileId`. The list is the final set. */
 export const FinalizeSchema = z.object({ expectedFileIds: z.array(safeText(64).min(8)).min(1).max(10) });
@@ -52,6 +58,6 @@ export const StudentSubmissionSchema = z.object({
   /** The files of the current stored version, in order. Empty before the first submit. */
   files: z.array(FileViewSchema),
   /** An upload that is open now, if any. */
-  draftVersion: VersionViewSchema.nullable(),
+  draftVersion: DraftVersionSchema.nullable(),
 });
 export type StudentSubmission = z.infer<typeof StudentSubmissionSchema>;

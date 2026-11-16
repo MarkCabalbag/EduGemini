@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { FakeXhr } from '../test/fake-xhr';
 import { api, ApiRequestError } from './api';
 
 function respond(status: number, body?: unknown) {
@@ -41,5 +42,40 @@ describe('api', () => {
   it('reports a dropped connection as NETWORK', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))));
     expect(await api('/x').catch((e: unknown) => e)).toMatchObject({ code: 'NETWORK', status: 0 });
+  });
+
+  it('sends DELETE with no body', async () => {
+    const fetchMock = respond(204);
+    expect(await api('/versions/v/files/f', { method: 'DELETE' })).toBeUndefined();
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/versions/v/files/f');
+    expect(init).toMatchObject({ method: 'DELETE', body: undefined });
+  });
+});
+
+describe('api, sending a file', () => {
+  const blob = new Blob(['abcd'], { type: 'application/pdf' });
+
+  it('sends the bytes as they are with the type and the URL-encoded name, tells how much went, and returns the JSON', async () => {
+    const fetchMock = respond(201, { id: 'file-1' });
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    const progress: number[] = [];
+
+    const answer = await api('/versions/v/files/f', { method: 'PUT', file: { blob, name: 'My essay.pdf' }, onProgress: (percent) => progress.push(percent) });
+
+    expect(answer).toEqual({ id: 'file-1' });
+    expect(progress).toEqual([50]);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/versions/v/files/f');
+    expect(init).toMatchObject({ method: 'PUT', body: blob, headers: { 'Content-Type': 'application/pdf', 'X-File-Name': 'My%20essay.pdf' } });
+  });
+
+  it('turns an error answer into an ApiRequestError, and a dropped connection into NETWORK', async () => {
+    respond(413, { error: { code: 'FILE_TOO_LARGE', message: 'x', requestId: 'r2' } });
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    expect(await api('/x', { method: 'PUT', file: { blob, name: 'a.pdf' } }).catch((e: unknown) => e)).toMatchObject({ code: 'FILE_TOO_LARGE', status: 413 });
+
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))));
+    expect(await api('/x', { method: 'PUT', file: { blob, name: 'a.pdf' } }).catch((e: unknown) => e)).toMatchObject({ code: 'NETWORK', status: 0 });
   });
 });

@@ -7,7 +7,7 @@ import { requireAction } from '../middleware/authorize';
 import { limiters } from '../middleware/rate-limit';
 import { requireAuth } from '../middleware/session';
 import { validate, validated } from '../middleware/validate';
-import { finalizeVersion, getMySubmission, openVersion, storeFile } from '../services/submission-service';
+import { finalizeVersion, getMySubmission, openVersion, removeFile, storeFile } from '../services/submission-service';
 
 const open = { params: AssignmentParamsSchema };
 const send = { params: FileParamsSchema };
@@ -29,7 +29,7 @@ function displayNameFrom(header: string | undefined): string {
 }
 
 /**
- * A student's submission: read it, open an upload, send its files, finalize (API Spec SUB-01, SUB-02, SUB-03, SUB-05).
+ * A student's submission: read it, open an upload, send and remove its files, finalize (API Spec SUB-01 to SUB-05).
  * Students only. Whether this student may use this class is the service's call, so the role check is "any student", as
  * `class.join` is for joining.
  */
@@ -61,6 +61,12 @@ export function uploadsRouter({ db, storage, bucket }: { db: PrismaClient; stora
       displayName: displayNameFrom(req.get('X-File-Name')),
     });
     res.status(created ? 201 : 200).json(file);
+  });
+
+  router.delete('/versions/:versionId/files/:clientFileId', ...guard, validate(send), async (req, res) => {
+    const { params } = validated(res, send);
+    await removeFile(db, bucket, req.auth!.user, params.versionId, params.clientFileId);
+    res.status(204).end();
   });
 
   router.post('/versions/:versionId/finalize', ...guard, validate(finalize), async (req, res) => {

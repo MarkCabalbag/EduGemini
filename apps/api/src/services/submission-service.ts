@@ -45,6 +45,7 @@ const toVersionView = (row: SubmissionVersion): VersionView => ({
 
 const toFileView = (row: SubmissionFile): FileView => ({
   id: row.id,
+  clientFileId: row.clientFileId,
   ordinal: row.ordinal,
   displayName: row.displayName ?? 'file',
   mimeType: row.mimeType,
@@ -217,6 +218,59 @@ export async function storeFile(
   }
 }
 
+/**
+ * Remove one file from the student's open upload (API Spec SUB-04). The row goes and its object is queued for deletion.
+ * A file that is already gone is not an error. It runs on the locked submission row, as finalize does, so a finalize at
+ * the same moment either sees the file or finds it gone, and never loses a file from a version that is already stored.
+ */
+export async function removeFile(db: PrismaClient, bucket: string, actor: Actor, versionId: string, clientFileId: string): Promise<void> {
+  const found = await db.submissionVersion.findUnique({
+    where: { id: versionId },
+    include: { submission: { select: { studentId: true, assignment: { select: { classId: true } } } } },
+  });
+  if (!found || found.submission.studentId !== actor.id) throw new AppError('NOT_FOUND');
+  authorize(actor, 'submission.upload', { enrollment: await enrollmentOf(db, actor, found.submission.assignment.classId) });
+
+  await db.$transaction(async (tx) => {
+    await lockSubmission(tx, found.submissionId);
+    const version = await tx.submissionVersion.findUniqueOrThrow({ where: { id: versionId }, include: { files: { where: { clientFileId } } } });
+    if (version.status !== 'UPLOADING') throw new AppError('UPLOAD_NOT_OPEN');
+    const [file] = version.files;
+    if (!file) return;
+    if (file.storagePath) await tx.storageDeletion.createMany({ data: [{ bucket, objectPath: file.storagePath }], skipDuplicates: true });
+    await tx.submissionFile.delete({ where: { id: file.id } });
+  });
+}
+
+/** An upload left open this long is abandoned (TRD §9.3). */
+const STAGED_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Delete uploads that were opened more than 24 hours ago and never finalized, with their files (TRD §12, `staged.cleanup`).
+ * The objects go to the storage outbox. Each upload is checked again on its locked submission row, so one that was
+ * finalized in the meantime is left alone. The submission row stays: an instructor's allowance may be on it. Returns how many
+ * uploads were deleted. `main.ts` runs it at start and every hour, until the job queue (FND-09) takes over.
+ */
+export async function deleteStagedUploads(db: PrismaClient, bucket: string, now = new Date()): Promise<number> {
+  const stale = await db.submissionVersion.findMany({
+    where: { status: 'UPLOADING', createdAt: { lt: new Date(now.getTime() - STAGED_MAX_AGE_MS) } },
+    select: { id: true, submissionId: true },
+  });
+  let deleted = 0;
+  for (const { id, submissionId } of stale) {
+    await db.$transaction(async (tx) => {
+      await lockSubmission(tx, submissionId);
+      const version = await tx.submissionVersion.findFirst({ where: { id, status: 'UPLOADING' }, include: { files: true } });
+      if (!version) return;
+      const objectPaths = version.files.flatMap((file) => (file.storagePath ? [file.storagePath] : []));
+      await tx.storageDeletion.createMany({ data: objectPaths.map((objectPath) => ({ bucket, objectPath })), skipDuplicates: true });
+      await tx.submissionVersion.delete({ where: { id } }); // its files go with it
+      deleted++;
+    });
+  }
+  return deleted;
+}
+
 // The student's view of the database state (API Spec A5). Causes and internal states never reach the student.
 const DISPLAY_STATE: Record<SubmissionState, DisplayState> = {
   QUEUED: 'GRADING',
@@ -233,7 +287,12 @@ const DISPLAY_STATE: Record<SubmissionState, DisplayState> = {
  */
 async function studentSubmissionOf(db: Prisma.TransactionClient, studentId: string, assignment: Assignment): Promise<StudentSubmission> {
   const submission = await db.submission.findUnique({ where: { assignmentId_studentId: { assignmentId: assignment.id, studentId } } });
-  const draft = submission ? await db.submissionVersion.findFirst({ where: { submissionId: submission.id, status: 'UPLOADING' } }) : null;
+  const draft = submission
+    ? await db.submissionVersion.findFirst({
+        where: { submissionId: submission.id, status: 'UPLOADING' },
+        include: { files: { orderBy: { ordinal: 'asc' } } },
+      })
+    : null;
   const current = submission?.currentVersionId
     ? await db.submissionVersion.findUnique({ where: { id: submission.currentVersionId }, include: { files: { orderBy: { ordinal: 'asc' } } } })
     : null;
@@ -249,7 +308,7 @@ async function studentSubmissionOf(db: Prisma.TransactionClient, studentId: stri
     firstSubmittedAt: submission?.firstSubmittedAt?.toISOString() ?? null,
     latestSubmittedAt: latest?.toISOString() ?? null,
     files: current?.files.map(toFileView) ?? [],
-    draftVersion: draft ? toVersionView(draft) : null,
+    draftVersion: draft ? { ...toVersionView(draft), files: draft.files.map(toFileView) } : null,
   };
 }
 
@@ -319,6 +378,10 @@ export async function finalizeVersion(
     const objectPaths = leaving.flatMap((file) => (file.storagePath ? [file.storagePath] : []));
     await tx.storageDeletion.createMany({ data: objectPaths.map((objectPath) => ({ bucket, objectPath })), skipDuplicates: true });
     await tx.submissionFile.deleteMany({ where: { id: { in: leaving.map((file) => file.id) } } });
+    // The list is in the order shown to the student, so the files take that order. A removed or retried file leaves gaps in the places.
+    for (const [index, clientFileId] of expectedFileIds.entries()) {
+      await tx.submissionFile.update({ where: { versionId_clientFileId: { versionId: version.id, clientFileId } }, data: { ordinal: index + 1 } });
+    }
     if (previousId) await tx.submissionVersion.update({ where: { id: previousId }, data: { status: 'REPLACED' } });
 
     const now = new Date();

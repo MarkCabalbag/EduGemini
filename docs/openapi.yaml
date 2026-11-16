@@ -904,7 +904,8 @@ paths:
       summary: Get my submission for an assignment
       description: >-
         state is UPLOADING only while an upload is open and nothing is stored yet. Once a version is stored the state is the
-        submission's, and an upload open for a resubmission is draftVersion.
+        submission's, and an upload open for a resubmission is draftVersion. While an upload is open, draftVersion.files
+        lists the files stored in it, so the page can pick the upload up again after a reload.
       responses:
         '200':
           description: My state, attempts, grade (when shown), and files.
@@ -987,6 +988,9 @@ paths:
       operationId: SUB-04
       tags: [Student submission]
       summary: Remove a file from an open upload
+      description: >-
+        Removing a file that is already gone, or was never stored, is also 204. 409 is UPLOAD_NOT_OPEN. The file's object
+        is queued for deletion and its place is free again.
       responses:
         '204': { description: "Removed (or already gone)." }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1000,8 +1004,8 @@ paths:
       tags: [Student submission]
       summary: Finalize the upload and queue grading
       description: >-
-        The listed files are the final set: a stored file that is not listed is dropped. A second call for the version that
-        is already stored returns the same 200 and changes nothing. 409 is UPLOAD_INCOMPLETE (details.missing),
+        The listed files are the final set: a stored file that is not listed is dropped, and the files take the list's order
+        as their ordinal. A second call for the version that is already stored returns the same 200 and changes nothing. 409 is UPLOAD_INCOMPLETE (details.missing),
         UPLOAD_NOT_OPEN, ATTEMPTS_EXHAUSTED, LATE_CLOSED, LOCKED_APPROVED or CLASS_ARCHIVED; 422 is FILE_LIMIT with
         details.limit total-size or grading-budget.
       requestBody:
@@ -2432,9 +2436,10 @@ components:
 
     FileView:
       type: object
-      required: [id, ordinal, displayName, mimeType, sizeBytes, status]
+      required: [id, clientFileId, ordinal, displayName, mimeType, sizeBytes, status]
       properties:
         id: { type: string, format: uuid }
+        clientFileId: { type: string, minLength: 8, maxLength: 64, description: "The key the browser gave the file. SUB-03 and SUB-04 address the file by it, and finalize lists it." }
         ordinal: { type: integer, minimum: 1, maximum: 10 }
         displayName: { type: string }
         mimeType: { type: [string, 'null'] }
@@ -2452,6 +2457,15 @@ components:
         status: { type: string, enum: [UPLOADING, STORED, REPLACED] }
         createdAt: { type: string, format: date-time }
         storedAt: { type: [string, 'null'], format: date-time }
+
+    DraftVersion:
+      description: An open upload with the files stored in it so far, so a page can pick it up again.
+      allOf:
+        - $ref: '#/components/schemas/VersionView'
+        - type: object
+          required: [files]
+          properties:
+            files: { type: array, items: { $ref: '#/components/schemas/FileView' } }
 
     GradeView:
       type: object
@@ -2485,7 +2499,7 @@ components:
         instructorComment: { type: [string, 'null'], maxLength: 2000 }
         draftVersion:
           oneOf:
-            - $ref: '#/components/schemas/VersionView'
+            - $ref: '#/components/schemas/DraftVersion'
             - type: 'null'
 
     FinalizeRequest:

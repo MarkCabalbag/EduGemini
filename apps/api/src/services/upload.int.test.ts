@@ -24,7 +24,7 @@ import { uploadsRouter } from '../routes/uploads';
 import { ENCRYPTED_PDF, makePdf } from '../test/pdf-fixtures';
 import { createTestDb } from '../test/test-db';
 import { newJoinCode } from './class-service';
-import { storeFile } from './submission-service';
+import { deleteStagedUploads, storeFile } from './submission-service';
 
 // Runs against the test database, with the files in a temporary folder. Every email carries this run's ID, so tests never
 // collide and cleanup is exact.
@@ -559,6 +559,18 @@ describe('POST /api/versions/:id/finalize (SUB-05)', () => {
     expect(await db.storageDeletion.count({ where: { bucket: BUCKET, objectPath: unlisted.storagePath! } })).toBe(1);
   });
 
+  it('puts the files in the order of the list, whatever order they arrived in', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId, ids } = await upload(assignment.id, student, 3);
+    const res = await finalize(build(), versionId, student.cookie, [ids[2]!, ids[0]!, ids[1]!]);
+
+    expect(res.body.files.map((file: { displayName: string; ordinal: number }) => [file.displayName, file.ordinal])).toEqual([
+      ['page3.png', 1],
+      ['page1.png', 2],
+      ['page2.png', 3],
+    ]);
+  });
+
   it('is UPLOAD_INCOMPLETE for a file that was never stored, and changes nothing', async () => {
     const assignment = await seedAssignment(cls.id);
     const { versionId, ids } = await upload(assignment.id, student);
@@ -632,6 +644,136 @@ describe('POST /api/versions/:id/finalize (SUB-05)', () => {
     } finally {
       await db.enrollment.update({ where: { classId_studentId: { classId: cls.id, studentId: student.user.id } }, data: { status: 'ACTIVE' } });
     }
+  });
+});
+
+const removeRequest = (app: TestApp, versionId: string, clientFileId: string, cookie?: string) => {
+  const req = request(app).delete(`/api/versions/${versionId}/files/${clientFileId}`).set('Origin', APP_URL);
+  return cookie ? req.set('Cookie', cookie) : req;
+};
+
+describe('DELETE /api/versions/:id/files/:clientFileId (SUB-04)', () => {
+  it('removes the file and queues its object for deletion, and the other files stay', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId, ids } = await upload(assignment.id, student, 3);
+    const gone = await db.submissionFile.findFirstOrThrow({ where: { versionId, clientFileId: ids[1] } });
+
+    const res = await removeRequest(build(), versionId, ids[1]!, student.cookie);
+    expect(res.status).toBe(204);
+    expect(await db.submissionFile.count({ where: { versionId } })).toBe(2);
+    expect(await db.submissionFile.count({ where: { id: gone.id } })).toBe(0);
+    expect(await db.storageDeletion.count({ where: { bucket: BUCKET, objectPath: gone.storagePath! } })).toBe(1);
+
+    const mine = await getMine(build(), assignment.id, student.cookie);
+    expect(mine.body.draftVersion.files.map((file: { clientFileId: string }) => file.clientFileId)).toEqual([ids[0], ids[2]]);
+  });
+
+  it('answers 204 again for a file that is already gone, and queues nothing more', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId, ids } = await upload(assignment.id, student, 2);
+    const gone = await db.submissionFile.findFirstOrThrow({ where: { versionId, clientFileId: ids[0] } });
+
+    expect((await removeRequest(build(), versionId, ids[0]!, student.cookie)).status).toBe(204);
+    expect((await removeRequest(build(), versionId, ids[0]!, student.cookie)).status).toBe(204);
+    expect((await removeRequest(build(), versionId, `never-sent-${RUN}`, student.cookie)).status).toBe(204);
+    expect(await db.storageDeletion.count({ where: { bucket: BUCKET, objectPath: gone.storagePath! } })).toBe(1);
+    expect(await db.submissionFile.count({ where: { versionId } })).toBe(1);
+  });
+
+  it('gives the place back, so a full upload can take another file', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId, ids } = await upload(assignment.id, student, LIMITS.filesPerSubmission);
+    const full = await sendFile(build(), versionId, student.cookie, PNG, { contentType: 'image/png' });
+    expect(full.body.error).toMatchObject({ code: 'FILE_LIMIT', details: { limit: 'files' } });
+
+    await removeRequest(build(), versionId, ids[3]!, student.cookie);
+    const next = await sendFile(build(), versionId, student.cookie, PNG, { contentType: 'image/png' });
+    expect(next.status).toBe(201);
+    expect(next.body.ordinal).toBe(4);
+  }, 60_000); // eleven file requests to the hosted test database
+
+  it('is UPLOAD_NOT_OPEN once the version is stored, and the files stay', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId, ids } = await upload(assignment.id, student);
+    await finalize(build(), versionId, student.cookie, ids);
+
+    const res = await removeRequest(build(), versionId, ids[0]!, student.cookie);
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('UPLOAD_NOT_OPEN');
+    expect(await db.submissionFile.count({ where: { versionId } })).toBe(1);
+  });
+
+  it('is NOT_FOUND for another student, an instructor, a removed student and a missing version, and 401 signed out', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId, ids } = await upload(assignment.id, student);
+    const classmate = await enrolledStudent('del-classmate', cls.id);
+
+    expect((await removeRequest(build(), versionId, ids[0]!, classmate.cookie)).body.error.code).toBe('NOT_FOUND');
+    expect((await removeRequest(build(), versionId, ids[0]!, owner.cookie)).status).toBe(404);
+    expect((await removeRequest(build(), randomUUID(), ids[0]!, student.cookie)).status).toBe(404);
+    expect((await removeRequest(build(), versionId, ids[0]!)).status).toBe(401);
+    expect(await db.submissionFile.count({ where: { versionId } })).toBe(1); // nobody but the owner removed anything
+
+    await db.enrollment.update({ where: { classId_studentId: { classId: cls.id, studentId: student.user.id } }, data: { status: 'REMOVED' } });
+    try {
+      expect((await removeRequest(build(), versionId, ids[0]!, student.cookie)).body.error.code).toBe('NOT_FOUND');
+    } finally {
+      await db.enrollment.update({ where: { classId_studentId: { classId: cls.id, studentId: student.user.id } }, data: { status: 'ACTIVE' } });
+    }
+  });
+
+  it('is VALIDATION for a clientFileId that is too short', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId } = await upload(assignment.id, student);
+    expect((await removeRequest(build(), versionId, 'short', student.cookie)).body.error.code).toBe('VALIDATION');
+  });
+});
+
+describe('deleteStagedUploads (SUB-04)', () => {
+  /** Makes the upload look as old as `hours`. */
+  const ageUpload = (versionId: string, hours: number) =>
+    db.submissionVersion.update({ where: { id: versionId }, data: { createdAt: new Date(Date.now() - hours * 60 * 60 * 1000) } });
+
+  it('deletes an upload opened more than 24 hours ago with its files, queues the objects, and keeps the submission', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId } = await upload(assignment.id, student, 2);
+    const files = await db.submissionFile.findMany({ where: { versionId } });
+    await ageUpload(versionId, 25);
+
+    expect(await deleteStagedUploads(db, BUCKET)).toBeGreaterThanOrEqual(1);
+    expect(await db.submissionVersion.count({ where: { id: versionId } })).toBe(0);
+    expect(await db.submissionFile.count({ where: { versionId } })).toBe(0);
+    for (const file of files) expect(await db.storageDeletion.count({ where: { bucket: BUCKET, objectPath: file.storagePath! } })).toBe(1);
+    expect(await submissionOf(assignment.id, student)).toMatchObject({ state: null, currentVersionId: null });
+    expect((await getMine(build(), assignment.id, student.cookie)).body).toMatchObject({ state: 'NOT_SUBMITTED', draftVersion: null });
+  });
+
+  it('leaves an upload that is under 24 hours old, and a stored version however old', async () => {
+    const recent = await seedAssignment(cls.id);
+    const open = await upload(recent.id, student);
+    await ageUpload(open.versionId, 23);
+
+    const finished = await seedAssignment(cls.id);
+    const stored = await upload(finished.id, student);
+    await finalize(build(), stored.versionId, student.cookie, stored.ids);
+    await ageUpload(stored.versionId, 48);
+
+    await deleteStagedUploads(db, BUCKET);
+    expect((await db.submissionVersion.findUniqueOrThrow({ where: { id: open.versionId } })).status).toBe('UPLOADING');
+    expect(await db.submissionFile.count({ where: { versionId: open.versionId } })).toBe(1);
+    expect((await db.submissionVersion.findUniqueOrThrow({ where: { id: stored.versionId } })).status).toBe('STORED');
+    expect(await db.submissionFile.count({ where: { versionId: stored.versionId } })).toBe(1);
+  });
+
+  it('lets the student open a new upload afterwards', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId } = await upload(assignment.id, student);
+    await ageUpload(versionId, 30);
+    await deleteStagedUploads(db, BUCKET);
+
+    const res = await openUpload(build(), assignment.id, student.cookie);
+    expect(res.status).toBe(201);
+    expect(res.body.id).not.toBe(versionId);
   });
 });
 
@@ -849,6 +991,19 @@ describe('GET /api/assignments/:id/me (SUB-01)', () => {
     const res = await getMine(build(), assignment.id, student.cookie);
 
     expect(res.body).toMatchObject({ state: 'UPLOADING', files: [], draftVersion: { id: versionId, status: 'UPLOADING' } });
+  });
+
+  it('lists the files stored in the open upload, in order, so the page can pick it up after a reload', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { ids } = await upload(assignment.id, student, 2);
+    const res = await getMine(build(), assignment.id, student.cookie);
+
+    const draft = StudentSubmissionSchema.parse(res.body).draftVersion!;
+    expect(draft.files.map((file) => [file.clientFileId, file.displayName, file.status])).toEqual([
+      [ids[0], 'page1.png', 'STORED'],
+      [ids[1], 'page2.png', 'STORED'],
+    ]);
+    expect(res.body.files).toEqual([]); // nothing is submitted yet
   });
 
   it('shows the receipt after a submit, and keeps the state while a resubmission is open', async () => {

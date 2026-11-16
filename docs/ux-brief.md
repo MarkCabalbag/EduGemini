@@ -606,8 +606,9 @@ Layout notes:
 
 Layout notes:
 - The Submit button is disabled until every file is stored; its helper text says why: "Add a file to submit." with no files, "Waiting for 1 file to finish uploading" while files are on their way, "1 file couldn't be uploaded. Retry or remove it." after a failure, and "2 files ready to submit" when it is enabled. A file that failed or was refused can be removed, so it cannot hold Submit back.
-- Each file shows its own state in words: Ready, Uploading, Couldn't upload (with Retry), or the specific rejection reason.
-- Reorder with the ↑ and ↓ buttons; drag is optional. Remove asks for no confirmation (the file is only a local selection until submit).
+- Each file shows its own state in words: Ready, Uploading with a bar and its percent, Uploaded, Removing, Couldn't upload (with Retry), or the specific rejection reason. The bar and the percent are not read out; the words are.
+- A student who reloads or comes back to an upload that is still open sees the files already stored in it as Uploaded, ready to submit, and can add or remove files.
+- Reorder with the ↑ and ↓ buttons; drag is optional. Remove asks for no confirmation (nothing is submitted until Submit). Removing a stored file shows Removing until the server has done it; if that fails, the file stays Uploaded with "Couldn't remove it." and the reason, and Remove can be pressed again.
 - The limits line shows the values in PRD FR-SUB-02: "PDF, JPG or PNG. Up to 10 files, 10 MB each, 15 MB in total. PDFs up to 20 pages."
 - After submit, the page shows the receipt in place of the upload control: timestamp, file list, and "Grading in progress, usually about a minute" (App Flow 6, step 5). It is shown again whenever the student returns to the page.
 

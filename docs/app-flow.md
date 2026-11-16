@@ -42,7 +42,7 @@
 4. **Suspended account**: only "Account suspended" is reachable.
 5. **Missing or deleted item**: "This item is no longer available" with a link to the dashboard.
 6. **Signed in, opening sign-in or sign-up**: redirected to the dashboard.
-7. **Session expires mid-task**: the user signs in and returns to the same page. An unfinished assignment wizard is already saved as a draft (Section 5.1). An in-progress upload is not resumed; the student re-selects the files.
+7. **Session expires mid-task**: the user signs in and returns to the same page. An unfinished assignment wizard is already saved as a draft (Section 5.1). An in-progress upload is picked up where it stopped: the files already stored are listed again, and the student adds the rest. An upload left open for 24 hours is deleted.
 
 ## 1. Authentication & Onboarding
 

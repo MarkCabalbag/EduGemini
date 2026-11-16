@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { AssignmentDetail, ClassSummary, Me, StudentSubmission } from '@edugemini/shared';
 import { LIMITS } from '@edugemini/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FakeXhr } from '../test/fake-xhr';
 import { failure, renderAt } from '../test/helpers';
 
 // The real pages and routing run. Only the API, which is outside the web app, is replaced by a small in-memory fake.
@@ -63,11 +64,28 @@ let sendFile: (call: Call) => Response | Promise<Response>;
 let mine: StudentSubmission;
 let mineAnswer: () => Response;
 let finalizeAnswer: (call: Call) => Response | Promise<Response>;
+let removeAnswer: (call: Call) => Response | Promise<Response>;
 
 const callsTo = (method: string, pathStart: string) => calls.filter((c) => c.method === method && c.path.startsWith(pathStart));
 const input = () => screen.getByLabelText('Add photos or PDF');
-const fileView = (ordinal = 1) => ({ id: crypto.randomUUID(), ordinal, displayName: 'x', mimeType: 'application/pdf', sizeBytes: 8, pageCount: null, status: 'STORED', failureCode: null });
+const fileView = (ordinal = 1) => ({
+  id: crypto.randomUUID(),
+  clientFileId: crypto.randomUUID(),
+  ordinal,
+  displayName: 'x',
+  mimeType: 'application/pdf',
+  sizeBytes: 8,
+  pageCount: null,
+  status: 'STORED',
+  failureCode: null,
+});
 const version = { id: VERSION_ID, versionNo: 1, status: 'UPLOADING', createdAt: '2026-11-16T01:00:00.000Z', storedAt: null };
+/** An open upload that already holds these files, stored on an earlier visit. Their keys are earlier-file-1, earlier-file-2 and so on. */
+const draftOf = (names: string[]) => ({
+  ...version,
+  status: 'UPLOADING' as const,
+  files: names.map((name, i) => ({ ...fileView(i + 1), clientFileId: `earlier-file-${i + 1}`, displayName: name, sizeBytes: 2048, status: 'STORED' as const })),
+});
 
 const submission = (overrides: Partial<StudentSubmission> = {}): StudentSubmission => ({
   state: 'NOT_SUBMITTED',
@@ -98,7 +116,9 @@ beforeEach(() => {
   mine = submission();
   mineAnswer = () => Response.json(mine);
   finalizeAnswer = () => Response.json(submitted(['a.pdf']));
+  removeAnswer = () => new Response(null, { status: 204 });
 
+  vi.stubGlobal('XMLHttpRequest', FakeXhr); // files go by XMLHttpRequest, which hands each request to the fetch below
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -114,6 +134,7 @@ beforeEach(() => {
       if (method === 'POST' && path === `/versions/${VERSION_ID}/finalize`) return finalizeAnswer(call);
       if (method === 'POST' && path === `/assignments/${ASSIGNMENT_ID}/versions`) return openUpload();
       if (method === 'PUT' && path.startsWith(`/versions/${VERSION_ID}/files/`)) return sendFile(call);
+      if (method === 'DELETE' && path.startsWith(`/versions/${VERSION_ID}/files/`)) return removeAnswer(call);
       return failure(404, 'NOT_FOUND');
     }),
   );
@@ -362,6 +383,119 @@ describe('submitting the files', () => {
   });
 });
 
+describe('progress', () => {
+  it('shows how much of a file has been sent while it is on its way, then Uploaded', async () => {
+    let release = () => {};
+    sendFile = () => new Promise<Response>((resolve) => (release = () => resolve(Response.json(fileView(), { status: 201 }))));
+    await openPage();
+    await userEvent.upload(input(), pdf());
+
+    expect(await screen.findByText('Uploading…')).toBeTruthy();
+    expect(screen.getByText('50%')).toBeTruthy();
+    expect(screen.getByText('Waiting for 1 file to finish uploading')).toBeTruthy();
+
+    release();
+    expect(await screen.findByText('Uploaded')).toBeTruthy();
+    expect(screen.queryByText('50%')).toBeNull();
+  });
+});
+
+describe('an upload that is still open', () => {
+  const submitButton = () => screen.getByRole('button', { name: 'Submit files' }) as HTMLButtonElement;
+  const row = (name: string) => within(screen.getByText(name).closest('li')!);
+  const stillOpen = (names: string[]) => (mine = submission({ state: 'UPLOADING', draftVersion: draftOf(names) }));
+
+  it('lists the files already stored, ready to submit, without opening the upload again', async () => {
+    stillOpen(['page1.jpg', 'page2.jpg']);
+    await openPage();
+
+    expect(row('page1.jpg').getByText('Uploaded')).toBeTruthy();
+    expect(row('page2.jpg').getByText('Uploaded')).toBeTruthy();
+    expect(row('page1.jpg').getByText('2 KB')).toBeTruthy(); // the size comes from the server
+    expect(screen.getByText('2 files ready to submit')).toBeTruthy();
+    expect(submitButton().disabled).toBe(false);
+    expect(callsTo('POST', `/assignments/${ASSIGNMENT_ID}/versions`)).toHaveLength(0);
+  });
+
+  it('submits the files stored earlier together with new ones, in the order shown', async () => {
+    stillOpen(['page1.jpg', 'page2.jpg']);
+    await openPage();
+    await userEvent.upload(input(), pdf('page3.pdf'));
+    await waitFor(() => expect(screen.getAllByText('Uploaded')).toHaveLength(3));
+
+    await userEvent.click(submitButton());
+    await screen.findByRole('heading', { name: 'Your submission' });
+    const sent = callsTo('PUT', '/versions/').map((call) => call.path.split('/').pop());
+    expect(sent).toHaveLength(1);
+    const finalize = callsTo('POST', `/versions/${VERSION_ID}/finalize`);
+    expect(JSON.parse(finalize[0]!.init!.body as string)).toEqual({ expectedFileIds: ['earlier-file-1', 'earlier-file-2', sent[0]] });
+    expect(callsTo('POST', `/assignments/${ASSIGNMENT_ID}/versions`)).toHaveLength(0); // the upload was already open
+  });
+
+  it('removes a stored file from the server, and the list and the count follow', async () => {
+    stillOpen(['page1.jpg', 'page2.jpg']);
+    await openPage();
+    await userEvent.click(screen.getByRole('button', { name: 'Remove page1.jpg' }));
+
+    await waitFor(() => expect(screen.queryByText('page1.jpg')).toBeNull());
+    expect(callsTo('DELETE', '/versions/')).toHaveLength(1);
+    expect(callsTo('DELETE', '/versions/')[0]!.path).toBe(`/versions/${VERSION_ID}/files/earlier-file-1`);
+    expect(screen.getByText('page2.jpg')).toBeTruthy();
+    expect(screen.getByText('1 file ready to submit')).toBeTruthy();
+  });
+
+  it('removes a file stored in this visit the same way', async () => {
+    await openPage();
+    await userEvent.upload(input(), pdf());
+    await screen.findByText('Uploaded');
+    const stored = callsTo('PUT', '/versions/')[0]!.path;
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove essay.pdf' }));
+    await waitFor(() => expect(screen.queryByText('essay.pdf')).toBeNull());
+    expect(callsTo('DELETE', '/versions/')[0]!.path).toBe(stored);
+    expect(screen.getByText('Add a file to submit.')).toBeTruthy();
+  });
+
+  it('says Removing and keeps Submit disabled while a file is being taken off', async () => {
+    let release = () => {};
+    removeAnswer = () => new Promise<Response>((resolve) => (release = () => resolve(new Response(null, { status: 204 }))));
+    stillOpen(['page1.jpg', 'page2.jpg']);
+    await openPage();
+    await userEvent.click(screen.getByRole('button', { name: 'Remove page1.jpg' }));
+
+    expect(await screen.findByText('Removing…')).toBeTruthy();
+    expect(submitButton().disabled).toBe(true);
+    release();
+    await waitFor(() => expect(screen.queryByText('page1.jpg')).toBeNull());
+    expect(submitButton().disabled).toBe(false);
+  });
+
+  it('keeps the file and says why when it could not be removed, and Remove can be pressed again', async () => {
+    removeAnswer = () => failure(500, 'INTERNAL');
+    stillOpen(['page1.jpg']);
+    await openPage();
+    await userEvent.click(screen.getByRole('button', { name: 'Remove page1.jpg' }));
+
+    expect(await screen.findByText("Couldn't remove it. Something went wrong on our side.")).toBeTruthy();
+    expect(row('page1.jpg').getByText('Uploaded')).toBeTruthy();
+    expect(submitButton().disabled).toBe(false);
+
+    removeAnswer = () => new Response(null, { status: 204 });
+    await userEvent.click(screen.getByRole('button', { name: 'Remove page1.jpg' }));
+    await waitFor(() => expect(screen.queryByText('page1.jpg')).toBeNull());
+  });
+
+  it('picks up the files stored since an earlier visit, not the ones the cache remembers', async () => {
+    const client = renderAt(`/assignments/${ASSIGNMENT_ID}`);
+    await screen.findByRole('heading', { name: 'Your files' }); // the cache now says nothing is open
+    cleanup();
+
+    stillOpen(['page1.jpg']); // stored meanwhile
+    renderAt(`/assignments/${ASSIGNMENT_ID}`, client);
+    expect(await screen.findByText('page1.jpg')).toBeTruthy();
+  });
+});
+
 describe('a student who has already submitted', () => {
   it('sees the receipt and no upload control when they come back', async () => {
     mine = submitted(['essay.pdf', 'page2.png']);
@@ -388,7 +522,7 @@ describe('a student who has already submitted', () => {
   });
 
   it('still sees the upload control for an upload that is open and has nothing stored yet', async () => {
-    mine = submission({ state: 'UPLOADING', draftVersion: { ...version, status: 'UPLOADING' } });
+    mine = submission({ state: 'UPLOADING', draftVersion: draftOf([]) });
     await openPage();
     expect(screen.queryByRole('heading', { name: 'Your submission' })).toBeNull();
   });
