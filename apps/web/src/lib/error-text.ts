@@ -1,7 +1,10 @@
-import type { ErrorCode } from '@edugemini/shared';
+import { LIMITS, type ErrorCode } from '@edugemini/shared';
 
 // One lookup from an error code to what the user reads (UX Brief §11.2, API Spec A4). Components never show `message`.
 const TEXT: Partial<Record<ErrorCode | 'NETWORK', string>> = {
+  FILE_TYPE: "This file type isn't supported. Use PDF, JPG, or PNG.",
+  FILE_TOO_LARGE: 'This file is larger than 10 MB.',
+  FILE_ERROR: "This file couldn't be read. Try re-saving it or choosing a different file.",
   INVALID_CREDENTIALS: 'Email or password is incorrect.',
   EMAIL_TAKEN: 'An account with this email already exists.',
   RATE_LIMITED: 'Too many attempts. Try again in a few minutes.',
@@ -19,6 +22,8 @@ const TEXT: Partial<Record<ErrorCode | 'NETWORK', string>> = {
 
 const GENERIC = 'Something went wrong.';
 
-export function errorText(code: ErrorCode | 'NETWORK'): string {
+/** `details` is the error's own, for the codes whose text depends on it: FILE_LIMIT names the limit that was passed (API Spec A4). */
+export function errorText(code: ErrorCode | 'NETWORK', details?: Record<string, unknown>): string {
+  if (code === 'FILE_LIMIT' && details?.['limit'] === 'files') return `You can upload up to ${LIMITS.filesPerSubmission} files.`;
   return TEXT[code] ?? GENERIC;
 }

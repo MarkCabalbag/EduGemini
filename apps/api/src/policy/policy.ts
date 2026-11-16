@@ -37,7 +37,7 @@ const POLICY = {
   'class.archive': { INSTRUCTOR: 'ownClass', SUPER_ADMIN: 'any' },
   'class.delete': { INSTRUCTOR: 'ownClass', SUPER_ADMIN: 'any' },
 
-  'assignment.view': { INSTRUCTOR: 'ownClass' }, // approved students join with the student assignment tickets (ASG-03)
+  'assignment.view': { INSTRUCTOR: 'ownClass', STUDENT: 'member' }, // a student sees published assignments only: the service checks that
   'assignment.write': { INSTRUCTOR: 'ownClass' }, // create and edit
   'assignment.remove': { INSTRUCTOR: 'ownClass' }, // delete or archive
   'label.write': { INSTRUCTOR: 'ownClass' },

@@ -3,6 +3,8 @@ export * from './auth';
 export * from './classes';
 export * from './enums';
 export * from './errors';
+export * from './file-type';
 export * from './limits';
 export * from './people';
+export * from './submissions';
 export * from './text';

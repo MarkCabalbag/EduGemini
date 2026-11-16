@@ -955,7 +955,7 @@ paths:
       tags: [Student submission]
       summary: Send one file (raw bytes; idempotent per clientFileId)
       parameters:
-        - { name: X-File-Name, in: header, required: true, schema: { type: string, maxLength: 340 } }
+        - { name: X-File-Name, in: header, required: false, description: 'Without it the name shown is "file".', schema: { type: string, maxLength: 340 } }
       requestBody:
         required: true
         content:
@@ -2126,6 +2126,7 @@ components:
 
     ClassUpdate:
       type: object
+      description: A field left out is unchanged; a blank optional field is cleared.
       properties:
         name: { type: string, minLength: 1, maxLength: 120 }
         description: { type: string, maxLength: 2000 }

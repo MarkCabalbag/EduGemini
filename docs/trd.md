@@ -274,7 +274,7 @@ Endpoints: 102 in 16 groups.
 ## 9. File pipeline
 
 ### 9.1 Upload sequence
-0. **Resize in the browser.** Before upload, the browser downscales each image (long edge 2000 px, JPEG quality about 80) to save storage and mobile data. PDFs are not changed. The server's limits and checks still apply to the bytes it receives. The quality setting is verified in spike S4.
+0. **Check and resize in the browser.** When a file is chosen, the browser reads its first bytes and refuses a type that is not PDF, JPEG, or PNG, and a PDF over 10 MiB, with the message for `FILE_TYPE` or `FILE_TOO_LARGE`; the server checks again. Before upload, the browser downscales each image whose long edge is over 2000 px to 2000 px, as a JPEG at quality 80, to save storage and mobile data. A smaller image is sent as it is, and so is an image the browser cannot decode. PDFs are not changed. The server's limits and checks still apply to the bytes it receives. The quality setting is verified in spike S4.
 1. **Create version.** `POST /assignments/:id/versions` checks the attempt count, due date, late rule, and state. It creates the Submission row if needed (state null) and a `SubmissionVersion` with status `UPLOADING`.
 2. **Upload each file.** `PUT /versions/:id/files/:clientFileId` with one file per request. The browser generates `clientFileId`, so retries are idempotent (upsert on `(versionId, clientFileId)`). Steps on the server:
    - The body is the raw file bytes (API Spec A7). Stream it to a temporary file with a hard byte limit (10 MiB). Exceeding it returns `FILE_TOO_LARGE`.

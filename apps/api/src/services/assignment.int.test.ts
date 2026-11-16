@@ -7,6 +7,7 @@ import {
   AssignmentPageSchema,
   PublishedAssignmentSchema,
   TERMS_VERSION,
+  type EnrollmentStatus,
   type Role,
 } from '@edugemini/shared';
 import { createApp } from '../app';
@@ -217,7 +218,7 @@ describe('get assignment (API Spec ASG-03)', () => {
   });
 
   it.each([
-    ['a student', () => student.cookie],
+    ['a student who is not in the class', () => student.cookie],
     ['another instructor', () => other.cookie],
   ])('gives %s NOT_FOUND', async (_label, cookie) => {
     const row = await seedAssignment(cls.id);
@@ -289,7 +290,7 @@ describe('list assignments (API Spec ASG-01)', () => {
   });
 
   it.each([
-    ['a student', () => student.cookie],
+    ['a student who is not in the class', () => student.cookie],
     ['another instructor', () => other.cookie],
   ])('gives %s NOT_FOUND', async (_label, cookie) => {
     const res = await list(cookie(), cls.id);
@@ -488,5 +489,147 @@ describe('publish an assignment (API Spec ASG-06)', () => {
 
     expect(res.status).toBe(404);
     expect((await db.assignment.findUniqueOrThrow({ where: { id: row.id } })).status).toBe('DRAFT');
+  });
+});
+
+describe('students read assignments (API Spec ASG-01, ASG-03)', () => {
+  /** A student with a live session, joined to the class with the given status. */
+  const enrolled = async (name: string, status: EnrollmentStatus, classId: string) => {
+    const who = await signedInUser(name, 'STUDENT');
+    await db.enrollment.create({ data: { classId, studentId: who.user.id, status } });
+    return who;
+  };
+
+  let room: Awaited<ReturnType<typeof seedClass>>;
+  let soon: Awaited<ReturnType<typeof seedAssignment>>;
+  let later: Awaited<ReturnType<typeof seedAssignment>>;
+  let draft: typeof soon;
+  let archived: typeof soon;
+  let approved: typeof owner;
+  let pending: typeof owner;
+  let declined: typeof owner;
+  let removed: typeof owner;
+
+  beforeAll(async () => {
+    room = await seedClass(owner.user.id);
+    const published = { status: 'PUBLISHED', publishedAt: new Date() } as const;
+    later = await seedAssignment(room.id, { ...published, dueAt: new Date(Date.now() + 9 * DAY_MS), instructions: 'Write 500 words.' });
+    soon = await seedAssignment(room.id, { ...published, dueAt: new Date(Date.now() + 2 * DAY_MS) });
+    draft = await seedAssignment(room.id, { dueAt: new Date(Date.now() + DAY_MS) });
+    archived = await seedAssignment(room.id, { status: 'ARCHIVED', publishedAt: new Date(), dueAt: new Date(Date.now() + 3 * DAY_MS) });
+    approved = await enrolled('approved', 'ACTIVE', room.id);
+    pending = await enrolled('pending', 'PENDING', room.id);
+    declined = await enrolled('declined', 'DECLINED', room.id);
+    removed = await enrolled('removed', 'REMOVED', room.id);
+  });
+
+  const list = (cookie: string, query = '') => get(build(), `/classes/${room.id}/assignments${query}`, cookie);
+  const one = (cookie: string, id: string) => get(build(), `/assignments/${id}`, cookie);
+
+  it('lists the published assignments by nearest due date, and no draft or archived one', async () => {
+    const res = await list(approved.cookie);
+
+    expect(res.status).toBe(200);
+    const page = AssignmentPageSchema.parse(res.body);
+    expect(page.items.map((item) => item.id)).toEqual([soon.id, later.id]);
+    expect(page.items.every((item) => item.status === 'PUBLISHED')).toBe(true);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('pages through the published assignments', async () => {
+    const first = await list(approved.cookie, '?limit=1');
+    expect(first.body.items.map((item: { id: string }) => item.id)).toEqual([soon.id]);
+
+    const second = await list(approved.cookie, `?limit=1&cursor=${first.body.nextCursor}`);
+    expect(second.body.items.map((item: { id: string }) => item.id)).toEqual([later.id]);
+    expect(second.body.nextCursor).toBeNull();
+  });
+
+  it.each([
+    ['DRAFT', 0],
+    ['ARCHIVED', 0],
+    ['PUBLISHED', 2],
+  ])('answers a status filter of %s with %i items: a student only ever sees published ones', async (status, count) => {
+    const res = await list(approved.cookie, `?status=${status}`);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(count);
+  });
+
+  it('opens a published assignment, with its instructions and criteria', async () => {
+    const res = await one(approved.cookie, later.id);
+
+    expect(res.status).toBe(200);
+    expect(AssignmentDetailSchema.parse(res.body)).toMatchObject({
+      id: later.id,
+      classId: room.id,
+      status: 'PUBLISHED',
+      instructions: 'Write 500 words.',
+      criteriaText: 'Thesis is clear (10 points).',
+    });
+  });
+
+  it.each([
+    ['a draft', () => draft.id],
+    ['an archived assignment', () => archived.id],
+    ['an assignment that does not exist', () => randomUUID()],
+  ])('gives %s NOT_FOUND, the same as a missing one', async (_label, id) => {
+    const res = await one(approved.cookie, id());
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('still lets an approved student read when the class is archived', async () => {
+    const closed = await seedClass(owner.user.id, { archivedAt: new Date() });
+    const row = await seedAssignment(closed.id, { status: 'PUBLISHED', publishedAt: new Date() });
+    const student2 = await enrolled('approved-in-archived', 'ACTIVE', closed.id);
+
+    const listed = await get(build(), `/classes/${closed.id}/assignments`, student2.cookie);
+    const opened = await one(student2.cookie, row.id);
+
+    expect(listed.body.items.map((item: { id: string }) => item.id)).toEqual([row.id]);
+    expect(opened.status).toBe(200);
+  });
+
+  it('tells a pending student they are pending, for the list and for any assignment, a draft included', async () => {
+    for (const res of [await list(pending.cookie), await one(pending.cookie, soon.id), await one(pending.cookie, draft.id)]) {
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('ENROLLMENT_PENDING');
+    }
+  });
+
+  it('tells a pending student nothing about an assignment that does not exist', async () => {
+    const res = await one(pending.cookie, randomUUID());
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it.each([
+    ['a declined student', () => declined.cookie],
+    ['a removed student', () => removed.cookie],
+    ['a student who is not in the class', () => student.cookie],
+  ])('gives %s NOT_FOUND', async (_label, cookie) => {
+    for (const res of [await list(cookie()), await one(cookie(), soon.id)]) {
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('NOT_FOUND');
+    }
+  });
+
+  it('gives a Super Admin NOT_FOUND: viewing is for the class and its students', async () => {
+    const admin = await signedInUser('admin', 'SUPER_ADMIN');
+    for (const res of [await list(admin.cookie), await one(admin.cookie, soon.id)]) {
+      expect(res.status).toBe(404);
+    }
+  });
+
+  it('leaves every write to the instructor: an approved student gets NOT_FOUND and changes nothing', async () => {
+    const before = await db.assignment.count({ where: { classId: room.id } });
+
+    const created = await send(build(), 'post', `/classes/${room.id}/assignments`, approved.cookie, { title: 'Mine' });
+    const edited = await send(build(), 'patch', `/assignments/${draft.id}`, approved.cookie, { title: 'Mine' });
+    const published = await send(build(), 'post', `/assignments/${draft.id}/publish`, approved.cookie);
+
+    expect([created.status, edited.status, published.status]).toEqual([404, 404, 404]);
+    expect(await db.assignment.count({ where: { classId: room.id } })).toBe(before);
+    expect((await db.assignment.findUniqueOrThrow({ where: { id: draft.id } })).status).toBe('DRAFT');
   });
 });

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AssignmentDetail, ClassSummary, Me, PublishWarning, UpdateAssignment } from '@edugemini/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { browserTimeZone } from '../lib/zoned-time';
 import { failure, renderAt } from '../test/helpers';
 
 // The real pages and routing run. Only the API, which is outside the web app, is replaced by a small in-memory fake.
@@ -34,6 +35,20 @@ const aClass = (overrides: Partial<ClassSummary> = {}): ClassSummary => ({
   ...overrides,
 });
 
+/** A class as an approved student in it sees it: no join code, link or counts. */
+const aStudentClass = (overrides: Partial<ClassSummary> = {}): ClassSummary => ({
+  id: CLASS_ID,
+  name: 'Biology 101',
+  description: null,
+  section: null,
+  subject: null,
+  room: null,
+  status: 'ACTIVE',
+  instructorName: 'Maria R.',
+  enrollment: { status: 'ACTIVE' },
+  ...overrides,
+});
+
 const anAssignment = (overrides: Partial<AssignmentDetail> = {}): AssignmentDetail => ({
   id: crypto.randomUUID(),
   classId: CLASS_ID,
@@ -57,6 +72,8 @@ let calls: Call[];
 let me: Me;
 let cls: ClassSummary;
 let assignments: AssignmentDetail[];
+let pageSize: number;
+let denied: (() => Response) | undefined; // makes one assignment read fail
 let publishResult: (assignment: AssignmentDetail) => Response;
 
 beforeEach(() => {
@@ -64,6 +81,8 @@ beforeEach(() => {
   me = signedInAs('INSTRUCTOR');
   cls = aClass();
   assignments = [];
+  pageSize = 100;
+  denied = undefined;
   publishResult = (assignment) => {
     assignment.status = 'PUBLISHED';
     return Response.json({ ...assignment, warnings: [] satisfies PublishWarning[] });
@@ -82,8 +101,12 @@ beforeEach(() => {
 
       const list = /^\/classes\/[^/?]+\/assignments\?(.*)$/.exec(path);
       if (method === 'GET' && list) {
-        const status = new URLSearchParams(list[1]).get('status');
-        return Response.json({ items: assignments.filter((a) => a.status === status), nextCursor: null });
+        // Like the API: one status, a page at a time. The cursor here is just the position of the next item.
+        const query = new URLSearchParams(list[1]);
+        const all = assignments.filter((a) => a.status === query.get('status'));
+        const start = Number(query.get('cursor') ?? 0);
+        const next = start + pageSize;
+        return Response.json({ items: all.slice(start, next), nextCursor: next < all.length ? String(next) : null });
       }
       if (method === 'POST' && /^\/classes\/[^/?]+\/assignments$/.test(path)) {
         const input = body as Partial<AssignmentDetail> & { title: string };
@@ -94,6 +117,7 @@ beforeEach(() => {
 
       const one = /^\/assignments\/([^/?]+)(\/publish)?$/.exec(path);
       const found = assignments.find((a) => a.id === one?.[1]);
+      if (method === 'GET' && denied) return denied();
       if (!one) return failure(404, 'NOT_FOUND');
       if (!found) return failure(404, 'NOT_FOUND');
       if (method === 'GET') return Response.json(found);
@@ -385,5 +409,192 @@ describe('the assignment wizard', () => {
     renderAt(`/assignments/${crypto.randomUUID()}/edit`);
 
     expect(await screen.findByText(/couldn.t find that page/i)).toBeTruthy();
+  });
+});
+
+describe('the class page, as a student', () => {
+  beforeEach(() => {
+    me = signedInAs('STUDENT');
+    cls = aStudentClass();
+  });
+
+  it("lists the published assignments as links, with the due date in the student's own time zone", async () => {
+    // Set in the far-away zone of Kiritimati (UTC+14), so a due date shown in the assignment's zone would be named as such.
+    assignments = [
+      anAssignment({ title: 'Essay 2', status: 'PUBLISHED', timezone: 'Pacific/Kiritimati' }),
+      anAssignment({ title: 'Lab report', status: 'PUBLISHED', timezone: 'Pacific/Kiritimati' }),
+      anAssignment({ title: 'Secret draft' }),
+    ];
+    renderAt(`/classes/${CLASS_ID}`);
+
+    const essay = await screen.findByRole('link', { name: /Essay 2/ });
+    expect(essay.getAttribute('href')).toBe(`/assignments/${assignments[0]?.id}`);
+    expect(essay.textContent).toContain('Due ');
+    expect(essay.textContent).toContain(`(${browserTimeZone()})`);
+    expect(essay.textContent).not.toContain('Kiritimati');
+    expect(screen.getByRole('link', { name: /Lab report/ })).toBeTruthy();
+    expect(screen.queryByText('Secret draft')).toBeNull();
+    expect(callsTo('GET', `/classes/${CLASS_ID}/assignments`)[0]?.path).toContain('status=PUBLISHED');
+  });
+
+  it('says so when there are no assignments yet', async () => {
+    renderAt(`/classes/${CLASS_ID}`);
+
+    expect(await screen.findByText('No assignments yet.')).toBeTruthy();
+  });
+
+  it('still lists them for an archived class, which is read-only', async () => {
+    cls = aStudentClass({ status: 'ARCHIVED' });
+    assignments = [anAssignment({ title: 'Essay 2', status: 'PUBLISHED' })];
+    renderAt(`/classes/${CLASS_ID}`);
+
+    expect(await screen.findByRole('link', { name: /Essay 2/ })).toBeTruthy();
+    expect(screen.getByText('Archived')).toBeTruthy();
+  });
+
+  it('shows more assignments on request, following the cursor', async () => {
+    pageSize = 1;
+    assignments = [
+      anAssignment({ title: 'First one', status: 'PUBLISHED' }),
+      anAssignment({ title: 'Second one', status: 'PUBLISHED' }),
+    ];
+    const user = userEvent.setup();
+    renderAt(`/classes/${CLASS_ID}`);
+
+    expect(await screen.findByRole('link', { name: /First one/ })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Second one/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Show more assignments' }));
+
+    expect(await screen.findByRole('link', { name: /Second one/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /First one/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Show more assignments' })).toBeNull();
+  });
+
+  it('opens an assignment from its row', async () => {
+    assignments = [anAssignment({ title: 'Essay 2', status: 'PUBLISHED', criteriaText: 'Thesis is clear.' })];
+    const user = userEvent.setup();
+    renderAt(`/classes/${CLASS_ID}`);
+
+    await user.click(await screen.findByRole('link', { name: /Essay 2/ }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Essay 2' })).toBeTruthy();
+    expect(screen.getByText('Thesis is clear.')).toBeTruthy();
+  });
+
+  it('says what went wrong with the list and lets the student try again', async () => {
+    let works = false;
+    assignments = [anAssignment({ title: 'Essay 2', status: 'PUBLISHED' })];
+    const fake = globalThis.fetch;
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) =>
+      !works && url.includes('/assignments?') ? Promise.resolve(failure(500, 'INTERNAL')) : fake(url, init),
+    );
+    const user = userEvent.setup();
+    renderAt(`/classes/${CLASS_ID}`);
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Something went wrong on our side.');
+    works = true;
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByRole('link', { name: /Essay 2/ })).toBeTruthy();
+  });
+});
+
+describe('the assignment page, as a student', () => {
+  beforeEach(() => {
+    me = signedInAs('STUDENT');
+    cls = aStudentClass();
+  });
+
+  const published = (overrides: Partial<AssignmentDetail> = {}) => {
+    const assignment = anAssignment({
+      title: 'Essay 2',
+      status: 'PUBLISHED',
+      instructions: 'Write 500 words.\nCite two sources.',
+      criteriaText: 'Thesis is clear (10 points).',
+      maxScore: 50,
+      timezone: 'Pacific/Kiritimati',
+      ...overrides,
+    });
+    assignments = [assignment];
+    return assignment;
+  };
+
+  it('shows what the student needs: when it is due, how it is scored, the late policy, the instructions and the criteria', async () => {
+    const assignment = published();
+    renderAt(`/assignments/${assignment.id}`);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Essay 2' })).toBeTruthy();
+    expect(screen.getByText(/^Due /).textContent).toContain(`(${browserTimeZone()})`); // the student's own zone, not Kiritimati
+    expect(screen.getByText('Scoring: 50 points')).toBeTruthy();
+    expect(screen.getByText('Late submissions are accepted and marked Late.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Instructions' }).nextElementSibling?.textContent).toBe('Write 500 words.\nCite two sources.');
+    expect(screen.getByRole('heading', { name: 'Criteria' }).nextElementSibling?.textContent).toBe('Thesis is clear (10 points).');
+  });
+
+  it('says that scores and feedback are AI-generated and reviewed by the instructor, in the words of the UX Brief', async () => {
+    const assignment = published();
+    renderAt(`/assignments/${assignment.id}`);
+
+    expect(
+      await screen.findByText('Scores and feedback are AI-generated and reviewed by your instructor. Questions about grades go to your instructor.'),
+    ).toBeTruthy();
+  });
+
+  it('links back to the class by its name', async () => {
+    const assignment = published();
+    renderAt(`/assignments/${assignment.id}`);
+
+    const back = await screen.findByRole('link', { name: 'Biology 101' });
+    expect(back.getAttribute('href')).toBe(`/classes/${CLASS_ID}`);
+  });
+
+  it('marks an assignment of an archived class', async () => {
+    cls = aStudentClass({ status: 'ARCHIVED' });
+    const assignment = published();
+    renderAt(`/assignments/${assignment.id}`);
+
+    await screen.findByRole('heading', { level: 1, name: 'Essay 2' });
+    expect(await screen.findByText('Archived')).toBeTruthy();
+  });
+
+  it('leaves out instructions that were not given, and says when late work is not accepted', async () => {
+    const assignment = published({ instructions: null, acceptLate: false });
+    renderAt(`/assignments/${assignment.id}`);
+
+    expect(await screen.findByText('Late submissions are not accepted.')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Instructions' })).toBeNull();
+  });
+
+  it.each([
+    ['an assignment the student cannot see (a draft, or one in another class)', () => failure(404, 'NOT_FOUND')],
+    ['an address that is not an id', () => failure(400, 'VALIDATION')],
+    ['a student who is still pending approval', () => failure(403, 'ENROLLMENT_PENDING')],
+  ])('shows the same "not found" page for %s', async (_label, answer) => {
+    denied = answer;
+    renderAt(`/assignments/${crypto.randomUUID()}`);
+
+    expect(await screen.findByRole('heading', { name: /couldn.t find that page/i })).toBeTruthy();
+  });
+
+  it('is not a page for an instructor, who has the tracker and the wizard for an assignment', async () => {
+    me = signedInAs('INSTRUCTOR');
+    const assignment = published();
+    renderAt(`/assignments/${assignment.id}`);
+
+    expect(await screen.findByRole('heading', { name: /couldn.t find that page/i })).toBeTruthy();
+    expect(screen.queryByText('Thesis is clear (10 points).')).toBeNull();
+  });
+
+  it('says what went wrong and lets the student try again', async () => {
+    const assignment = published();
+    denied = () => failure(500, 'INTERNAL');
+    const user = userEvent.setup();
+    renderAt(`/assignments/${assignment.id}`);
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Something went wrong on our side.');
+    denied = undefined;
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Essay 2' })).toBeTruthy();
   });
 });

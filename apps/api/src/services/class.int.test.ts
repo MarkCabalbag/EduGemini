@@ -645,6 +645,110 @@ describe('archive and restore a class (API Spec CLS-05, CLS-06)', () => {
   });
 });
 
+describe('edit class details (API Spec CLS-04)', () => {
+  const patch = (cookie: string | undefined, classId: string, body: object) => {
+    const req = request(build()).patch(`/api/classes/${classId}`).set('Origin', APP_URL);
+    return (cookie ? req.set('Cookie', cookie) : req).send(body);
+  };
+  const stored = (classId: string) => db.class.findUniqueOrThrow({ where: { id: classId } });
+  const full = { description: 'Cells', section: 'B', subject: 'Biology', room: '4' };
+
+  it('changes only the fields sent, and leaves the code, the link and the students alone', async () => {
+    const klass = await seed(owner.user.id, { name: 'Biology 101', ...full, requireApproval: true });
+    await enrolled('edit-member', klass.id, 'ACTIVE');
+
+    const res = await patch(owner.cookie, klass.id, { name: '  Biology 102 ', room: '9' });
+
+    expect(res.status).toBe(200);
+    expect(ClassSummarySchema.parse(res.body)).toMatchObject({
+      id: klass.id,
+      name: 'Biology 102',
+      description: 'Cells',
+      section: 'B',
+      subject: 'Biology',
+      room: '9',
+      status: 'ACTIVE',
+      joinCode: klass.joinCode,
+      joinLink: `${APP_URL}/join/${klass.joinCode}`,
+      requireApproval: true,
+    });
+    expect(await stored(klass.id)).toMatchObject({ name: 'Biology 102', room: '9', joinCode: klass.joinCode, requireApproval: true });
+    expect(await db.enrollment.count({ where: { classId: klass.id, status: 'ACTIVE' } })).toBe(1);
+  });
+
+  it('clears an optional field that is sent blank, and never the name', async () => {
+    const klass = await seed(owner.user.id, { name: 'Biology 101', ...full });
+
+    const res = await patch(owner.cookie, klass.id, { description: '', section: '   ', subject: '' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ name: 'Biology 101', description: null, section: null, subject: null, room: '4' });
+    expect(await stored(klass.id)).toMatchObject({ description: null, section: null, subject: null, room: '4' });
+  });
+
+  it('changes nothing for an empty body', async () => {
+    const klass = await seed(owner.user.id, { name: 'Biology 101', ...full });
+
+    const res = await patch(owner.cookie, klass.id, {});
+
+    expect(res.status).toBe(200);
+    expect(await stored(klass.id)).toMatchObject({ name: 'Biology 101', ...full });
+  });
+
+  it.each([
+    ['a blank name', { name: '   ' }, 'name'],
+    ['a name over 120 characters', { name: 'a'.repeat(121) }, 'name'],
+    ['a room over 60 characters', { room: 'a'.repeat(61) }, 'room'],
+    ['a NUL character', { section: 'a\u0000b' }, 'section'],
+    ['the join code', { joinCode: 'ABCDEFGH' }, undefined],
+  ])('refuses %s with VALIDATION, and changes nothing', async (_label, body, field) => {
+    const klass = await seed(owner.user.id, { name: 'Biology 101', ...full });
+
+    // A valid change is sent along, to show that one bad field stops the whole edit.
+    const res = await patch(owner.cookie, klass.id, { ...body, description: 'Changed' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    if (field) expect(res.body.error.fields).toHaveProperty([field]);
+    expect(await stored(klass.id)).toMatchObject({ name: 'Biology 101', ...full });
+  });
+
+  it('refuses an archived class with CLASS_ARCHIVED, and changes nothing', async () => {
+    const klass = await seed(owner.user.id, { name: 'Biology 101', archivedAt: new Date() });
+
+    const res = await patch(owner.cookie, klass.id, { name: 'Changed' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CLASS_ARCHIVED');
+    expect((await stored(klass.id)).name).toBe('Biology 101');
+  });
+
+  it('is NOT_FOUND to another instructor, a student and a missing class, and changes nothing', async () => {
+    const klass = await seed(owner.user.id, { name: 'Biology 101' });
+
+    const answers = [
+      await patch(other.cookie, klass.id, { name: 'Changed' }),
+      await patch(student.cookie, klass.id, { name: 'Changed' }),
+      await patch(owner.cookie, randomUUID(), { name: 'Changed' }),
+    ];
+
+    for (const res of answers) {
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('NOT_FOUND');
+    }
+    expect((await stored(klass.id)).name).toBe('Biology 101');
+  });
+
+  it('needs a session and a class id', async () => {
+    const klass = await seed(owner.user.id);
+
+    expect((await patch(undefined, klass.id, { name: 'Changed' })).status).toBe(401);
+    const bad = await patch(owner.cookie, 'not-an-id', { name: 'Changed' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('VALIDATION');
+  });
+});
+
 describe('join a class by code (API Spec JOIN-01)', () => {
   const join = (app: TestApp, cookie: string, code: unknown) =>
     request(app).post('/api/join').set('Origin', APP_URL).set('Cookie', cookie).send({ code });

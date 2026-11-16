@@ -373,7 +373,7 @@ The breaking-change check compares the previous `openapi.yaml` with the new one 
 | Password reset request, per email | 3 per hour | Same response for known and unknown emails |
 | Join code attempts, per user | 10 failed attempts per hour | Any refused join counts (`INVALID_JOIN_CODE`, `JOIN_BLOCKED`); a successful join and a code of the wrong length do not |
 | Join link preview, per IP | 30 failed tries per hour | Only failed tries count, for the same reason as sign-in. Not part of the general limit below |
-| Uploads (PUT), per user | 60 per minute | |
+| Uploads (PUT), per user | 60 per minute | Opening a version (SUB-02) and sending a file (SUB-03) share one count |
 | Grading triggers, per user | 30 per minute | Pacing per instructor key is separate (TRD §10.2) |
 | Bulk actions, per instructor | 10 per minute | |
 | Class creation, per user | 20 per hour | Counted after validation, so a request with errors does not use it up |
@@ -670,10 +670,10 @@ Each endpoint has the same fields:
 `PATCH /api/classes/{classId}` · Standard set: `STD-MUT`
 - **Access:** owning instructor.
 - **FR:** FR-CLS-10.
-- **Request:** any of `{ name, description, section, subject, room }`.
+- **Request:** any of `{ name, description, section, subject, room }`, with the limits of CLS-02. A field left out is unchanged, and a blank optional field is cleared. The name cannot be blank. Any other field, such as `joinCode`, is `VALIDATION`.
 - **Response:** `200` `ClassSummary`.
-- **Errors:** `CLASS_ARCHIVED`, `VALIDATION`.
-- **Effects:** the code and members are not affected (FR-CLS-10).
+- **Errors:** `NOT_FOUND`, `CLASS_ARCHIVED`, `VALIDATION`.
+- **Effects:** the code and members are not affected (FR-CLS-10). An archived class is read-only, so it answers `CLASS_ARCHIVED` until it is restored.
 - **Test:** `class.spec`.
 
 #### CLS-05 · Archive class
@@ -823,7 +823,7 @@ Drafts need a few fields before the wizard has collected them. The rule for all 
 `GET /api/classes/{classId}/assignments?status=&labelId=&cursor=&limit=&sort=dueAt`
 - **Access:** owning instructor (all statuses, including drafts), or an `ACTIVE` student (published only).
 - **FR:** FR-ASG-03, FR-ASG-08, FR-GB-06, FR-SUB-09, FR-AUTH-08.
-- **Response:** `200` `Page<AssignmentSummary>`. Students get `my` on each row. Default order is nearest due date first (App Flow §6 step 2).
+- **Response:** `200` `Page<AssignmentSummary>`. Students get `my` on each row. Default order is nearest due date first (App Flow §6 step 2). A student is always limited to published assignments, so a `status` filter that leaves them out gives an empty page.
 - **Errors:** `ENROLLMENT_PENDING` (403), `NOT_FOUND`, `VALIDATION` (unknown filter), STD-AUTH.
 - **Test:** `assignment.spec`, `grading.spec` (student row chips).
 
@@ -844,7 +844,7 @@ Drafts need a few fields before the wizard has collected them. The rule for all 
 - **Response:** `200` `AssignmentDetail`.
   - Instructors also get `counts` (`turnedIn`, `late`, `missing`, `notYetDue`, `needsReview`, and `submissions` as the total, used for the deletion confirmation) and every reference file.
   - Students get `my` and only the reference files marked visible.
-- **Errors:** `NOT_FOUND` (students on drafts and archived assignments), `ENROLLMENT_PENDING`.
+- **Errors:** `NOT_FOUND` (students on drafts and archived assignments), `ENROLLMENT_PENDING`. The class is checked first: a pending student gets `ENROLLMENT_PENDING` for any assignment that exists in it, a draft included, and learns nothing else.
 - **Test:** `assignment.spec`.
 
 #### ASG-04 · Edit assignment
@@ -1016,7 +1016,7 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
 `PUT /api/versions/{versionId}/files/{clientFileId}`
 - **Access:** the student who owns the version.
 - **FR:** FR-SUB-01, FR-SUB-02, FR-SUB-03, FR-SUB-08, FR-AI-05, PRD A12.
-- **Request:** raw file bytes. Headers: `Content-Type` (the file's MIME type), `X-File-Name` (URL-encoded display name, at most 255 bytes), `Content-Length` (required; the server rejects chunked bodies over 10 MiB without reading past the limit).
+- **Request:** raw file bytes. Headers: `Content-Type` (the file's MIME type), `X-File-Name` (URL-encoded display name, at most 255 bytes), `Content-Length` (required; the server rejects chunked bodies over 10 MiB without reading past the limit). A missing or unreadable `X-File-Name` becomes "file", control characters are removed, and a longer name is cut to 255 bytes. A declared `Content-Length` over 10 MiB is refused with `FILE_TOO_LARGE` before the body is read, and the connection is closed.
 - **Response:**
   - `201` `FileView` for a new file. `200` when `clientFileId` already exists and is replaced (idempotent).
   - `422` `FILE_ERROR` with `details.file` (a `FileView` with `status: "FAILED"`) for a password-protected or corrupt PDF. Only these failures store a `FAILED` row, so the student sees the file and can replace it. Rejections for type, size, and count store no row.
@@ -1567,21 +1567,20 @@ Provider facts marked "confirmed" were checked against the sources listed at the
 ### C.4 Supabase Storage
 
 - **Purpose:** private object storage for submission files, reference files, and announcement attachments (TRD §9).
-- **Interface:** `StorageAdapter`, with the operations below. Two implementations: `supabase` (production) and `local` (development, writes under `STORAGE_LOCAL_DIR`).
+- **Interface:** `StorageAdapter`, with the operations below. Two implementations: `supabase` (production) and `local` (development, writes under `STORAGE_LOCAL_DIR`). The local `signedUrl` returns `<APP_URL>/api/dev/files?bucket=&path=&expires=&sig=`, signed with `SESSION_SECRET`. The route that serves it exists only when `STORAGE_DRIVER=local`, and every failure there (bad signature, expired link, missing file) is `NOT_FOUND`.
 
   | Operation | Behavior |
   |---|---|
-  | `put(bucket, path, stream, contentType, maxBytes)` | Streams to storage, enforces `maxBytes`, returns `{ size, sha256 }`. Fails with `FILE_TOO_LARGE` if the cap is reached |
-  | `get(bucket, path)` | Streams the object (used only by server-side processing, never returned to clients) |
-  | `signedUrl(bucket, path, ttlSeconds = 300)` | Returns a time-limited URL |
+  | `put(bucket, path, stream, contentType, maxBytes)` | Streams to storage, enforces `maxBytes`, returns `{ size, sha256 }`. Fails with `FILE_TOO_LARGE` if the cap is reached, and stores nothing. A path that already exists is replaced, so a retried upload is harmless |
+  | `get(bucket, path)` | Streams the object (used only by server-side processing, never returned to clients). A missing object is `NOT_FOUND` |
+  | `signedUrl(bucket, path, ttlSeconds = 300)` | Returns a time-limited URL. A missing object is `NOT_FOUND` |
   | `remove(bucket, paths[])` | Idempotent: a missing object counts as removed |
   | `exists(bucket, path)` | Used by the cleanup job before it marks an outbox row complete |
 
-- **Signed URLs (confirmed):** the client method is `createSignedUrl(path, expiresIn)`, where `expiresIn` is in seconds. A batch form exists. **Verify** the exact option names against Supabase's own reference, since the search returned mirror sites.
-- **Removal (confirmed):** the client method is `remove(paths)`, taking an array of paths. **Verify** the return shape for missing objects against the official page; the design does not depend on it, because `remove` is wrapped to treat a missing object as success.
+- **Calls:** the adapter calls the Storage REST API with `fetch` and the service-role key, so there is no `supabase-js` dependency (TRD T-D11): `POST /storage/v1/object/{bucket}/{path}` with `x-upsert: true` (put), `GET` on the same path (get), `POST /storage/v1/object/sign/{bucket}/{path}` with `{ expiresIn }` in seconds (signedUrl), `DELETE /storage/v1/object/{bucket}` with `{ prefixes }` (remove) and `HEAD` on the object path (exists). Storage answers 400 or 404 for a missing object. `remove` counts a missing object as removed. **Verify** all of this against Supabase's own reference and a real bucket, since it was written from the client library's behavior and mirror sites.
 - **Auth and secrets:** the service-role key (`SUPABASE_SERVICE_ROLE_KEY`) on the API only. Buckets are private. The key never reaches the browser or the build.
 - **Object paths:** generated by the server from IDs and an ordinal (TRD §9.1). User-supplied file names never appear in paths.
-- **Timeouts and retries:** 30 seconds per operation. Writes retry up to three times on transient errors. Deletes are retried by the outbox job (Backend Schema §10.1), not inline.
+- **Timeouts and retries:** 30 seconds per operation. `put` does not retry: a stream can be read once, so the upload route, which holds the temporary file (TRD §9.1), calls it again. Deletes are retried by the outbox job (Backend Schema §10.1), not inline.
 - **Limits (verify):** free-tier storage size (**1 GB** in Backend Schema §15.2; verify the current figure) and egress. Storage is the binding constraint for the free tier, which is why client-side resize is proposed (Backend Schema §15.2, open question 2).
 - **Failure behavior:** if storage is down, the file PUT returns `503 SERVICE_UNAVAILABLE` with `details.service: "storage"` and the student keeps the file on the device, so they can retry. Nothing is stored partially.
 - **Test substitute:** the `local` adapter in development and CI.
@@ -1877,7 +1876,7 @@ These are the items marked **verify** in Part C. None is needed to write the spe
 | Gemini per-minute and per-day limits for the chosen model | C.1 | S3 |
 | Gemini daily versus per-minute quota error details | C.1 | S3 (TQ3) |
 | Files API retention (48 hours, third-party source) | C.1 | Not used in v1; confirm before any change |
-| Supabase `createSignedUrl` option names and the `remove` return shape | C.4 | S1 or the storage tests |
+| Supabase Storage REST routes and answers the adapter relies on: a streamed upload with no `Content-Length`, `HEAD` for `exists`, the answer for a missing object, the sign response | C.4 | S1 or the first run against a real bucket |
 | Supabase pooler username form (`role.project-ref`) | C.3 | S2 |
 | Vercel request-body limit for external rewrites | C.6 | S1 (10 MiB upload) |
 | Brevo SMTP host, port, and daily limit (300 per day, from its help center) | C.5 | S5 |

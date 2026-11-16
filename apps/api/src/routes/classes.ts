@@ -1,11 +1,27 @@
 import type { PrismaClient } from '@prisma/client';
 import { Router } from 'express';
-import { ClassParamsSchema, CreateClassSchema, EnrolledQuerySchema, JoinSchema, ListClassesQuerySchema } from '@edugemini/shared';
+import {
+  ClassParamsSchema,
+  CreateClassSchema,
+  EnrolledQuerySchema,
+  JoinSchema,
+  ListClassesQuerySchema,
+  UpdateClassSchema,
+} from '@edugemini/shared';
 import { refuseInstructor, requireAction } from '../middleware/authorize';
 import { limiters } from '../middleware/rate-limit';
 import { requireAuth } from '../middleware/session';
 import { validate, validated } from '../middleware/validate';
-import { archiveClass, createClass, getClass, joinClass, listClasses, listEnrollments, restoreClass } from '../services/class-service';
+import {
+  archiveClass,
+  createClass,
+  getClass,
+  joinClass,
+  listClasses,
+  listEnrollments,
+  restoreClass,
+  updateClass,
+} from '../services/class-service';
 
 type ClassDeps = { db: PrismaClient; appUrl: string };
 
@@ -14,11 +30,12 @@ const create = { body: CreateClassSchema };
 const list = { query: ListClassesQuerySchema };
 const enrolled = { query: EnrolledQuerySchema };
 const one = { params: ClassParamsSchema };
+const edit = { params: ClassParamsSchema, body: UpdateClassSchema };
 const join = { body: JoinSchema };
 
 /**
- * Create, list, get, archive and restore a class, join one by code, and a student's Enrolled list (API Spec CLS-01 to
- * CLS-03, CLS-05, CLS-06, JOIN-01, JOIN-03). The join link preview is in join-link.ts. Needs the session, so it is mounted
+ * Create, list, get, edit, archive and restore a class, join one by code, and a student's Enrolled list (API Spec CLS-01 to
+ * CLS-06, JOIN-01, JOIN-03). The join link preview is in join-link.ts. Needs the session, so it is mounted
  * after loadSession.
  * The role check comes first on every route but get-one, so a role that cannot use them cannot tell they exist. The
  * services check again, and decide whether a class is the caller's own.
@@ -54,6 +71,11 @@ export function classesRouter({ db, appUrl }: ClassDeps): Router {
   router.get('/classes/:classId', requireAuth, validate(one), async (req, res) => {
     const { params } = validated(res, one);
     res.json(await getClass(db, req.auth!.user, params.classId, appUrl));
+  });
+
+  router.patch('/classes/:classId', requireAuth, requireAction('class.list'), validate(edit), async (req, res) => {
+    const { params, body } = validated(res, edit);
+    res.json(await updateClass(db, req.auth!.user, params.classId, body, appUrl));
   });
 
   router.post('/classes/:classId/archive', requireAuth, requireAction('class.list'), validate(one), async (req, res) => {

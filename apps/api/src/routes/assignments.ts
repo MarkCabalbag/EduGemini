@@ -25,9 +25,10 @@ const update = { params: AssignmentParamsSchema, body: UpdateAssignmentSchema };
 const one = { params: AssignmentParamsSchema };
 
 /**
- * Create, list, get, edit and publish an assignment (API Spec ASG-01 to ASG-04, ASG-06). All of it is for the owning
- * instructor for now: the role check comes first, so a student cannot tell these routes exist, and the services decide
- * whether the class is the caller's own. They fall under the general limit, as no row of API Spec A12 gives them one.
+ * Create, list, get, edit and publish an assignment (API Spec ASG-01 to ASG-04, ASG-06). The writes are for the owning
+ * instructor: their role check comes first, so a student cannot tell those routes exist. Reading is for the instructor and
+ * for an approved student, so the two reads have no role check and the service decides, as it does for a class. They fall
+ * under the general limit, as no row of API Spec A12 gives them one.
  */
 export function assignmentsRouter({ db }: { db: PrismaClient }): Router {
   const router = Router();
@@ -39,12 +40,12 @@ export function assignmentsRouter({ db }: { db: PrismaClient }): Router {
     res.status(201).json(await createAssignment(db, req.auth!.user, params.classId, body));
   });
 
-  router.get('/classes/:classId/assignments', ...guard, validate(list), async (req, res) => {
+  router.get('/classes/:classId/assignments', requireAuth, validate(list), async (req, res) => {
     const { params, query } = validated(res, list);
     res.json(await listAssignments(db, req.auth!.user, params.classId, query));
   });
 
-  router.get('/assignments/:assignmentId', ...guard, validate(one), async (req, res) => {
+  router.get('/assignments/:assignmentId', requireAuth, validate(one), async (req, res) => {
     const { params } = validated(res, one);
     res.json(await getAssignment(db, req.auth!.user, params.assignmentId));
   });

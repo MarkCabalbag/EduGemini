@@ -9,6 +9,7 @@ import { useClass } from '../hooks/use-classes';
 import { ApiRequestError } from '../lib/api';
 import { classMeta } from '../lib/class-meta';
 import { NotFound } from './NotFound';
+import { StudentAssignments } from './StudentAssignments';
 
 function Page({ children }: { children: ReactNode }) {
   return (
@@ -22,7 +23,7 @@ function Page({ children }: { children: ReactNode }) {
   );
 }
 
-/** One class, as a student in it sees it (App Flow §6 step 2). The assignments come with their own tickets. */
+/** One class, as a student in it sees it: the details and its published assignments (App Flow §6 step 2). */
 export function StudentClass() {
   const classId = useParams<'classId'>().classId!; // the route has :classId
   const cls = useClass(classId);
@@ -56,6 +57,7 @@ export function StudentClass() {
         {meta && <p className="text-muted">{meta}</p>}
         {description && <p className="whitespace-pre-line">{description}</p>}
       </div>
+      <StudentAssignments classId={classId} />
     </Page>
   );
 }
