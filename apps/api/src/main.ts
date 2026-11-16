@@ -3,6 +3,7 @@ import { createApp } from './app';
 import { warmUpPasswordHashing } from './auth/password';
 import { getEnv } from './lib/env';
 import { createLogger } from './lib/logger';
+import { devFilesRouter } from './routes/dev-files';
 
 const env = getEnv();
 const logger = createLogger(env.LOG_LEVEL, env.NODE_ENV);
@@ -16,6 +17,8 @@ const app = createApp({
   checkDb: async () => {
     await prisma.user.findFirst({ select: { id: true } });
   },
+  // Opens the links the local storage signs. Not registered with Supabase storage (env.ts refuses local in production).
+  routers: env.STORAGE_DRIVER === 'local' ? [devFilesRouter({ dir: env.STORAGE_LOCAL_DIR, secret: env.SESSION_SECRET })] : [],
 });
 
 warmUpPasswordHashing().catch((error: unknown) => logger.error({ event: 'password.warmup_failed', err: error }));
