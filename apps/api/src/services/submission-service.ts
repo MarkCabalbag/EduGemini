@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdtemp, open, rm } from 'node:fs/promises';
+import { mkdtemp, open, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { Prisma, type PrismaClient, type SubmissionFile, type SubmissionVersion } from '@prisma/client';
 import { LIMITS, SNIFF_BYTES, sniffFileType, type FileView, type VersionView } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
+import { countPdfPages } from '../lib/pdf-pages';
 import { measure, type StorageAdapter } from '../lib/storage';
 import { authorize, type Actor } from '../policy/policy';
 import { enrollmentOf } from './assignment-service';
@@ -104,8 +105,8 @@ async function readHead(path: string): Promise<Buffer> {
 /**
  * Store one file in the student's open version (API Spec SUB-03, TRD §9.1). The bytes go to a temporary file first, with
  * the size cap enforced while they arrive, so the type is known before anything reaches storage. Sending the same
- * `clientFileId` again replaces that file: the old object is queued for deletion and the row keeps its place.
- * Page counts, HEIC and the total size limit come with SUB-02 and SUB-03.
+ * `clientFileId` again replaces that file: the old object is queued for deletion and the row keeps its place. A file
+ * refused for any reason stores nothing. HEIC comes with SUB-03.
  */
 export async function storeFile(
   db: PrismaClient,
@@ -135,6 +136,13 @@ export async function storeFile(
     const kind = sniffFileType(await readHead(temp));
     if (!kind) throw new AppError('FILE_TYPE');
 
+    // The total counts the other files in the version, not the one being replaced. Two files arriving at the same moment
+    // can both pass this check, so finalize (SUB-05) checks the total again.
+    const others = version.files.filter((file) => file.id !== existing?.id);
+    const totalBytes = others.reduce((sum, file) => sum + Number(file.sizeBytes ?? 0), (await stat(temp)).size);
+    if (totalBytes > LIMITS.maxSubmissionBytes) throw new AppError('FILE_LIMIT', { details: { limit: 'total-size' } });
+    const pageCount = kind.mimeType === 'application/pdf' ? await countPdfPages(temp) : null;
+
     // Built from IDs and the sniffed type, never from the file's name (code-standards §9). A replacement gets a new path.
     const path = `submissions/${assignment.classId}/${assignmentId}/${actor.id}/${versionId}/${ordinal}-${randomUUID()}.${kind.extension}`;
     const stored = await storage.put(bucket, path, createReadStream(temp), kind.mimeType, LIMITS.maxFileBytes);
@@ -144,6 +152,7 @@ export async function storeFile(
       displayName: upload.displayName,
       mimeType: kind.mimeType,
       sizeBytes: stored.size,
+      pageCount,
       sha256: stored.sha256,
       failureCode: null,
     } as const;

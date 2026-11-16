@@ -584,7 +584,7 @@ Layout notes:
 ┌──────────────────────────────┐
 │ ← Essay 2 · Upload            │
 │ Up to 10 files · 10 MB each  │
-│ 15 MB total                  │
+│ 15 MB total · PDFs: 20 pages │
 │                              │
 │ ┌──────────────────────────┐ │
 │ │      + Add photos or PDF  │ │
@@ -607,7 +607,7 @@ Layout notes:
 - The Submit button is disabled until every file is stored; its helper text says why ("Waiting for 1 file to finish uploading").
 - Each file shows its own state in words: Ready, Uploading, Couldn't upload (with Retry), or the specific rejection reason.
 - Reorder with the ↑ and ↓ buttons; drag is optional. Remove asks for no confirmation (the file is only a local selection until submit).
-- The limits line shows the values in PRD FR-SUB-02.
+- The limits line shows the values in PRD FR-SUB-02: "PDF, JPG or PNG. Up to 10 files, 10 MB each, 15 MB in total. PDFs up to 20 pages."
 - After submit, the page shows the receipt: timestamp, file list, and "Grading in progress, usually about a minute" (App Flow 6, step 5).
 
 **Result, after grading (student)**
@@ -733,6 +733,8 @@ These strings must match the App Flow exactly. A string marked **(new)** was wri
 | Unlimited | Unlimited resubmissions |
 | Attempts used up | You've used all your resubmissions. Your instructor can give you more. *(new)* |
 | Too many files (`FILE_LIMIT`, `details.limit: files`) | You can upload up to 10 files. *(new)* |
+| Too many pages (`FILE_LIMIT`, `details.limit: pages`) | This PDF has more than 20 pages. *(new)* |
+| Too much in total (`FILE_LIMIT`, `details.limit: total-size`) | Your files add up to more than 15 MB. *(new)* |
 | No access | You don't have access to this page. |
 | Item gone | This item is no longer available. |
 | Account suspended | Account suspended. |

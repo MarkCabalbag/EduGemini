@@ -1863,7 +1863,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     FileError:
-      description: FILE_ERROR (password-protected or corrupt). For upload endpoints, details.file carries the FAILED file view.
+      description: FILE_ERROR (a password-protected or corrupt PDF; details.failureCode is PASSWORD or CORRUPT) or FILE_LIMIT (details.limit is files, total-size or pages). A refused file stores nothing.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

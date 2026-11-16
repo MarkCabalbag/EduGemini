@@ -13,7 +13,9 @@ describe('errorText', () => {
     expect(errorText('FILE_TOO_LARGE')).toBe('This file is larger than 10 MB.');
     expect(errorText('FILE_ERROR')).toBe("This file couldn't be read. Try re-saving it or choosing a different file.");
     expect(errorText('FILE_LIMIT', { limit: 'files' })).toBe('You can upload up to 10 files.');
-    expect(errorText('FILE_LIMIT', { limit: 'pages' })).toBe('Something went wrong.'); // the other limits come with SUB-02
+    expect(errorText('FILE_LIMIT', { limit: 'pages' })).toBe('This PDF has more than 20 pages.');
+    expect(errorText('FILE_LIMIT', { limit: 'total-size' })).toBe('Your files add up to more than 15 MB.');
+    expect(errorText('FILE_LIMIT')).toBe('Something went wrong.'); // a limit it does not know by name
   });
 
   it('has the three join messages from API Spec A4', () => {

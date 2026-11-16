@@ -103,7 +103,8 @@ async function openPage() {
 describe('the student upload control', () => {
   it('shows the limits and the button, below the criteria', async () => {
     await openPage();
-    expect(screen.getByText('PDF, JPG or PNG. Up to 10 files, 10 MB each.')).toBeTruthy();
+    // The sentence is one paragraph, so its text is matched as a whole.
+    expect(screen.getByText('PDF, JPG or PNG. Up to 10 files, 10 MB each, 15 MB in total. PDFs up to 20 pages.')).toBeTruthy();
     expect(input().getAttribute('accept')).toBe('application/pdf,image/jpeg,image/png');
     expect(input().hasAttribute('multiple')).toBe(true);
   });
@@ -183,12 +184,16 @@ describe('the student upload control', () => {
     expect(callsTo('PUT', '/versions/')).toHaveLength(0);
   });
 
-  it('shows the reason when the server refuses the file, with no Retry', async () => {
-    sendFile = () => failure(422, 'FILE_LIMIT', undefined, { limit: 'files' });
+  it.each([
+    ['files', 'You can upload up to 10 files.'],
+    ['pages', 'This PDF has more than 20 pages.'],
+    ['total-size', 'Your files add up to more than 15 MB.'],
+  ])('names the %s limit when the server refuses the file, with no Retry', async (limit, text) => {
+    sendFile = () => failure(422, 'FILE_LIMIT', undefined, { limit });
     await openPage();
     await userEvent.upload(input(), pdf());
 
-    expect(await screen.findByText('You can upload up to 10 files.')).toBeTruthy();
+    expect(await screen.findByText(text)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Retry/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Remove essay.pdf' })).toBeTruthy();
   });

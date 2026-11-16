@@ -318,7 +318,7 @@ Edits that do not change criteria or files (title, instructions, label, limits, 
 Uploads are a three-step flow so that a retry never loses files and a submission exists only when every file is stored (FR-SUB-03).
 
 1. **Open a version.** `POST /api/assignments/{assignmentId}/versions` (SUB-02). Returns the open `VersionView`. If a version is already `UPLOADING`, it returns that one (idempotent).
-2. **Send each file.** `PUT /api/versions/{versionId}/files/{clientFileId}` (SUB-03). The body is the raw file bytes (`Content-Type` set to the file's MIME type, which the server re-checks against the content). `X-File-Name` carries the display name, URL-encoded, at most 255 bytes. The server streams the body to a temporary file, enforces the 10 MiB limit while streaming, sniffs the content (PDF, JPEG, PNG, HEIC), converts HEIC to JPEG, counts PDF pages, and stores the result. Re-sending the same `clientFileId` replaces that file's row (idempotent). The response is the `FileView`, with `status: "STORED"` or `status: "FAILED"` and a `failureCode`.
+2. **Send each file.** `PUT /api/versions/{versionId}/files/{clientFileId}` (SUB-03). The body is the raw file bytes (`Content-Type` set to the file's MIME type, which the server re-checks against the content). `X-File-Name` carries the display name, URL-encoded, at most 255 bytes. The server streams the body to a temporary file, enforces the 10 MiB limit while streaming, sniffs the content (PDF, JPEG, PNG, HEIC), converts HEIC to JPEG, counts PDF pages, and stores the result. Re-sending the same `clientFileId` replaces that file's row (idempotent). The response is the `FileView` of the stored file. A file the server refuses stores nothing, and the answer is the error.
 3. **Finalize.** `POST /api/versions/{versionId}/finalize` (SUB-05) with the list of `clientFileId`s the client expects. The server checks that every expected file is `STORED`, re-checks the attempt count inside a locked transaction, and only then queues grading.
 
 **Why raw bytes, not multipart, for the per-file PUT.** One file per request keeps each request small and retryable on mobile networks, and it lets the client show per-file progress. The reference-file and announcement endpoints use `multipart/form-data` because they accept several files or a title in the same request.
@@ -1019,15 +1019,15 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
 - **Request:** raw file bytes. Headers: `Content-Type` (the file's MIME type), `X-File-Name` (URL-encoded display name, at most 255 bytes), `Content-Length` (required; the server rejects chunked bodies over 10 MiB without reading past the limit). A missing or unreadable `X-File-Name` becomes "file", control characters are removed, and a longer name is cut to 255 bytes. A declared `Content-Length` over 10 MiB is refused with `FILE_TOO_LARGE` before the body is read, and the connection is closed.
 - **Response:**
   - `201` `FileView` for a new file. `200` when `clientFileId` already exists and is replaced (idempotent).
-  - `422` `FILE_ERROR` with `details.file` (a `FileView` with `status: "FAILED"`) for a password-protected or corrupt PDF. Only these failures store a `FAILED` row, so the student sees the file and can replace it. Rejections for type, size, and count store no row.
+  - A refused file stores nothing: no row and no object. The answer is the error, and the student sends another file.
 - **Errors:**
   - `FILE_TYPE` (415): the content is not PDF, JPEG, PNG, or HEIC (checked by magic bytes, not the extension; HEIC is converted to JPEG, PRD A12).
   - `FILE_TOO_LARGE` (413): over 10 MiB while streaming.
-  - `FILE_LIMIT` (422): `details.limit` is `files` (more than 10 in the version), `total-size` (more than 15 MiB), or `pages` (more than 20).
+  - `FILE_LIMIT` (422): `details.limit` is `files` (more than 10 in the version), `total-size` (the version's files would add up to more than 15 MiB; a file being replaced is not counted twice), or `pages` (a PDF of more than 20).
   - `UPLOAD_NOT_OPEN` (409): the version is not `UPLOADING`.
   - `UNSUPPORTED_MEDIA_TYPE` (415): the request is not a file upload.
-  - `FILE_ERROR`.
-- **Effects:** streams to a temporary file, converts HEIC, counts PDF pages, computes SHA-256, stores the object under a server-generated path (TRD §9.1), writes the `submission_files` row. A replaced file's old object goes to the outbox.
+  - `FILE_ERROR` (422): a PDF that is password-protected or cannot be read. `details.failureCode` is `PASSWORD` or `CORRUPT`.
+- **Effects:** streams to a temporary file, converts HEIC, counts PDF pages (kept on the file as `pageCount`), computes SHA-256, stores the object under a server-generated path (TRD §9.1), writes the `submission_files` row. A replaced file's old object goes to the outbox.
 - **Concurrency:** `(version_id, client_file_id)` is unique; the same ID twice is a replace, not a duplicate.
 - **Limit:** 60 per minute per user.
 - **Test:** `upload.spec` (every fixture in the TRD §16.2a table).

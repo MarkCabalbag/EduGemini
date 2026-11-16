@@ -49,7 +49,8 @@ export function UploadFiles({ assignmentId }: { assignmentId: string }) {
     <section className="space-y-3">
       <h2 className="text-title font-semibold">Your files</h2>
       <p className="text-small text-muted">
-        PDF, JPG or PNG. Up to {LIMITS.filesPerSubmission} files, {LIMITS.maxFileBytes / MiB} MB each.
+        PDF, JPG or PNG. Up to {LIMITS.filesPerSubmission} files, {LIMITS.maxFileBytes / MiB} MB each, {LIMITS.maxSubmissionBytes / MiB} MB in
+        total. PDFs up to {LIMITS.maxPdfPages} pages.
       </p>
       <input
         id={inputId}

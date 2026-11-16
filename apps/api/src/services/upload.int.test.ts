@@ -6,12 +6,13 @@ import { Readable } from 'node:stream';
 import type { Prisma } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FileViewSchema, LIMITS, TERMS_VERSION, VersionViewSchema, type EnrollmentStatus, type Role } from '@edugemini/shared';
+import { FileViewSchema, LIMITS, MiB, TERMS_VERSION, VersionViewSchema, type EnrollmentStatus, type Role } from '@edugemini/shared';
 import { createApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createLocalStorage } from '../lib/local-storage';
 import { createLogger } from '../lib/logger';
 import { uploadsRouter } from '../routes/uploads';
+import { ENCRYPTED_PDF, makePdf } from '../test/pdf-fixtures';
 import { createTestDb } from '../test/test-db';
 import { newJoinCode } from './class-service';
 import { storeFile } from './submission-service';
@@ -90,9 +91,11 @@ const openUpload = (app: TestApp, assignmentId: string, cookie?: string) => {
   return cookie ? req.set('Cookie', cookie) : req;
 };
 
-const PDF = Buffer.from('%PDF-1.4\n% a tiny pretend document\n');
-const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('pretend image data')]);
+let PDF: Buffer; // a real one-page PDF, made in beforeAll: the server opens every PDF to count its pages
+const PNG =Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('pretend image data')]);
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('pretend image data')]);
+/** A PNG of exactly this many bytes, so size limits can be hit to the byte. */
+const pngOfSize = (bytes: number) => Buffer.concat([PNG, Buffer.alloc(bytes - PNG.length)]);
 
 type SendOptions = { contentType?: string; name?: string | null; clientFileId?: string };
 let fileCounter = 0;
@@ -113,7 +116,8 @@ let student: TestUser;
 
 beforeAll(async () => {
   await db.$connect();
-  storageDir = await mkdtemp(join(tmpdir(), 'edugemini-upload-test-'));
+  PDF = await makePdf(1);
+  storageDir =await mkdtemp(join(tmpdir(), 'edugemini-upload-test-'));
   storage = createLocalStorage({ dir: storageDir, appUrl: APP_URL, secret: 'a-test-secret-of-at-least-32-characters' });
   owner = await signedInUser('owner', 'INSTRUCTOR');
   cls = await seedClass(owner.user.id);
@@ -291,8 +295,7 @@ describe('PUT /api/versions/:id/files/:clientFileId (SUB-03)', () => {
 
   it('accepts a file of exactly 10 MiB', async () => {
     await freshVersion();
-    const exact = Buffer.concat([PDF, Buffer.alloc(LIMITS.maxFileBytes - PDF.length)]);
-    const res = await sendFile(build(), versionId, student.cookie, exact);
+    const res = await sendFile(build(), versionId, student.cookie, pngOfSize(LIMITS.maxFileBytes), { contentType: 'image/png' });
     expect(res.status).toBe(201);
     expect(res.body.sizeBytes).toBe(LIMITS.maxFileBytes);
   });
@@ -327,6 +330,71 @@ describe('PUT /api/versions/:id/files/:clientFileId (SUB-03)', () => {
     const existing = await db.submissionFile.findFirstOrThrow({ where: { versionId }, orderBy: { ordinal: 'asc' } });
     const replace = await sendFile(build(), versionId, student.cookie, PDF, { clientFileId: existing.clientFileId });
     expect(replace.status).toBe(200);
+  });
+
+  it('keeps the page count of a PDF, and none for an image', async () => {
+    await freshVersion();
+    const pdf = await sendFile(build(), versionId, student.cookie, await makePdf(3));
+    const png = await sendFile(build(), versionId, student.cookie, PNG, { contentType: 'image/png' });
+
+    expect(FileViewSchema.parse(pdf.body).pageCount).toBe(3);
+    expect((await db.submissionFile.findUniqueOrThrow({ where: { id: pdf.body.id } })).pageCount).toBe(3);
+    expect(png.body.pageCount).toBeNull();
+  });
+
+  it('takes a PDF of 20 pages and refuses one of 21 with FILE_LIMIT, storing nothing', async () => {
+    await freshVersion();
+    expect((await sendFile(build(), versionId, student.cookie, await makePdf(LIMITS.maxPdfPages))).status).toBe(201);
+
+    const tooLong = await sendFile(build(), versionId, student.cookie, await makePdf(LIMITS.maxPdfPages + 1));
+    expect(tooLong.status).toBe(422);
+    expect(tooLong.body.error).toMatchObject({ code: 'FILE_LIMIT', details: { limit: 'pages' } });
+    expect(await db.submissionFile.count({ where: { versionId } })).toBe(1);
+  });
+
+  it('refuses a password-protected PDF and a broken one with FILE_ERROR, storing nothing', async () => {
+    await freshVersion();
+    const locked = await sendFile(build(), versionId, student.cookie, ENCRYPTED_PDF);
+    expect(locked.status).toBe(422);
+    expect(locked.body.error).toMatchObject({ code: 'FILE_ERROR', details: { failureCode: 'PASSWORD' } });
+
+    const broken = await sendFile(build(), versionId, student.cookie, PDF.subarray(0, Math.floor(PDF.length / 2)));
+    expect(broken.body.error).toMatchObject({ code: 'FILE_ERROR', details: { failureCode: 'CORRUPT' } });
+    expect(await db.submissionFile.count({ where: { versionId } })).toBe(0);
+  });
+
+  it('takes files up to 15 MiB in all, and refuses the one that goes over with FILE_LIMIT, storing nothing', async () => {
+    await freshVersion();
+    for (let i = 0; i < 3; i++) {
+      const res = await sendFile(build(), versionId, student.cookie, pngOfSize(5 * MiB), { contentType: 'image/png' });
+      expect(res.status).toBe(201);
+    }
+    const over = await sendFile(build(), versionId, student.cookie, PNG, { contentType: 'image/png' });
+    expect(over.status).toBe(422);
+    expect(over.body.error).toMatchObject({ code: 'FILE_LIMIT', details: { limit: 'total-size' } });
+    expect(await db.submissionFile.count({ where: { versionId } })).toBe(3);
+  });
+
+  it('counts a replacement by its own size, not on top of the file it replaces', async () => {
+    await freshVersion();
+    const clientFileId = `swap-${RUN}-1`;
+    await sendFile(build(), versionId, student.cookie, pngOfSize(5 * MiB), { contentType: 'image/png', clientFileId });
+    await sendFile(build(), versionId, student.cookie, pngOfSize(10 * MiB), { contentType: 'image/png' }); // 15 MiB in all
+
+    const same = await sendFile(build(), versionId, student.cookie, pngOfSize(5 * MiB), { contentType: 'image/png', clientFileId });
+    expect(same.status).toBe(200);
+    const bigger = await sendFile(build(), versionId, student.cookie, pngOfSize(5 * MiB + 1), { contentType: 'image/png', clientFileId });
+    expect(bigger.body.error).toMatchObject({ code: 'FILE_LIMIT', details: { limit: 'total-size' } });
+  });
+
+  it('clears the page count when an image replaces a PDF', async () => {
+    await freshVersion();
+    const clientFileId = `swap-${RUN}-2`;
+    const pdf = await sendFile(build(), versionId, student.cookie, await makePdf(2), { clientFileId });
+    expect(pdf.body.pageCount).toBe(2);
+
+    const png = await sendFile(build(), versionId, student.cookie, PNG, { contentType: 'image/png', clientFileId });
+    expect(png.body.pageCount).toBeNull();
   });
 
   it('uses a free place first, so a removed file does not use up the count', async () => {
