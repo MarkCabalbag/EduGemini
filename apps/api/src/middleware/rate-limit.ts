@@ -7,8 +7,8 @@ import { AppError } from '../lib/app-error';
 // (TRD §3). Scaling out means moving them to Postgres first. A restart clears them, which is fine at this scale.
 // The limit for reset is added with that feature. Every route behind the session is covered by
 // `everythingElseByUser`, mounted once in createApp (code-standards §5). A route whose own A12 row is higher than 120 a
-// minute (notifications, 300) must be excluded from it when that route is added. The join-link preview already is: it is
-// public, has its own row, and is mounted before it (routes/join-link.ts).
+// minute is mounted before it, so it is excluded: the join-link preview (public, routes/join-link.ts) and the notification
+// routes (300 a minute, routes/notifications.ts).
 
 type Rule = { windowMs: number; limit: number };
 
@@ -32,6 +32,8 @@ export const RULES = {
   joinPreviewByIp: { windowMs: HOUR, limit: 30 },
   /** Opening an upload and sending its files, per user (API Spec A12, SUB-02, SUB-03). */
   uploadByUser: { windowMs: MINUTE, limit: 60 },
+  /** The four notification routes together, per user (API Spec A12, NTF-01 to NTF-04). Sized for the 60-second badge poll. */
+  notificationsByUser: { windowMs: MINUTE, limit: 300 },
   /** Every route behind the session, per user (API Spec A12, "everything else"). */
   everythingElseByUser: { windowMs: MINUTE, limit: 120 },
 } as const satisfies Record<string, Rule>;
@@ -77,5 +79,6 @@ export const limiters = {
   joinByUser: () => limit(RULES.joinByUser, byUser, { countOnlyFailures: true }),
   joinPreviewByIp: () => limit(RULES.joinPreviewByIp, byIp, { countOnlyFailures: true }),
   uploadByUser: () => limit(RULES.uploadByUser, byUser),
+  notificationsByUser: () => limit(RULES.notificationsByUser, byUser),
   everythingElseByUser: () => limit(RULES.everythingElseByUser, byUser),
 };

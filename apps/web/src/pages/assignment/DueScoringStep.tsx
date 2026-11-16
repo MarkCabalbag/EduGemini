@@ -15,8 +15,8 @@ const FORMATS: { value: ScoringFormat; label: string }[] = [
   { value: 'LETTER_NUMERIC', label: 'Letter and number (for example B+ / 87)' },
 ];
 
-/** Step 3: when it is due and how it is scored. The format cannot change once a submission exists, which comes with the submission tickets (A13). */
-export function DueScoringStep({ assignment, onSaved, onBack }: StepProps) {
+/** Step 3: when it is due and how it is scored. Once a submission exists the API refuses a new format (FORMAT_LOCKED, A13), and the form says so. */
+export function DueScoringStep({ assignment, onSaved, onBack, submitLabel }: StepProps) {
   const { register, handleSubmit, setError, watch, formState } = useForm<Values>({
     mode: 'onBlur',
     defaultValues: {
@@ -44,6 +44,7 @@ export function DueScoringStep({ assignment, onSaved, onBack }: StepProps) {
       saving={saving}
       formError={formError}
       onBack={onBack}
+      submitLabel={submitLabel}
     >
       <TextField
         label="Due date and time"

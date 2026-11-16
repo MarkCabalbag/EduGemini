@@ -7,6 +7,7 @@ import { NotFound } from '../NotFound';
 import { BasicsStep } from './BasicsStep';
 import { CriteriaStep } from './CriteriaStep';
 import { DueScoringStep } from './DueScoringStep';
+import { PublishedEdit } from './PublishedEdit';
 import { ReviewStep } from './ReviewStep';
 import { RulesStep } from './RulesStep';
 import { STEPS, WizardFrame } from './WizardFrame';
@@ -17,7 +18,7 @@ const stepFrom = (value: string | null) => {
   return Number.isInteger(step) && step >= 1 && step <= STEPS.length ? step : 1;
 };
 
-/** A draft, one step at a time (App Flow §5.1). Each step saves the draft before it moves on. */
+/** A draft, one step at a time (App Flow §5.1), each step saving the draft before it moves on; or a published assignment, on one page. */
 export function EditAssignment() {
   const assignmentId = useParams<'assignmentId'>().assignmentId!; // the route has :assignmentId
   const step = stepFrom(useSearchParams()[0].get('step'));
@@ -32,12 +33,12 @@ export function EditAssignment() {
   }
 
   const { classId, status, title } = assignment.data;
+  if (status === 'PUBLISHED') return <PublishedEdit assignment={assignment.data} />;
   if (status !== 'DRAFT') {
-    // Changing a published assignment needs the criteria impact check, which comes with its own ticket (ASG-04).
     return (
       <div className="max-w-2xl space-y-4">
         <h1 className="text-display font-semibold">{title}</h1>
-        <p>This assignment is published, and a published assignment cannot be edited yet.</p>
+        <p>This assignment is archived and cannot be edited.</p>
         <Link to={`/classes/${classId}?tab=assignments`} className="font-semibold text-primary underline">
           Back to assignments
         </Link>

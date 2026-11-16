@@ -441,7 +441,7 @@ Google may use free-tier content to improve its products (disclosed to instructo
 
 ### 13.1 Fan-out
 - Domain code calls `notify(type, recipients, payload)` in the same transaction as the event where possible.
-- `notify` writes one `Notification` row per recipient (in-app, source of truth) and, when the channel applies, enqueues `send.email`.
+- `notify` writes one `Notification` row per recipient (in-app, source of truth) and, when the channel applies, enqueues `send.email`. In code it takes the database client first, so it can join the caller's transaction, and its last argument carries `link` (stored in the row's `link` column) beside the labels (stored in the row's `payload`, Backend Schema §4.20). NTF-01 builds the in-app half; email is added by NTF-03.
 - Email is sent only if the recipient's address is verified, except the exceptions listed below. It is also skipped if the user disabled that category (FR-NTF-04).
 - Digest types (new submission, Needs manual review, and join request for instructors; announcements for students) go to `digest.flush`, not to `send.email`.
 
@@ -475,7 +475,7 @@ The Prisma enum `NotificationType` has the 19 notifiable events in PRD Section 1
 | Headers | helmet defaults. Content-Security-Policy for the SPA: `script-src 'self'`, `frame-ancestors 'none'`. The pdf.js worker is bundled and served from the same origin |
 | Cookies | `HttpOnly`, `Secure`, `SameSite=Lax`, short-lived signed cookies for pending state (Section 6) |
 | Passwords | argon2id; a dummy hash is checked when the email does not exist, so response time does not reveal accounts |
-| Instructor keys | AES-256-GCM. A random 12-byte IV per record and an auth tag stored with the ciphertext. `ENCRYPTION_KEY` (32 bytes, base64) comes from the environment; `keyVersion` allows rotation (re-encrypt on read with the old version, then write with the new one). Only `last4` is ever returned. Never logged |
+| Instructor keys | AES-256-GCM. A random 12-byte IV per record and an auth tag stored with the ciphertext. `ENCRYPTION_KEY` (32 bytes, base64) comes from the environment; `keyVersion` allows rotation (re-encrypt on read with the old version, then write with the new one). Only `last4` is ever returned. The plaintext is read only by the grading job. Never logged |
 | Logs | pino redaction: `authorization`, `cookie`, `password`, `token`, `key`, `ciphertext`, file contents. Request bodies are not logged |
 | Input | Zod on every request body and query. Size limits on JSON (100 KB) and multipart (per file limits, Section 9) |
 | SQL | Prisma parameterized queries. No raw SQL except the pg-boss schema and the row-lock helper (Section 8.1) |

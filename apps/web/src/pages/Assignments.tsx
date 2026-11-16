@@ -42,8 +42,8 @@ function NewAssignmentLink({ classId }: { classId: string }) {
   );
 }
 
-/** A published row is not a link yet: the tracker and the edit screen for a published assignment come with their own tickets. */
-function AssignmentRow({ assignment, canResume }: { assignment: AssignmentSummary; canResume: boolean }) {
+/** A draft has Resume, a published assignment has Edit. The row itself is not a link yet: it opens the tracker, which comes with its own ticket. */
+function AssignmentRow({ assignment, canEdit }: { assignment: AssignmentSummary; canEdit: boolean }) {
   const draft = assignment.status === 'DRAFT';
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4">
@@ -55,9 +55,13 @@ function AssignmentRow({ assignment, canResume }: { assignment: AssignmentSummar
       </div>
       <div className="flex items-center gap-3">
         {draft && <StatusChip tone="pending">Draft</StatusChip>}
-        {draft && canResume && (
-          <Link to={`/assignments/${assignment.id}/edit`} aria-label={`Resume ${assignment.title}`} className={buttonClass('secondary')}>
-            Resume
+        {canEdit && (
+          <Link
+            to={`/assignments/${assignment.id}/edit`}
+            aria-label={`${draft ? 'Resume' : 'Edit'} ${assignment.title}`}
+            className={buttonClass('secondary')}
+          >
+            {draft ? 'Resume' : 'Edit'}
           </Link>
         )}
       </div>
@@ -66,7 +70,7 @@ function AssignmentRow({ assignment, canResume }: { assignment: AssignmentSummar
 }
 
 /** One status's assignments, with "Show more" for the next page. Nothing at all when there are none. */
-function Group({ heading, query, canResume }: { heading: string; query: ReturnType<typeof useAssignments>; canResume: boolean }) {
+function Group({ heading, query, canEdit }: { heading: string; query: ReturnType<typeof useAssignments>; canEdit: boolean }) {
   const rows = query.data?.pages.flatMap((page) => page.items) ?? [];
   if (rows.length === 0) return null;
   return (
@@ -74,7 +78,7 @@ function Group({ heading, query, canResume }: { heading: string; query: ReturnTy
       <h3 className="text-title font-semibold">{heading}</h3>
       <ul className="space-y-3">
         {rows.map((assignment) => (
-          <AssignmentRow key={assignment.id} assignment={assignment} canResume={canResume} />
+          <AssignmentRow key={assignment.id} assignment={assignment} canEdit={canEdit} />
         ))}
       </ul>
       {query.isFetchNextPageError && <Alert>{errorText(query.error instanceof ApiRequestError ? query.error.code : 'INTERNAL')}</Alert>}
@@ -114,8 +118,8 @@ export function Assignments({ cls }: { cls: ClassSummary }) {
             Create your first assignment.
           </EmptyState>
         ))}
-      <Group heading="Drafts" query={drafts} canResume={!archived} />
-      <Group heading="Published" query={published} canResume={!archived} />
+      <Group heading="Drafts" query={drafts} canEdit={!archived} />
+      <Group heading="Published" query={published} canEdit={!archived} />
     </div>
   );
 }

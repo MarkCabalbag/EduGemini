@@ -5,6 +5,7 @@ import {
   AssignmentStatusSchema,
   EnrollmentStatusSchema,
   FileStatusSchema,
+  NotificationTypeSchema,
   RoleSchema,
   ScoringFormatSchema,
   VersionStatusSchema,
@@ -28,4 +29,5 @@ describe('shared enums match Prisma', () => {
   it('ScoringFormat', () => expect(ScoringFormatSchema.options).toEqual(prismaEnum('ScoringFormat')));
   it('VersionStatus', () => expect(VersionStatusSchema.options).toEqual(prismaEnum('VersionStatus')));
   it('FileStatus', () => expect(FileStatusSchema.options).toEqual(prismaEnum('FileStatus')));
+  it('NotificationType', () => expect(NotificationTypeSchema.options).toEqual(prismaEnum('NotificationType')));
 });

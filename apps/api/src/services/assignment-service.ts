@@ -145,8 +145,10 @@ export async function listAssignments(
 }
 
 /**
- * Edit a draft (API Spec ASG-04). A published or archived assignment answers CONFLICT for now: changing one needs the
- * criteria impact check, which comes with the edit-after-publish ticket (ASG-04).
+ * Edit an assignment (API Spec ASG-04). A draft takes every field. A published one takes every field but the criteria:
+ * changing those needs the criteria impact check, which comes with the edit-after-publish ticket (ASG-04), so for now it
+ * answers CONFIRMATION_REQUIRED. A due date change recomputes nothing, because Late is derived from the dates. The scoring
+ * format cannot change once a submission exists (PRD A13). An archived assignment answers CONFLICT.
  */
 export async function updateAssignment(
   db: PrismaClient,
@@ -156,11 +158,21 @@ export async function updateAssignment(
 ): Promise<AssignmentDetail> {
   const row = await assignmentFor(db, actor, assignmentId, 'assignment.write');
   if (row.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
+  if (row.status === 'ARCHIVED') throw new AppError('CONFLICT');
+
+  const criteriaChanged = input.criteriaText !== undefined && input.criteriaText !== row.criteriaText;
+  if (criteriaChanged && row.status !== 'DRAFT') throw new AppError('CONFIRMATION_REQUIRED');
+  const formatChanged = input.scoringFormat !== undefined && input.scoringFormat !== row.scoringFormat;
 
   const scoringFormat = input.scoringFormat ?? row.scoringFormat;
-  // The state is part of the update, so a publish that lands first makes this one change nothing instead of editing a published assignment.
+  // The rules are part of the update, so a change that lands first (a publish before a criteria edit, a first submission
+  // before a format change) makes this one change nothing instead of breaking them.
   const { count } = await db.assignment.updateMany({
-    where: { id: assignmentId, status: 'DRAFT' },
+    where: {
+      id: assignmentId,
+      status: criteriaChanged ? 'DRAFT' : { not: 'ARCHIVED' },
+      ...(formatChanged && { submissions: { none: { state: { not: null } } } }), // a row with no state is an upload still open, not a submission
+    },
     data: {
       updatedAt: new Date(), // always one field to write: with none, the update does not run and would count as a miss
       title: input.title,
@@ -174,7 +186,10 @@ export async function updateAssignment(
       acceptLate: input.acceptLate,
     },
   });
-  if (count === 0) throw new AppError('CONFLICT');
+  if (count === 0) {
+    const locked = formatChanged && (await db.submission.count({ where: { assignmentId, state: { not: null } } })) > 0;
+    throw new AppError(locked ? 'FORMAT_LOCKED' : 'CONFLICT');
+  }
   return toDetail(await db.assignment.findUniqueOrThrow({ where: { id: assignmentId } }));
 }
 

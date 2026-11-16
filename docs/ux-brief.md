@@ -163,7 +163,7 @@ Design note from the run: white text on the dark-theme primary `#6366F1` measure
 ## 6. Layout and navigation
 
 ### 6.1 App shell
-- **Header** (all signed-in screens): logo or wordmark on the left; on the right, in order: **Review Queue** (instructors only, with a count badge), **Notifications** (bell with unread count), **Settings**, and the account menu. Matches the App Flow Navigation Map.
+- **Header** (all signed-in screens): logo or wordmark on the left; on the right, in order: **Review Queue** (instructors only, with a count badge), **Notifications** (bell with the unread count beside it when above zero), **Settings**, and the account menu. Matches the App Flow Navigation Map.
 - **Class pages** add a second row of tabs: Overview, Assignments, People, Gradebook, Announcements (Could). Tabs scroll horizontally on phones rather than wrapping.
 - **Breadcrumb** under the header on deep pages (for example `Biology 101 / Essay 2 / Ana L.`). On phones, show only the back arrow and the current page name.
 - **Super Admin** uses a separate layout with a left sidebar: Accounts, Classes, Platform health, Audit log. It never shares the instructor or student header.
@@ -355,6 +355,7 @@ Layout notes:
 - The Drafts section sits above published assignments and is visible only to the instructor (App Flow 4, step 3).
 - Each row shows the counts that drive the next action ("1 to review").
 - Row click opens the tracker (App Flow 8). Archive and delete live in a row menu, not as visible buttons, to keep the list calm.
+- A published row has an Edit button (not in an archived class). It opens one page with the title, "This assignment is published, so changes apply right away. The grading criteria cannot be changed yet.", and three sections, Basics, Due date and scoring, and Rules, each with its own "Save changes". After a save, "<Section> saved." (for example "Rules saved.") shows under the title in `status-approved` text with a check icon, and goes when the next save starts. *(new, pending owner approval; EG-ASG-05)*
 
 **Assignment wizard, step 2 of 5: Criteria (wireframe, desktop)**
 
@@ -518,7 +519,7 @@ Layout notes:
 
 **Class Overview (layout notes)**
 - Code and join link in `CopyField` components, each with a Copy button.
-- "Regenerate code" and "Disable code" in a card labeled Class code; both use confirm dialogs explaining that members are unaffected.
+- "Regenerate code" and "Disable code" in a card labeled Class code; both use confirm dialogs explaining that members are unaffected. Regenerate also says the old code and link stop working at once. Disable also says nobody can join until the code is regenerated. While the code is disabled, the card shows "The class code is off. Nobody can join with the code or the join link. Regenerate the code to turn it on again." in place of the code and link, and offers only "Regenerate code". The card is not shown on an archived class.
 - A Class details card has "Edit class details", which opens a dialog with the five fields of Create class (name, description, section, subject, room) filled in, and Save changes and Cancel. Saving closes the dialog; a problem shows under its field or at the top of the dialog. The card is not shown on an archived class. "Archive class" and "Delete class" are in a separate Danger zone card at the bottom.
 - "Archive class" asks first, in a `ConfirmDialog`: the class becomes read-only, students can still open it and see their work, the class code stops working, and it can be restored. On an archived class the card offers "Restore class" instead, which does not ask.
 - The first-run prompts (App Flow 4, step 1) appear as a short checklist card above the code, dismissible.
@@ -659,7 +660,7 @@ Error pages never show stack traces, error codes, or the names of internal servi
 - Submit buttons stay enabled; the error explains what is missing. Disabled buttons are used only for the upload Submit (with a reason shown beside it).
 
 ### 10.2 Destructive actions
-- Delete, remove student, archive class, delete class, delete assignment, and delete account use `ConfirmDialog`.
+- Delete, remove student, archive class, regenerate or disable the class code, delete class, delete assignment, and delete account use `ConfirmDialog`.
 - The dialog states the consequence with counts where the PRD requires them ("This removes 28 students' submissions and 3 assignments.").
 - Typed confirmation is required for: class deletion (class name), account deletion (`DELETE`), and assignment deletion (assignment name). Other confirmations are a plain "Remove" button with the destructive style.
 - The destructive button is never the default focused button in the dialog.
@@ -773,6 +774,35 @@ These strings must match the App Flow exactly. A string marked **(new)** was wri
 
 ### 11.5 Errors
 Pattern: **what happened**, **what it means for you**, **what to do**. Example: "This file couldn't be read. Your other files are saved. Try re-saving the photo or choosing a different file."
+
+### 11.6 Notifications
+An item shows its title, its body and a relative time (§11.4). The body is the class name when the event has one, otherwise nothing. Neither carries grades, feedback or file names. The page heading is "Notifications" and the count line is "N unread" *(new)*.
+
+Titles are the PRD §10 event names, shortened *(new, pending owner approval; NTF-05 sets the final wording when it adds the details each event needs, such as the decision or the new due date)*:
+
+| Type | Title |
+|---|---|
+| `SUBMISSION_GRADED` | Submission graded |
+| `GRADE_APPROVED` | Instructor approved grade |
+| `SUBMISSION_AWAITING_REVIEW` | New submission awaiting review |
+| `NEEDS_MANUAL_REVIEW_INSTRUCTOR` | Submission moved to Needs manual review |
+| `NEEDS_MANUAL_REVIEW_STUDENT` | Submitted, awaiting instructor review |
+| `KEY_NEEDS_ATTENTION` | Gemini key needs attention |
+| `REGRADE_COMPLETE` | Re-grade complete |
+| `SUBMISSION_REOPENED` | Submission reopened by instructor |
+| `JOIN_REQUEST_RECEIVED` | Join request received |
+| `JOIN_DECIDED` | Join request approved or declined |
+| `ATTEMPTS_GRANTED` | Extra resubmission attempts granted |
+| `LATE_ALLOWED` | Late submission allowed by instructor |
+| `ASSIGNMENT_PUBLISHED` | New assignment published |
+| `DUE_DATE_CHANGED` | Assignment due date changed |
+| `CLASS_DELETED` | Class deleted |
+| `INSTRUCTOR_ACCOUNT_DELETED` | Instructor account deleted |
+| `ACCOUNT_STATUS_CHANGED` | Account suspended or reinstated |
+| `RETENTION_NOTICE` | Archived-class data scheduled for deletion |
+| `ANNOUNCEMENT_POSTED` | New announcement |
+
+An item whose target is gone: the notification has no field that says so, so the list cannot show "This item is no longer available" beside it yet. The page the item opens shows it instead, in its full-page form ("This item is no longer available." with "Go to dashboard"). A page reached any other way still says "We couldn't find that page."
 
 ---
 

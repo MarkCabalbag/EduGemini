@@ -25,6 +25,7 @@ describe('rate limits (API Spec A12)', () => {
     expect(RULES.classCreateByUser).toEqual({ windowMs: 60 * 60_000, limit: 20 });
     expect(RULES.joinByUser).toEqual({ windowMs: 60 * 60_000, limit: 10 });
     expect(RULES.joinPreviewByIp).toEqual({ windowMs: 60 * 60_000, limit: 30 });
+    expect(RULES.notificationsByUser).toEqual({ windowMs: 60_000, limit: 300 });
     expect(RULES.everythingElseByUser).toEqual({ windowMs: 60_000, limit: 120 });
   });
 
@@ -86,6 +87,16 @@ describe('rate limits (API Spec A12)', () => {
     for (let i = 0; i < RULES.signInByEmailAndIp.limit * 2; i++) {
       expect((await post(app, '/api/signin', { email: 'ada@example.com' })).status).toBe(200);
     }
+  });
+
+  it('gives the notification routes 300 a minute of their own, not the general 120 (counted by IP when there is no session)', async () => {
+    const app = appWith();
+    const polls = Array.from({ length: RULES.notificationsByUser.limit + 1 }, () => request(app).get('/api/notifications/unread-count'));
+
+    const statuses = (await Promise.all(polls)).map((res) => res.status);
+
+    expect(statuses.filter((status) => status === 401)).toHaveLength(RULES.notificationsByUser.limit); // answered, not limited
+    expect(statuses.filter((status) => status === 429)).toHaveLength(1);
   });
 
   // The per-user limits are tested on the real routes with real sessions: see services/class.int.test.ts.

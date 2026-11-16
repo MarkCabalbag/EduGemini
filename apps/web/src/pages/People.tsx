@@ -142,7 +142,7 @@ export function People({ cls }: { cls: ClassSummary }) {
   return (
     <div className="space-y-6">
       <JoinApproval cls={cls} pending={counts.pending} />
-      {nobody && cls.status === 'ACTIVE' && cls.joinCode && cls.joinLink ? (
+      {nobody && cls.status === 'ACTIVE' && cls.joinCodeActive !== false && cls.joinCode && cls.joinLink ? (
         <EmptyState
           icon={Users}
           action={

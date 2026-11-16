@@ -33,6 +33,7 @@ let calls: Call[];
 let rows: Row[];
 let requireApproval: boolean;
 let archived: boolean;
+let codeActive: boolean;
 let pageSize: number;
 let decisionFailure: Response | undefined;
 let decisionGate: Promise<void> | undefined; // a decision waits for this, so a test can look at the screen while the request runs
@@ -45,6 +46,7 @@ beforeEach(() => {
   rows = [MAYA, BEN, LIA, ZED].map((row) => ({ ...row }));
   requireApproval = true;
   archived = false;
+  codeActive = true;
   pageSize = 100;
   decisionFailure = undefined;
   decisionGate = undefined;
@@ -71,7 +73,7 @@ beforeEach(() => {
           status: archived ? 'ARCHIVED' : 'ACTIVE',
           joinCode: 'K7M2PQ9X',
           joinLink: 'http://localhost:5173/join/K7M2PQ9X',
-          joinCodeActive: true,
+          joinCodeActive: codeActive,
           requireApproval,
           counts: { approved: count('ACTIVE'), pending: count('PENDING'), declined: count('DECLINED'), removed: count('REMOVED') },
         });
@@ -204,6 +206,17 @@ describe('people: lists and counts', () => {
     expect((screen.getByLabelText('Class code') as HTMLInputElement).value).toBe('K7M2PQ9X');
     expect((screen.getByLabelText('Join link') as HTMLInputElement).value).toBe('http://localhost:5173/join/K7M2PQ9X');
     expect(screen.queryByRole('button', { name: /^Pending/ })).toBeNull();
+  });
+
+  it('does not offer a disabled class code to share when nobody has joined', async () => {
+    rows = [];
+    codeActive = false;
+    openPeople();
+
+    expect(await screen.findByRole('button', { name: /^Pending/ })).toBeTruthy(); // the normal lists, with their counts
+    expect(screen.queryByLabelText('Class code')).toBeNull();
+    expect(screen.queryByLabelText('Join link')).toBeNull();
+    expect(screen.queryByText(/No students yet\. Share the class code/)).toBeNull();
   });
 });
 
