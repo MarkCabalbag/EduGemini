@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, screen, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ClassSummary, EnrollmentSummary, Me } from '@edugemini/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,6 +57,7 @@ const anEnrollment = (overrides: Partial<EnrollmentSummary> = {}): EnrollmentSum
 });
 
 type CreateBody = { name: string; description?: string; section?: string; subject?: string; room?: string };
+type UpdateBody = Partial<CreateBody>;
 type Call = { path: string; method: string; body?: unknown };
 
 let calls: Call[];
@@ -67,6 +68,7 @@ let listResult: (cursor: string | null, status: string | null) => Response;
 let getResult: (classId: string) => Response;
 let changeResult: (classId: string, action: 'archive' | 'restore') => Response;
 let createResult: (body: CreateBody) => Response;
+let updateResult: (classId: string, body: UpdateBody) => Response;
 let joinResult: () => Response;
 
 beforeEach(() => {
@@ -93,6 +95,14 @@ beforeEach(() => {
     classes.push(created);
     return Response.json(created, { status: 201 });
   };
+  // Like the API: a field left out stays, a blank optional one is cleared.
+  updateResult = (classId, { name, ...optional }) => {
+    const found = classes.find((c) => c.id === classId);
+    if (!found) return failure(404, 'NOT_FOUND');
+    if (name) found.name = name;
+    for (const [key, value] of Object.entries(optional)) Object.assign(found, { [key]: value || null });
+    return Response.json(found);
+  };
 
   vi.stubGlobal(
     'fetch',
@@ -118,6 +128,7 @@ beforeEach(() => {
       if (method === 'POST' && change) return changeResult(change[1] ?? '', change[2] as 'archive' | 'restore');
       const one = /^\/classes\/([^/?]+)$/.exec(path);
       if (method === 'GET' && one) return getResult(one[1] ?? '');
+      if (method === 'PATCH' && one) return updateResult(one[1] ?? '', body as UpdateBody);
       return failure(404, 'NOT_FOUND');
     }),
   );
@@ -721,6 +732,107 @@ describe('class page', () => {
       expect((await screen.findByRole('alert')).textContent).toContain('Something went wrong on our side.');
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(screen.getByRole('button', { name: 'Archive class' })).toBeTruthy();
+    });
+  });
+
+  describe('edit class details', () => {
+    const editCalls = (cls: ClassSummary) => callsTo('PATCH', `/classes/${cls.id}`);
+    const openDialog = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(await screen.findByRole('button', { name: 'Edit class details' }));
+      return screen.getByRole('dialog', { name: 'Edit class details' });
+    };
+
+    it('opens with the saved details, saves a change and a cleared field, and shows the new details with the code unchanged', async () => {
+      const cls = aClass({ name: 'Physics', description: 'Forces', section: 'A', subject: 'Science', room: '12' });
+      classes = [cls];
+      const user = userEvent.setup();
+      renderAt(`/classes/${cls.id}`);
+
+      const dialog = await openDialog(user);
+      expect((within(dialog).getByLabelText('Class name') as HTMLInputElement).value).toBe('Physics');
+      expect((within(dialog).getByLabelText('Description (optional)') as HTMLTextAreaElement).value).toBe('Forces');
+      expect((within(dialog).getByLabelText('Section (optional)') as HTMLInputElement).value).toBe('A');
+      await user.clear(within(dialog).getByLabelText('Class name'));
+      await user.type(within(dialog).getByLabelText('Class name'), 'Physics 2');
+      await user.clear(within(dialog).getByLabelText('Section (optional)'));
+      await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(editCalls(cls)).toMatchObject([{ body: { name: 'Physics 2', description: 'Forces', section: '', subject: 'Science', room: '12' } }]);
+      expect(screen.getByRole('heading', { name: 'Physics 2' })).toBeTruthy();
+      expect(screen.getByText('Science · Room 12')).toBeTruthy(); // the section is gone
+      expect((screen.getByLabelText('Class code') as HTMLInputElement).value).toBe('K7M2PQ9X');
+    });
+
+    it('changes nothing on Cancel, and opens again with the saved details, not the unsaved ones', async () => {
+      const cls = aClass({ name: 'Physics' });
+      classes = [cls];
+      const user = userEvent.setup();
+      renderAt(`/classes/${cls.id}`);
+
+      const dialog = await openDialog(user);
+      await user.type(within(dialog).getByLabelText('Class name'), ' (draft)');
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(editCalls(cls)).toHaveLength(0);
+      expect(screen.getByRole('heading', { name: 'Physics' })).toBeTruthy();
+      expect((within(await openDialog(user)).getByLabelText('Class name') as HTMLInputElement).value).toBe('Physics');
+    });
+
+    it('names a blank class name and sends nothing', async () => {
+      const cls = aClass({ name: 'Physics' });
+      classes = [cls];
+      const user = userEvent.setup();
+      renderAt(`/classes/${cls.id}`);
+
+      const dialog = await openDialog(user);
+      await user.clear(within(dialog).getByLabelText('Class name'));
+      await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+      expect(await within(dialog).findByText('Required')).toBeTruthy();
+      expect(editCalls(cls)).toHaveLength(0);
+      expect(screen.getByRole('dialog')).toBeTruthy();
+    });
+
+    it('puts a problem the server found under its field, and keeps what was typed', async () => {
+      const cls = aClass({ name: 'Physics' });
+      classes = [cls];
+      updateResult = () => failure(400, 'VALIDATION', { room: 'Too long' });
+      const user = userEvent.setup();
+      renderAt(`/classes/${cls.id}`);
+
+      const dialog = await openDialog(user);
+      await user.type(within(dialog).getByLabelText('Room (optional)'), '12');
+      await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+      expect(await within(dialog).findByText('Too long')).toBeTruthy();
+      expect((within(dialog).getByLabelText('Room (optional)') as HTMLInputElement).value).toBe('12');
+    });
+
+    it('says what went wrong inside the dialog, and the class stays as it was', async () => {
+      const cls = aClass({ name: 'Physics' });
+      classes = [cls];
+      updateResult = () => failure(409, 'CLASS_ARCHIVED');
+      const user = userEvent.setup();
+      renderAt(`/classes/${cls.id}`);
+
+      const dialog = await openDialog(user);
+      await user.type(within(dialog).getByLabelText('Class name'), ' 2');
+      await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+      expect((await within(dialog).findByRole('alert')).textContent).toContain('This class is archived and read-only.');
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Physics', hidden: true })).toBeTruthy(); // the page behind the dialog is hidden from screen readers
+    });
+
+    it('is not offered on an archived class, which is read-only', async () => {
+      const cls = aClass({ name: 'Physics', status: 'ARCHIVED' });
+      classes = [cls];
+      renderAt(`/classes/${cls.id}`);
+
+      expect(await screen.findByRole('button', { name: 'Restore class' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Edit class details' })).toBeNull();
     });
   });
 

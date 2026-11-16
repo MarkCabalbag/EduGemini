@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreateClassSchema, JoinSchema, ListClassesQuerySchema } from './classes';
+import { CreateClassSchema, JoinSchema, ListClassesQuerySchema, UpdateClassSchema } from './classes';
 
 describe('JoinSchema', () => {
   it('trims and uppercases the code, so entry is case-insensitive', () => {
@@ -51,5 +51,33 @@ describe('CreateClassSchema', () => {
 
   it('accepts ordinary text, including accents and emoji', () => {
     expect(CreateClassSchema.safeParse({ ...valid, name: 'Matemáticas 📐', room: 'B-12' }).success).toBe(true);
+  });
+});
+
+describe('UpdateClassSchema', () => {
+  it('takes any of the five fields, trimmed, and nothing else is required', () => {
+    expect(UpdateClassSchema.parse({})).toEqual({});
+    expect(UpdateClassSchema.parse({ name: '  Physics ', room: '4' })).toEqual({ name: 'Physics', room: '4' });
+  });
+
+  it('keeps a blank optional field, so the service can clear it', () => {
+    expect(UpdateClassSchema.parse({ section: '   ', description: '' })).toEqual({ section: '', description: '' });
+  });
+
+  it('refuses a blank name and a name over 120 characters', () => {
+    expect(UpdateClassSchema.safeParse({ name: '  ' }).success).toBe(false);
+    expect(UpdateClassSchema.safeParse({ name: 'a'.repeat(121) }).success).toBe(false);
+  });
+
+  it('refuses a field it does not edit, such as the join code', () => {
+    expect(UpdateClassSchema.safeParse({ joinCode: 'ABCDEFGH' }).success).toBe(false);
+    expect(UpdateClassSchema.safeParse({ name: 'Physics', requireApproval: true }).success).toBe(false);
+  });
+
+  it('refuses a NUL character or half an emoji in every text field, as create does', () => {
+    for (const field of ['name', 'description', 'section', 'subject', 'room']) {
+      expect(UpdateClassSchema.safeParse({ [field]: 'a\u0000b' }).success, field).toBe(false);
+      expect(UpdateClassSchema.safeParse({ [field]: 'Bio\ud83d' }).success, field).toBe(false);
+    }
   });
 });

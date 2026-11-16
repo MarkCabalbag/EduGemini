@@ -2126,6 +2126,7 @@ components:
 
     ClassUpdate:
       type: object
+      description: A field left out is unchanged; a blank optional field is cleared.
       properties:
         name: { type: string, minLength: 1, maxLength: 120 }
         description: { type: string, maxLength: 2000 }

@@ -23,6 +23,19 @@ export const CreateClassSchema = z.object({
 });
 export type CreateClass = z.infer<typeof CreateClassSchema>;
 
+/**
+ * Edit class details (API Spec CLS-04). Any of the five fields: one left out is unchanged, a blank optional one is cleared,
+ * and the name cannot be blank. Anything else, such as the join code, is refused (`ClassUpdate` in openapi.yaml).
+ */
+export const UpdateClassSchema = z.strictObject({
+  name: safeText(120).min(1, 'Required').optional(),
+  description: optionalText(2000),
+  section: optionalText(60),
+  subject: optionalText(60),
+  room: optionalText(60),
+});
+export type UpdateClass = z.infer<typeof UpdateClassSchema>;
+
 /** The class id in the path of every `/classes/:classId` route. */
 export const ClassParamsSchema = z.object({ classId: z.uuid() });
 

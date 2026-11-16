@@ -670,10 +670,10 @@ Each endpoint has the same fields:
 `PATCH /api/classes/{classId}` · Standard set: `STD-MUT`
 - **Access:** owning instructor.
 - **FR:** FR-CLS-10.
-- **Request:** any of `{ name, description, section, subject, room }`.
+- **Request:** any of `{ name, description, section, subject, room }`, with the limits of CLS-02. A field left out is unchanged, and a blank optional field is cleared. The name cannot be blank. Any other field, such as `joinCode`, is `VALIDATION`.
 - **Response:** `200` `ClassSummary`.
-- **Errors:** `CLASS_ARCHIVED`, `VALIDATION`.
-- **Effects:** the code and members are not affected (FR-CLS-10).
+- **Errors:** `NOT_FOUND`, `CLASS_ARCHIVED`, `VALIDATION`.
+- **Effects:** the code and members are not affected (FR-CLS-10). An archived class is read-only, so it answers `CLASS_ARCHIVED` until it is restored.
 - **Test:** `class.spec`.
 
 #### CLS-05 · Archive class

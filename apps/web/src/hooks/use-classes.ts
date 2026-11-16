@@ -1,5 +1,15 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ClassPage, ClassStatus, ClassSummary, CreateClass, EnrolledPage, Join, JoinPreview, JoinResult } from '@edugemini/shared';
+import type {
+  ClassPage,
+  ClassStatus,
+  ClassSummary,
+  CreateClass,
+  EnrolledPage,
+  Join,
+  JoinPreview,
+  JoinResult,
+  UpdateClass,
+} from '@edugemini/shared';
 import { api } from '../lib/api';
 
 export const classKeys = {
@@ -60,6 +70,15 @@ export function useArchiveClass(classId: string) {
   return useMutation({
     mutationFn: (archive: boolean) => api<ClassSummary>(`/classes/${classId}/${archive ? 'archive' : 'restore'}`, { method: 'POST' }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: classKeys.all }),
+  });
+}
+
+/** Change a class's details (API Spec CLS-04). The class and every list of classes are read again, so the new name shows everywhere. */
+export function useUpdateClass(classId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateClass) => api<ClassSummary>(`/classes/${classId}`, { method: 'PATCH', body: input }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: classKeys.all }),
   });
 }
 

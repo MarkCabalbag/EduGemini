@@ -11,6 +11,7 @@ import type {
   JoinPreview,
   JoinResult,
   ListClassesQuery,
+  UpdateClass,
 } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import { decodeCursor, encodeCursor } from '../lib/cursor';
@@ -186,6 +187,36 @@ export async function getClass(db: PrismaClient, actor: Actor, classId: string, 
 
   authorize(actor, 'class.view', { classInstructorId: row.instructorId }); // someone else's class looks the same as a missing one
   return toClassSummary(row, appUrl, await enrollmentCounts(db, row.id));
+}
+
+/**
+ * Change a class's name, description, section, subject or room (API Spec CLS-04). A field left out stays as it is and a
+ * blank optional one is cleared. The code and the students are not touched. An archived class is read-only (FR-CLS-06).
+ */
+export async function updateClass(
+  db: PrismaClient,
+  actor: Actor,
+  classId: string,
+  input: UpdateClass,
+  appUrl: string,
+): Promise<ClassSummary> {
+  const row = await db.class.findUnique({ where: { id: classId } });
+  if (!row) throw new AppError('NOT_FOUND');
+  authorize(actor, 'class.edit', { classInstructorId: row.instructorId }); // someone else's class looks the same as a missing one
+  if (row.archivedAt) throw new AppError('CLASS_ARCHIVED');
+
+  const blankIsNull = (value?: string) => (value === undefined ? undefined : value || null); // undefined: leave as is
+  const updated = await db.class.update({
+    where: { id: classId },
+    data: {
+      name: input.name,
+      description: blankIsNull(input.description),
+      section: blankIsNull(input.section),
+      subject: blankIsNull(input.subject),
+      room: blankIsNull(input.room),
+    },
+  });
+  return toClassSummary(updated, appUrl);
 }
 
 /** Stops unless the class is the caller's to archive. Someone else's class looks the same as a missing one (API Spec A3). */

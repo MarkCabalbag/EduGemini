@@ -14,6 +14,7 @@ import { ApiRequestError } from '../lib/api';
 import { classMeta } from '../lib/class-meta';
 import { errorText } from '../lib/error-text';
 import { Assignments } from './Assignments';
+import { EditClassDetails } from './EditClassDetails';
 import { NotFound } from './NotFound';
 import { People } from './People';
 
@@ -124,6 +125,8 @@ export function ClassOverview() {
           <CopyField label="Join link" value={joinLink} />
         </section>
       )}
+      {/* An archived class is read-only, so its details cannot be edited until it is restored. */}
+      {onOverview && !archived && <EditClassDetails cls={cls.data} />}
       {onOverview && <ArchiveCard cls={cls.data} />}
     </div>
   );

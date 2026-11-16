@@ -519,7 +519,7 @@ Layout notes:
 **Class Overview (layout notes)**
 - Code and join link in `CopyField` components, each with a Copy button.
 - "Regenerate code" and "Disable code" in a card labeled Class code; both use confirm dialogs explaining that members are unaffected.
-- "Edit class details" opens a dialog. "Archive class" and "Delete class" are in a separate Danger zone card at the bottom.
+- A Class details card has "Edit class details", which opens a dialog with the five fields of Create class (name, description, section, subject, room) filled in, and Save changes and Cancel. Saving closes the dialog; a problem shows under its field or at the top of the dialog. The card is not shown on an archived class. "Archive class" and "Delete class" are in a separate Danger zone card at the bottom.
 - "Archive class" asks first, in a `ConfirmDialog`: the class becomes read-only, students can still open it and see their work, the class code stops working, and it can be restored. On an archived class the card offers "Restore class" instead, which does not ask.
 - The first-run prompts (App Flow 4, step 1) appear as a short checklist card above the code, dismissible.
 
