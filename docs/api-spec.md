@@ -1003,7 +1003,7 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
   - `200` with the existing `VersionView` when one is already `UPLOADING` (idempotent; the client resumes it).
 - **Errors:**
   - `ATTEMPTS_EXHAUSTED` (409) when a resubmission is needed and `attemptsLeft` is 0.
-  - `LATE_CLOSED` (409) when the due date has passed, late is closed, and `lateAllowed` is false.
+  - `LATE_CLOSED` (409) when the due date has passed, late is closed, and `lateAllowed` is false. It is checked before an upload that is already open is returned, and for a resubmission as well as a first submission. Sending a file (SUB-03) does not check it; finalize does.
   - `LOCKED_APPROVED` (409) when the submission is approved.
   - `CLASS_ARCHIVED` (409).
   - `NOT_FOUND`, `ENROLLMENT_PENDING`.

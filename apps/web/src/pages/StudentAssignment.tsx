@@ -11,6 +11,7 @@ import { useClass } from '../hooks/use-classes';
 import { useMySubmission } from '../hooks/use-submission';
 import { ApiRequestError } from '../lib/api';
 import { scoringText } from '../lib/assignment-meta';
+import { errorText } from '../lib/error-text';
 import { browserTimeZone, formatDue } from '../lib/zoned-time';
 import { NotFound } from './NotFound';
 import { SubmissionReceipt } from './SubmissionReceipt';
@@ -29,16 +30,27 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /**
- * The student's part of the page: the upload control until they have submitted, then the receipt. A resubmit control and
- * the result block come with their tickets, so for now a submitted student sees the receipt only.
+ * The student's part of the page: the upload control until they have submitted, then the receipt. When the due date has
+ * passed and late work is closed, a student who has not submitted sees that instead of the upload control. A resubmit
+ * control and the result block come with their tickets, so for now a submitted student sees the receipt only.
  */
 function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; canUpload: boolean }) {
   const mine = useMySubmission(assignmentId);
   if (mine.isPending) return <PageLoading />;
   if (mine.isError) return <ErrorState error={mine.error} onRetry={() => void mine.refetch()} />;
-  const { state } = mine.data;
-  if (state === 'NOT_SUBMITTED' || state === 'UPLOADING') return canUpload ? <UploadFiles assignmentId={assignmentId} /> : null;
-  return <SubmissionReceipt submission={mine.data} />;
+  const { state, closed } = mine.data;
+  if (state !== 'NOT_SUBMITTED' && state !== 'UPLOADING') return <SubmissionReceipt submission={mine.data} />;
+  if (!canUpload) return null;
+  if (closed) {
+    return (
+      <section className="space-y-2">
+        <h2 className="text-title font-semibold">Your submission</h2>
+        <StatusChip tone="info">Closed</StatusChip>
+        <p>{errorText('LATE_CLOSED')}</p>
+      </section>
+    );
+  }
+  return <UploadFiles assignmentId={assignmentId} />;
 }
 
 /**

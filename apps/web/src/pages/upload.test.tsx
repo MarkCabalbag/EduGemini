@@ -351,6 +351,7 @@ describe('submitting the files', () => {
     [422, 'FILE_LIMIT', { limit: 'total-size' }, 'Your files add up to more than 15 MB.'],
     [422, 'FILE_LIMIT', { limit: 'grading-budget' }, 'These files are too large to grade together. Remove one and try again.'],
     [409, 'CLASS_ARCHIVED', undefined, 'This class is archived and read-only.'],
+    [409, 'LATE_CLOSED', undefined, 'Late submissions are closed for this assignment.'],
   ])('says what went wrong for %s %s', async (status, code, details, text) => {
     finalizeAnswer = () => failure(status as number, code as string, undefined, details);
     await openPage();
@@ -398,5 +399,35 @@ describe('a student who has already submitted', () => {
 
     expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Your files' })).toBeNull();
+  });
+});
+
+describe('when late submissions are closed', () => {
+  it('shows Closed and the reason in place of the upload control', async () => {
+    mine = submission({ closed: true });
+    renderAt(`/assignments/${ASSIGNMENT_ID}`);
+
+    expect(await screen.findByText('Closed')).toBeTruthy();
+    expect(screen.getByText('Late submissions are closed for this assignment.')).toBeTruthy();
+    expect(screen.queryByLabelText('Add photos or PDF')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Your files' })).toBeNull();
+  });
+
+  it('still shows the receipt to a student who submitted before it closed', async () => {
+    mine = { ...submitted(['essay.pdf']), closed: true };
+    renderAt(`/assignments/${ASSIGNMENT_ID}`);
+
+    expect(await screen.findByText('essay.pdf')).toBeTruthy();
+    expect(screen.queryByText('Closed')).toBeNull();
+  });
+
+  it('shows nothing to upload in an archived class, closed or not', async () => {
+    archived = true;
+    mine = submission({ closed: true });
+    renderAt(`/assignments/${ASSIGNMENT_ID}`);
+
+    await screen.findByText('Archived');
+    expect(screen.queryByText('Closed')).toBeNull();
+    expect(screen.queryByLabelText('Add photos or PDF')).toBeNull();
   });
 });

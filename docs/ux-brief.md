@@ -577,6 +577,7 @@ Layout notes:
 - The result block appears below the instructions once a submission exists; before submission, the upload control replaces it.
 - The disclosure line is always visible on the result block, not behind a tooltip.
 - Instructor-approved: the result is read-only, with a lock icon and "Locked by your instructor."
+- Late work closed (past due, late not accepted, and the instructor has not allowed this student): a student who has not submitted sees the "Closed" chip and "Late submissions are closed for this assignment." in place of the upload control. A student who already submitted still sees their receipt.
 
 **Upload (wireframe, phone; App Flow 6, step 4)**
 

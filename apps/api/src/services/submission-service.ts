@@ -31,8 +31,8 @@ import { enrollmentOf } from './assignment-service';
 
 /**
  * A student's submission, the three steps of API Spec A7: open a version, send its files, finalize. Finalize makes the
- * submission and queues it, but nothing grades yet (no job queue, FND-09), and late work (SUB-06) and the lock after
- * approval (SUB-08) come with their tickets.
+ * submission and queues it, but nothing grades yet (no job queue, FND-09), and the lock after approval (SUB-08) comes
+ * with its ticket. Open and finalize both refuse late work when it is closed (SUB-06).
  */
 
 const toVersionView = (row: SubmissionVersion): VersionView => ({
@@ -60,6 +60,10 @@ const isUniqueViolation = (error: unknown) => error instanceof Prisma.PrismaClie
 const attemptsLeft = (maxResubmissions: number | null, extraAttempts: number, used: number): number | null =>
   maxResubmissions === null ? null : Math.max(0, maxResubmissions + extraAttempts - used);
 
+/** Past due, late work not accepted, and the instructor has not let this student in (Backend Schema §8.1, `is_closed`). */
+const isClosed = (assignment: Pick<Assignment, 'acceptLate' | 'dueAt'>, lateAllowed: boolean): boolean =>
+  !assignment.acceptLate && Date.now() > assignment.dueAt.getTime() && !lateAllowed;
+
 /**
  * Open an upload for the student (API Spec SUB-02). While one is open, asking again gives that same one. The database
  * allows one open version per submission, so two taps at the same moment also end up with the same version.
@@ -78,6 +82,13 @@ export async function openVersion(
   authorize(actor, 'submission.upload', { enrollment: await enrollmentOf(db, actor, assignment.classId) });
   if (assignment.status !== 'PUBLISHED') throw new AppError('NOT_FOUND'); // a draft looks the same as a missing one
   if (assignment.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
+  // Checked before anything is created or returned: a refused student gets no submission row, and an upload that was open
+  // when the due date passed cannot go on.
+  const earlier = await db.submission.findUnique({
+    where: { assignmentId_studentId: { assignmentId, studentId: actor.id } },
+    select: { lateAllowed: true },
+  });
+  if (isClosed(assignment, earlier?.lateAllowed ?? false)) throw new AppError('LATE_CLOSED');
 
   const findOpen = () =>
     db.submissionVersion.findFirst({ where: { status: 'UPLOADING', submission: { assignmentId, studentId: actor.id } } });
@@ -218,7 +229,7 @@ const DISPLAY_STATE: Record<SubmissionState, DisplayState> = {
 /**
  * The student's own submission for one assignment (API Spec SUB-01), read through `db`, which may be a transaction.
  * `UPLOADING` shows only while nothing is stored yet; after that the state is the submission's, and an upload opened
- * for a resubmission is `draftVersion`. `closed` is only reported here; refusing late work is SUB-06.
+ * for a resubmission is `draftVersion`. `closed` is reported here and refused by `openVersion` and `finalizeVersion`.
  */
 async function studentSubmissionOf(db: Prisma.TransactionClient, studentId: string, assignment: Assignment): Promise<StudentSubmission> {
   const submission = await db.submission.findUnique({ where: { assignmentId_studentId: { assignmentId: assignment.id, studentId } } });
@@ -232,7 +243,7 @@ async function studentSubmissionOf(db: Prisma.TransactionClient, studentId: stri
   return {
     state: submission?.state ? DISPLAY_STATE[submission.state] : draft ? 'UPLOADING' : 'NOT_SUBMITTED',
     isLate: latest !== null && latest > assignment.dueAt,
-    closed: !assignment.acceptLate && Date.now() > assignment.dueAt.getTime() && !submission?.lateAllowed,
+    closed: isClosed(assignment, submission?.lateAllowed ?? false),
     attemptsLeft: left,
     unlimited: left === null,
     firstSubmittedAt: submission?.firstSubmittedAt?.toISOString() ?? null,
@@ -284,6 +295,7 @@ export async function finalizeVersion(
     if (version.status === 'STORED') return studentSubmissionOf(tx, actor.id, assignment);
     if (version.status !== 'UPLOADING') throw new AppError('UPLOAD_NOT_OPEN');
     if (assignment.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
+    if (isClosed(assignment, submission.lateAllowed)) throw new AppError('LATE_CLOSED');
 
     const listed = new Set(expectedFileIds);
     const missing = expectedFileIds.filter((id) => version.files.find((file) => file.clientFileId === id)?.status !== 'STORED');

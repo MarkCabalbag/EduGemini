@@ -724,6 +724,106 @@ describe('resubmitting through finalize (SUB-05)', () => {
   });
 });
 
+describe('late work (SUB-06)', () => {
+  const yesterday = () => new Date(Date.now() - DAY_MS);
+  /** Moves the due date into the past, as if the time had passed. */
+  const makePastDue = (assignmentId: string) => db.assignment.update({ where: { id: assignmentId }, data: { dueAt: yesterday() } });
+
+  it('is LATE_CLOSED when opening after the due date with late work closed, and makes no submission', async () => {
+    const assignment = await seedAssignment(cls.id, { dueAt: yesterday(), acceptLate: false });
+    const res = await openUpload(build(), assignment.id, student.cookie);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('LATE_CLOSED');
+    expect(await db.submission.count({ where: { assignmentId: assignment.id } })).toBe(0);
+  });
+
+  it('accepts late work when late is accepted, and shows Late', async () => {
+    const assignment = await seedAssignment(cls.id, { dueAt: yesterday(), acceptLate: true });
+    const { versionId, ids } = await upload(assignment.id, student);
+    const res = await finalize(build(), versionId, student.cookie, ids);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ state: 'GRADING', isLate: true, closed: false });
+    expect((await submissionOf(assignment.id, student)).latestSubmittedAt).not.toBeNull();
+  });
+
+  it('follows the latest submission time: on time at first, Late after a late resubmission, with both times kept', async () => {
+    const assignment = await seedAssignment(cls.id, { acceptLate: true });
+    const first = await upload(assignment.id, student);
+    await finalize(build(), first.versionId, student.cookie, first.ids);
+    // The time passes: the first submission was two days ago, and the due date was yesterday.
+    const twoDaysAgo = new Date(Date.now() - 2 * DAY_MS);
+    await db.submission.updateMany({ where: { assignmentId: assignment.id, studentId: student.user.id }, data: { firstSubmittedAt: twoDaysAgo, latestSubmittedAt: twoDaysAgo } });
+    await makePastDue(assignment.id);
+    expect((await getMine(build(), assignment.id, student.cookie)).body.isLate).toBe(false);
+
+    const second = await upload(assignment.id, student);
+    const res = await finalize(build(), second.versionId, student.cookie, second.ids);
+    expect(res.status).toBe(200);
+    expect(res.body.isLate).toBe(true);
+    expect(res.body.firstSubmittedAt).toBe(twoDaysAgo.toISOString());
+    expect(new Date(res.body.latestSubmittedAt).getTime()).toBeGreaterThan(Date.now() - 60_000);
+  });
+
+  it('lets a student in when the instructor allowed them, for open and finalize', async () => {
+    const assignment = await seedAssignment(cls.id, { dueAt: yesterday(), acceptLate: false });
+    await db.submission.create({ data: { assignmentId: assignment.id, studentId: student.user.id, lateAllowed: true } });
+    const { versionId, ids } = await upload(assignment.id, student);
+    const res = await finalize(build(), versionId, student.cookie, ids);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ state: 'GRADING', isLate: true, closed: false });
+  });
+
+  it('refuses a resubmission once the due date has passed and late work is closed, and makes no new version', async () => {
+    const assignment = await seedAssignment(cls.id, { acceptLate: false });
+    const first = await upload(assignment.id, student);
+    expect((await finalize(build(), first.versionId, student.cookie, first.ids)).status).toBe(200);
+    await makePastDue(assignment.id);
+
+    const res = await openUpload(build(), assignment.id, student.cookie);
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('LATE_CLOSED');
+    expect(await db.submissionVersion.count({ where: { submission: { assignmentId: assignment.id } } })).toBe(1);
+  });
+
+  it('stops an upload that was open when the due date passed: open and finalize both refuse, and nothing changes', async () => {
+    const assignment = await seedAssignment(cls.id, { acceptLate: false });
+    const { versionId, ids } = await upload(assignment.id, student);
+    await makePastDue(assignment.id);
+
+    expect((await openUpload(build(), assignment.id, student.cookie)).body.error.code).toBe('LATE_CLOSED');
+    const res = await finalize(build(), versionId, student.cookie, ids);
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('LATE_CLOSED');
+    expect((await db.submissionVersion.findUniqueOrThrow({ where: { id: versionId } })).status).toBe('UPLOADING');
+    expect(await submissionOf(assignment.id, student)).toMatchObject({ state: null, currentVersionId: null });
+  });
+
+  it('still answers a repeated finalize of a stored version after the due date', async () => {
+    const assignment = await seedAssignment(cls.id, { acceptLate: false });
+    const { versionId, ids } = await upload(assignment.id, student);
+    const first = await finalize(build(), versionId, student.cookie, ids);
+    await makePastDue(assignment.id);
+
+    const again = await finalize(build(), versionId, student.cookie, ids);
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ state: 'GRADING', closed: true });
+    expect(again.body.latestSubmittedAt).toBe(first.body.latestSubmittedAt);
+  });
+
+  it('checks the class first: a pending student gets ENROLLMENT_PENDING, an instructor and a stranger NOT_FOUND', async () => {
+    const assignment = await seedAssignment(cls.id, { dueAt: yesterday(), acceptLate: false });
+    const pending = await enrolledStudent('late-pending', cls.id, 'PENDING');
+    const stranger = await signedInUser('late-stranger', 'STUDENT');
+
+    expect((await openUpload(build(), assignment.id, pending.cookie)).body.error.code).toBe('ENROLLMENT_PENDING');
+    expect((await openUpload(build(), assignment.id, owner.cookie)).body.error.code).toBe('NOT_FOUND');
+    expect((await openUpload(build(), assignment.id, stranger.cookie)).body.error.code).toBe('NOT_FOUND');
+  });
+});
+
 describe('GET /api/assignments/:id/me (SUB-01)', () => {
   it('is NOT_SUBMITTED before anything is done', async () => {
     const assignment = await seedAssignment(cls.id);

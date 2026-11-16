@@ -4,6 +4,7 @@ import { LIMITS, MiB, type ErrorCode } from '@edugemini/shared';
 const TEXT: Partial<Record<ErrorCode | 'NETWORK', string>> = {
   UPLOAD_INCOMPLETE: "Some files haven't finished uploading.",
   ATTEMPTS_EXHAUSTED: "You've used all your resubmissions. Your instructor can give you more.",
+  LATE_CLOSED: 'Late submissions are closed for this assignment.',
   FILE_TYPE: "This file type isn't supported. Use PDF, JPG, or PNG.",
   FILE_TOO_LARGE: 'This file is larger than 10 MB.',
   FILE_ERROR: "This file couldn't be read. Try re-saving it or choosing a different file.",
