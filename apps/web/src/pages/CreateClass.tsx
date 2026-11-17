@@ -44,6 +44,7 @@ export function CreateClass() {
 
   return (
     <div className="max-w-xl space-y-6">
+      <title>Create class · EduGemini</title>
       <h1 className="text-display font-semibold">Create class</h1>
       {formError && <Alert>{formError}</Alert>}
       <form onSubmit={onSubmit} noValidate className="space-y-4">

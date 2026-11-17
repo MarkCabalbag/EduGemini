@@ -35,6 +35,7 @@ export function StudentClass() {
       // A pending student is told the class name and nothing else (API Spec CLS-03).
       return (
         <Page>
+          <title>{`${String(error.details?.['className'] ?? 'Class')} · EduGemini`}</title>
           <h1 className="text-display font-semibold">{String(error.details?.['className'] ?? '')}</h1>
           <Alert variant="info">Pending approval. Your instructor will review your request.</Alert>
         </Page>
@@ -51,6 +52,7 @@ export function StudentClass() {
   return (
     <Page>
       <div className="space-y-2">
+        <title>{`${name} · EduGemini`}</title>
         <h1 className="text-display font-semibold">{name}</h1>
         {status === 'ARCHIVED' && <StatusChip tone="info">Archived</StatusChip>}
         {instructorName && <p className="text-muted">Taught by {instructorName}</p>}

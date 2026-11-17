@@ -12,9 +12,10 @@ import { showApiError } from '../lib/form-errors';
 
 const SHOWN_FIELDS = ['name', 'description', 'section', 'subject', 'room'];
 
+type UpdateClass = ReturnType<typeof useUpdateClass>;
+
 /** The form, in a component of its own so it starts again from the saved details each time the dialog opens. */
-function EditForm({ cls, onDone }: { cls: ClassSummary; onDone: () => void }) {
-  const updateClass = useUpdateClass(cls.id);
+function EditForm({ cls, updateClass, onDone }: { cls: ClassSummary; updateClass: UpdateClass; onDone: () => void }) {
   const [formError, setFormError] = useState<string>();
   const { register, handleSubmit, setError, formState } = useForm({
     resolver: zodResolver(UpdateClassSchema),
@@ -48,7 +49,9 @@ function EditForm({ cls, onDone }: { cls: ClassSummary; onDone: () => void }) {
       <TextField label="Room (optional)" {...register('room')} error={errors.room?.message} />
       <div className="flex flex-wrap justify-end gap-2">
         <Dialog.Close asChild>
-          <Button variant="secondary">Cancel</Button>
+          <Button variant="secondary" disabled={updateClass.isPending}>
+            Cancel
+          </Button>
         </Dialog.Close>
         <Button type="submit" loading={updateClass.isPending}>
           Save changes
@@ -61,6 +64,11 @@ function EditForm({ cls, onDone }: { cls: ClassSummary; onDone: () => void }) {
 /** The Class details card on Overview, with the dialog that edits them (UX Brief, Class Overview). Not shown for an archived class. */
 export function EditClassDetails({ cls }: { cls: ClassSummary }) {
   const [open, setOpen] = useState(false);
+  const updateClass = useUpdateClass(cls.id);
+  // While the save runs the dialog stays open, so a failure is shown in the form, not lost (UX Brief §12), as ConfirmDialog.
+  const stayWhileSaving = (event: Event) => {
+    if (updateClass.isPending) event.preventDefault();
+  };
 
   return (
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
@@ -71,12 +79,15 @@ export function EditClassDetails({ cls }: { cls: ClassSummary }) {
           <Button variant="secondary">Edit class details</Button>
         </Dialog.Trigger>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-fg/40" />
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-overlay" />
           {/* A sheet from the bottom on phones, centered and at most 560 px wide from tablets up, as ConfirmDialog (UX Brief §14). */}
-          <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] space-y-4 overflow-y-auto rounded-t-lg border border-border bg-surface p-6 shadow-overlay sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-140 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg">
+          <Dialog.Content
+            onEscapeKeyDown={stayWhileSaving}
+            onInteractOutside={stayWhileSaving}
+            className="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] space-y-4 overflow-y-auto rounded-t-lg border border-border bg-surface p-6 shadow-overlay sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-140 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg">
             <Dialog.Title className="text-title font-semibold">Edit class details</Dialog.Title>
             <Dialog.Description>The class code and your students are not affected.</Dialog.Description>
-            <EditForm cls={cls} onDone={() => setOpen(false)} />
+            <EditForm cls={cls} updateClass={updateClass} onDone={() => setOpen(false)} />
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

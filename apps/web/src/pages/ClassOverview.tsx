@@ -99,6 +99,7 @@ export function ClassOverview() {
         My classes
       </Link>
       <div className="space-y-2">
+        <title>{`${name} · EduGemini`}</title>
         <h1 className="text-display font-semibold">{name}</h1>
         {archived && <StatusChip tone="info">Archived</StatusChip>}
         {meta && <p className="text-muted">{meta}</p>}

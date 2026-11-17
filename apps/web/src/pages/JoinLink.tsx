@@ -58,6 +58,7 @@ export function JoinLink() {
   return (
     <div className="max-w-md space-y-6">
       <div className="space-y-2">
+        <title>{`Join ${className} · EduGemini`}</title>
         <h1 className="text-display font-semibold">{className}</h1>
         <p className="text-muted">Taught by {instructorFirstName}</p>
       </div>

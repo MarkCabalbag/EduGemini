@@ -71,6 +71,7 @@ function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
         {cls.data?.name ?? 'Class'}
       </Link>
       <div className="space-y-2">
+        <title>{`${assignment.title} · EduGemini`}</title>
         <h1 className="text-display font-semibold">{assignment.title}</h1>
         {cls.data?.status === 'ARCHIVED' && <StatusChip tone="info">Archived</StatusChip>}
         <p className="text-muted">Due {formatDue(assignment.dueAt, browserTimeZone())}</p>

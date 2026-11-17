@@ -21,6 +21,7 @@ export function PublishedEdit({ assignment }: { assignment: AssignmentDetail }) 
         Assignments
       </Link>
       <div className="space-y-2">
+        <title>{`${assignment.title} · EduGemini`}</title>
         <h1 className="text-display font-semibold">{assignment.title}</h1>
         <p>This assignment is published, so changes apply right away. The grading criteria cannot be changed yet.</p>
         {/* Always on the page, so a screen reader announces the text when it appears. Any new save clears it. */}

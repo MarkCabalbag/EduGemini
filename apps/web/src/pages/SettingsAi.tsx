@@ -153,6 +153,7 @@ function KeyPage() {
   if (key.isError) return <ErrorState error={key.error} onRetry={() => void key.refetch()} />;
   return (
     <div className="space-y-4">
+      <title>Gemini key · EduGemini</title>
       <h1 className="text-display font-semibold">Gemini key</h1>
       <KeyStatusCard status={key.data} />
       <KeyForm status={key.data} />

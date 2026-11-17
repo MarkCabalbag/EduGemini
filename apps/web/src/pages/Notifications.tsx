@@ -20,6 +20,7 @@ export function Notifications() {
     <section className="max-w-2xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
+          <title>Notifications · EduGemini</title>
           <h1 className="text-display font-semibold">Notifications</h1>
           {unread > 0 && <p className="text-muted">{unread.toLocaleString()} unread</p>}
         </div>

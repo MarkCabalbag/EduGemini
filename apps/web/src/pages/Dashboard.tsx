@@ -14,6 +14,7 @@ export function Dashboard() {
 
   return (
     <div className="space-y-8">
+      <title>{me.role === 'STUDENT' ? 'My classes · EduGemini' : 'EduGemini'}</title>
       <h1 className="text-display font-semibold">Welcome, {me.firstName}</h1>
       {me.role === 'STUDENT' ? (
         <>
