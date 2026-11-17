@@ -7,6 +7,7 @@ import { requireAction } from '../middleware/authorize';
 import { limiters } from '../middleware/rate-limit';
 import { requireAuth } from '../middleware/session';
 import { validate, validated } from '../middleware/validate';
+import type { EnqueueGrading } from '../services/grading-service';
 import { finalizeVersion, getMySubmission, openVersion, removeFile, storeFile } from '../services/submission-service';
 
 const open = { params: AssignmentParamsSchema };
@@ -33,7 +34,17 @@ function displayNameFrom(header: string | undefined): string {
  * Students only. Whether this student may use this class is the service's call, so the role check is "any student", as
  * `class.join` is for joining.
  */
-export function uploadsRouter({ db, storage, bucket }: { db: PrismaClient; storage: StorageAdapter; bucket: string }): Router {
+export function uploadsRouter({
+  db,
+  storage,
+  bucket,
+  enqueueGrading,
+}: {
+  db: PrismaClient;
+  storage: StorageAdapter;
+  bucket: string;
+  enqueueGrading: EnqueueGrading;
+}): Router {
   const router = Router();
   const guard = [requireAuth, requireAction('class.listEnrolled')];
   const uploadLimit = limiters.uploadByUser(); // one counter for opening a version and for sending its files
@@ -71,7 +82,7 @@ export function uploadsRouter({ db, storage, bucket }: { db: PrismaClient; stora
 
   router.post('/versions/:versionId/finalize', ...guard, validate(finalize), async (req, res) => {
     const { params, body } = validated(res, finalize);
-    res.json(await finalizeVersion(db, bucket, req.auth!.user, params.versionId, body.expectedFileIds));
+    res.json(await finalizeVersion(db, bucket, req.auth!.user, params.versionId, body.expectedFileIds, enqueueGrading));
   });
 
   return router;

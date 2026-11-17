@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { Prisma } from '@prisma/client';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   FileViewSchema,
   LIMITS,
@@ -14,6 +14,7 @@ import {
   TERMS_VERSION,
   VersionViewSchema,
   type EnrollmentStatus,
+  type GradeJob,
   type Role,
 } from '@edugemini/shared';
 import { createApp } from '../app';
@@ -24,6 +25,7 @@ import { uploadsRouter } from '../routes/uploads';
 import { ENCRYPTED_PDF, makePdf } from '../test/pdf-fixtures';
 import { createTestDb } from '../test/test-db';
 import { newJoinCode } from './class-service';
+import type { EnqueueGrading } from './grading-service';
 import { deleteStagedUploads, storeFile } from './submission-service';
 
 // Runs against the test database, with the files in a temporary folder. Every email carries this run's ID, so tests never
@@ -38,6 +40,16 @@ const db = createTestDb();
 let storageDir: string;
 let storage: ReturnType<typeof createLocalStorage>;
 
+// Finalize sends a grading job (AI-08). The tests record the jobs instead of running a worker; a test can replace `sender`.
+const sent: GradeJob[] = [];
+const recordJobs: EnqueueGrading = async (job) => {
+  sent.push(job);
+};
+let sender = recordJobs;
+afterEach(() => {
+  sender = recordJobs;
+});
+
 // A fresh app per test: the in-memory rate limits start empty each time.
 const build = () =>
   createApp({
@@ -45,7 +57,7 @@ const build = () =>
     logger: createLogger('silent', 'test'),
     db,
     checkDb: async () => {},
-    routers: [uploadsRouter({ db, storage, bucket: BUCKET })],
+    routers: [uploadsRouter({ db, storage, bucket: BUCKET, enqueueGrading: (job) => sender(job) })],
   });
 type TestApp = ReturnType<typeof build>;
 
@@ -863,6 +875,66 @@ describe('resubmitting through finalize (SUB-05)', () => {
 
     expect(res.body).toMatchObject({ attemptsLeft: null, unlimited: true });
     expect((await openUpload(build(), assignment.id, student.cookie)).status).toBe(201);
+  });
+});
+
+describe('finalize starts grading (AI-08)', () => {
+  const jobsFor = (submissionId: string) => sent.filter((job) => job.submissionId === submissionId);
+
+  it('sends one job for a first submission, after the version is stored', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId, ids } = await upload(assignment.id, student);
+    let statusWhenSent: string | undefined;
+    sender = async (job) => {
+      statusWhenSent = (await db.submissionVersion.findUniqueOrThrow({ where: { id: job.versionId } })).status;
+      await recordJobs(job);
+    };
+
+    expect((await finalize(build(), versionId, student.cookie, ids)).status).toBe(200);
+
+    const submission = await submissionOf(assignment.id, student);
+    expect(jobsFor(submission.id)).toEqual([{ submissionId: submission.id, versionId, mode: 'first' }]);
+    expect(statusWhenSent).toBe('STORED'); // sent after the commit, so the worker finds the version
+  });
+
+  it('sends nothing for a repeat finalize, or for two at the same moment', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId, ids } = await upload(assignment.id, student);
+    const app = build();
+    await Promise.all([finalize(app, versionId, student.cookie, ids), finalize(app, versionId, student.cookie, ids)]);
+    await finalize(app, versionId, student.cookie, ids);
+
+    expect(jobsFor((await submissionOf(assignment.id, student)).id)).toHaveLength(1);
+  });
+
+  it('sends nothing when finalize is refused', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId } = await upload(assignment.id, student);
+
+    const res = await finalize(build(), versionId, student.cookie, ['never-sent']);
+
+    expect(res.body.error.code).toBe('UPLOAD_INCOMPLETE');
+    expect(jobsFor((await submissionOf(assignment.id, student)).id)).toHaveLength(0);
+  });
+
+  it('sends a resubmit job and clears the active grade of the old version', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const first = await upload(assignment.id, student);
+    await finalize(build(), first.versionId, student.cookie, first.ids);
+    const submission = await submissionOf(assignment.id, student);
+    const grade = await db.gradeResult.create({
+      data: { submissionId: submission.id, versionId: first.versionId, source: 'AI', status: 'ACTIVE', score: 80, feedback: 'Good.', criteriaVersion: 1, model: 'fake', promptVersion: 'grade-v1', confidence: 'high' },
+    });
+    await db.submission.update({ where: { id: submission.id }, data: { activeGradeId: grade.id, state: 'AI_GENERATED' } });
+
+    const second = await upload(assignment.id, student);
+    expect((await finalize(build(), second.versionId, student.cookie, second.ids)).status).toBe(200);
+
+    expect(await submissionOf(assignment.id, student)).toMatchObject({ state: 'QUEUED', activeGradeId: null });
+    expect(jobsFor(submission.id)).toEqual([
+      { submissionId: submission.id, versionId: first.versionId, mode: 'first' },
+      { submissionId: submission.id, versionId: second.versionId, mode: 'resubmit' },
+    ]);
   });
 });
 

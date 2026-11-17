@@ -165,7 +165,7 @@ These are the shapes used across endpoints. Each has a matching component in `op
 
 **`Preferences`**: `{ "emailCategories": { "grading": true, "joins": true, "announcements": false } }`. Categories are fixed: `grading`, `joins`, `announcements`, `account`. `account` cannot be turned off (suspension and deletion notices).
 
-**`KeyStatus`**: the instructor's key (never the key itself).
+**`KeyStatus`**: the instructor's key (never the key itself). `connected` says a key is saved. `status` is null when no key is saved and until the key is first checked with Gemini (EG-KEY-03); after that it is `CONNECTED`, `NEEDS_ATTENTION`, or `QUOTA_REACHED`.
 
 | Field | Type |
 |---|---|
@@ -619,7 +619,7 @@ Each endpoint has the same fields:
 - **Request:** `{ apiKey, disclosureAcknowledged: true }`. `disclosureAcknowledged` must be `true` on the first save (FR-KEY-04). The key is never echoed.
 - **Response:** `200` `KeyStatus` with `status: "CONNECTED"`.
 - **Errors:** `KEY_INVALID`, `KEY_API_DISABLED`, `KEY_QUOTA`, `VALIDATION` (missing acknowledgement), `PROVIDER_UNAVAILABLE` (503; the key is not saved). The UI shows the provider reason for each code (UX Brief §11.2).
-- **Effects:** runs the Gemini model-list call (no generation quota, TRD §11.5). On success, encrypts the key (AES-256-GCM, Backend Schema §12.5), stores ciphertext, IV, tag, `key_version`, and `last4`, and replaces any previous key. On failure, nothing is stored and any previous key is kept.
+- **Effects:** runs the Gemini model-list call (no generation quota, TRD §11.5). On success, encrypts the key (AES-256-GCM, Backend Schema §12.5), stores ciphertext, IV, tag, `key_version`, and `last4`, and replaces any previous key. On failure, nothing is stored and any previous key is kept. Until EG-KEY-03 is built the Gemini call is not made: the key is stored as sent and the response has `status: null`. The key is trimmed first, so `last4` is the trimmed key's. The first-save rule is checked inside the locked transaction: with no key saved, any `disclosureAcknowledged` other than `true` is `VALIDATION` with `fields.disclosureAcknowledged`; replacing a saved key needs none and keeps the first acknowledgement time. A key shorter than 20 or longer than 200 characters is `VALIDATION` with `fields.apiKey`.
 - **Concurrency:** the instructor's key row is locked during the replace.
 - **External:** Gemini (B1).
 - **Test:** `key.spec`.
@@ -629,7 +629,7 @@ Each endpoint has the same fields:
 - **Access:** instructor.
 - **FR:** FR-KEY-01, FR-KEY-05.
 - **Response:** `204`.
-- **Effects:** deletes the key row. Queued grading jobs for this instructor move their submissions to Needs manual review with cause `KEY_MISSING` (App Flow §11). The instructor gets a `KEY_NEEDS_ATTENTION` notification.
+- **Effects:** deletes the key row (also when there is none: `204` either way). Queued grading jobs for this instructor move their submissions to Needs manual review with cause `KEY_MISSING` (App Flow §11). The instructor gets a `KEY_NEEDS_ATTENTION` notification. The job and notification effects come with the grading and missing-key tickets (EG-AI-03, EG-KEY-07); until then only the row is deleted.
 - **Test:** `key.spec`.
 
 #### KEY-04 · Test the saved key
@@ -1549,7 +1549,7 @@ Provider facts marked "confirmed" were checked against the sources listed at the
   - **Files API:** third-party write-ups say uploaded files are kept for 48 hours on Google's side (verify). This is the reason the design sends files inline.
   - **Blocked-response shape:** the search did not confirm `promptFeedback.blockReason` on the official errors page (verify at S3).
 - **Data sent:** the assignment title and instructions, the criteria text, reference files (when attached), the student's files in order, and scoring details. **Never sent:** student names or emails, other students' work, the instructor comment (PRD §9.1; TRD §10.4).
-- **Test substitute:** `GEMINI_MODE=fake` with scenario tags (TRD §16.2a). The fake validates requests against `GradeOutput` as well, so a schema change breaks the tests.
+- **Test substitute:** `GEMINI_MODE=fake` with scenario tags (TRD §16.2a). The adapter, fake or live, returns the model's JSON text and the grading job parses it, so the fake's malformed and out-of-range scenarios go through the real parser and a schema change breaks the tests.
 - **Failure behavior:** an outage or quota problem moves submissions to Needs manual review with the cause shown to the instructor. Students see "Submitted, awaiting instructor review" (FR-AI-04, FR-KEY-05). No retry storms: the per-key limiter and the retry caps apply.
 - **Monitoring:** every call writes a `grading_attempts` row (Backend Schema §4.17). The admin health endpoint (ADM-09) reports success rate, manual-review rate by cause, and key or quota error rate.
 - **Spike:** S3 (model, limits, error shapes, inline size), S4 (large payloads and memory).
