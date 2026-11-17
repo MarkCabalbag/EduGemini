@@ -11,7 +11,7 @@ import type {
   UpdateAssignment,
 } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
-import { decodeCursor, encodeCursor } from '../lib/cursor';
+import { decodeCursor, pageOf } from '../lib/cursor';
 import { authorize, type Action, type Actor } from '../policy/policy';
 
 /** Assignments (API Spec ASG-01 to ASG-04, ASG-06). The owning instructor does everything; an approved student can read published ones. */
@@ -136,12 +136,8 @@ export async function listAssignments(
 
   // One row more than the page, to learn whether there is a next page.
   const rows = await db.assignment.findMany({ where, orderBy: [{ dueAt: 'asc' }, { id: 'asc' }], take: query.limit + 1 });
-  const page = rows.slice(0, query.limit);
-  const last = page.at(-1);
-  return {
-    items: page.map(toSummary),
-    nextCursor: rows.length > query.limit && last ? encodeCursor({ at: last.dueAt, id: last.id }) : null,
-  };
+  const { page, nextCursor } = pageOf(rows, query.limit, (row) => ({ at: row.dueAt, id: row.id }));
+  return { items: page.map(toSummary), nextCursor };
 }
 
 /**

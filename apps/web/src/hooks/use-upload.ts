@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { LIMITS, type DraftVersion, type FileView, type StudentSubmission, type VersionView } from '@edugemini/shared';
 import { api, ApiRequestError } from '../lib/api';
-import { errorText } from '../lib/error-text';
+import { errorText, errorTextOf } from '../lib/error-text';
 import { resizeImage } from '../lib/resize-image';
 import { checkFile } from '../lib/upload-files';
 import { submissionKeys } from './use-submission';
@@ -29,13 +29,11 @@ export type UploadItem = {
 // Answers that say "try again", as opposed to the server refusing the file itself.
 const RETRYABLE = ['NETWORK', 'INTERNAL', 'SERVICE_UNAVAILABLE', 'RATE_LIMITED'];
 
-const textOf = (error: unknown) => (error instanceof ApiRequestError ? errorText(error.code, error.details) : errorText('INTERNAL'));
-
 function failureOf(error: unknown): Pick<UploadItem, 'state' | 'message'> {
   if (error instanceof ApiRequestError && !RETRYABLE.includes(error.code)) {
     return { state: 'rejected', message: errorText(error.code, error.details) };
   }
-  return { state: 'failed', message: errorText(error instanceof ApiRequestError ? error.code : 'INTERNAL') };
+  return { state: 'failed', message: errorTextOf(error) };
 }
 
 /** The files an earlier visit already stored in the open upload, so the student picks up where they stopped. */
@@ -128,7 +126,7 @@ export function useUpload(assignmentId: string, draft: DraftVersion | null) {
       await take.mutateAsync({ versionId: await openUpload(), id });
       setItems((list) => list.filter((candidate) => candidate.id !== id));
     } catch (error) {
-      change(id, { state: 'stored', message: `Couldn't remove it. ${textOf(error)}` });
+      change(id, { state: 'stored', message: `Couldn't remove it. ${errorTextOf(error)}` });
     }
   }
 
@@ -153,7 +151,7 @@ export function useUpload(assignmentId: string, draft: DraftVersion | null) {
     remove,
     submit,
     submitting: finalize.isPending,
-    submitError: finalize.error ? textOf(finalize.error) : undefined,
+    submitError: finalize.error ? errorTextOf(finalize.error) : undefined,
     /** How many files are stored, still on their way, and failed or refused. */
     counts: { stored: stored.length, waiting, stuck },
   };

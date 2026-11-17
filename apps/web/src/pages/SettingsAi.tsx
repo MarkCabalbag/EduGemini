@@ -11,8 +11,7 @@ import { PageLoading } from '../components/ui/Skeleton';
 import { TextField } from '../components/ui/TextField';
 import { useMe } from '../hooks/use-auth';
 import { useKey, useRemoveKey, useSaveKey } from '../hooks/use-key';
-import { ApiRequestError } from '../lib/api';
-import { errorText } from '../lib/error-text';
+import { errorTextOf } from '../lib/error-text';
 import { showApiError } from '../lib/form-errors';
 import { NotFound } from './NotFound';
 
@@ -98,7 +97,7 @@ function KeyForm({ status }: { status: KeyStatus }) {
     setFormError(undefined);
     removeKey.mutate(undefined, {
       onSuccess: () => setNotice('Key removed. AI grading is off until you add a key.'),
-      onError: (error) => setFormError(errorText(error instanceof ApiRequestError ? error.code : 'INTERNAL')),
+      onError: (error) => setFormError(errorTextOf(error)),
       onSettled: () => setConfirmRemove(false),
     });
   };

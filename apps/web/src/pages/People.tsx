@@ -10,8 +10,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { useApprovePending, useClassSettings, useDecision, usePeople } from '../hooks/use-people';
-import { ApiRequestError } from '../lib/api';
-import { errorText } from '../lib/error-text';
+import { errorTextOf } from '../lib/error-text';
 
 /** The four lists, and what the instructor can do to a student in each (UX Brief, People). */
 type List = { label: string; count: keyof EnrollmentCounts; empty: string; actions: { action: Decision['action']; label: string }[] };
@@ -31,8 +30,6 @@ const LISTS: Record<EnrollmentStatus, List> = {
 };
 const ORDER: EnrollmentStatus[] = ['PENDING', 'ACTIVE', 'DECLINED', 'REMOVED'];
 
-const errorCode = (error: unknown) => (error instanceof ApiRequestError ? error.code : 'INTERNAL');
-
 /** The join approval switch, and the offer to approve everyone who is still waiting once approval is off. Read-only once archived. */
 function JoinApproval({ cls, pending }: { cls: ClassSummary; pending: number }) {
   const settings = useClassSettings(cls.id);
@@ -50,7 +47,7 @@ function JoinApproval({ cls, pending }: { cls: ClassSummary; pending: number }) 
         disabled={settings.isPending || archived}
         onChange={(event) => settings.mutate(event.target.checked)}
       />
-      {settings.isError && <Alert>{errorText(errorCode(settings.error))}</Alert>}
+      {settings.isError && <Alert>{errorTextOf(settings.error)}</Alert>}
       {!requireApproval && pending > 0 && !archived && (
         <div className="space-y-4">
           <Alert variant="info">
@@ -59,7 +56,7 @@ function JoinApproval({ cls, pending }: { cls: ClassSummary; pending: number }) 
           <Button loading={approveAll.isPending} onClick={() => approveAll.mutate()}>
             Approve all pending
           </Button>
-          {approveAll.isError && <Alert>{errorText(errorCode(approveAll.error))}</Alert>}
+          {approveAll.isError && <Alert>{errorTextOf(approveAll.error)}</Alert>}
         </div>
       )}
     </section>
@@ -83,7 +80,7 @@ function PeopleList({ cls, status }: { cls: ClassSummary; status: EnrollmentStat
 
   return (
     <div className="space-y-4">
-      {decision.isError && <Alert>{errorText(errorCode(decision.error))}</Alert>}
+      {decision.isError && <Alert>{errorTextOf(decision.error)}</Alert>}
       {rows.length === 0 && <p className="text-muted">{list.empty}</p>}
       <ul className="divide-y divide-border">
         {rows.map((row) => (
@@ -121,7 +118,7 @@ function PeopleList({ cls, status }: { cls: ClassSummary; status: EnrollmentStat
           onConfirm={() => decision.mutate({ enrollmentId: removing.id, action: 'REMOVE' }, { onSettled: () => setRemoving(undefined) })}
         />
       )}
-      {people.isFetchNextPageError && <Alert>{errorText(errorCode(people.error))}</Alert>}
+      {people.isFetchNextPageError && <Alert>{errorTextOf(people.error)}</Alert>}
       {people.hasNextPage && (
         <Button variant="secondary" loading={people.isFetchingNextPage} onClick={() => void people.fetchNextPage()}>
           Show more students

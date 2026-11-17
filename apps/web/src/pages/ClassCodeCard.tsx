@@ -5,8 +5,7 @@ import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CopyField } from '../components/ui/CopyField';
 import { useChangeCode } from '../hooks/use-classes';
-import { ApiRequestError } from '../lib/api';
-import { errorText } from '../lib/error-text';
+import { errorTextOf } from '../lib/error-text';
 
 // Both ask first, and both say the students already in are not affected (UX Brief, Class Overview).
 const ASKS = {
@@ -52,7 +51,7 @@ export function ClassCodeCard({ cls }: { cls: ClassSummary }) {
           </Button>
         )}
       </div>
-      {change.isError && <Alert>{errorText(change.error instanceof ApiRequestError ? change.error.code : 'INTERNAL')}</Alert>}
+      {change.isError && <Alert>{errorTextOf(change.error)}</Alert>}
       {asking && (
         <ConfirmDialog
           open

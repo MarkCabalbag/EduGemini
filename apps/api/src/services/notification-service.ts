@@ -10,7 +10,7 @@ import {
   type UnreadCount,
 } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
-import { decodeCursor, encodeCursor } from '../lib/cursor';
+import { decodeCursor, pageOf } from '../lib/cursor';
 import type { Actor } from '../policy/policy';
 
 /**
@@ -78,12 +78,8 @@ export async function listNotifications(db: PrismaClient, actor: Actor, query: L
 
   // One row more than the page, to learn whether there is a next page.
   const rows = await db.notification.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: query.limit + 1 });
-  const page = rows.slice(0, query.limit);
-  const last = page.at(-1);
-  return {
-    items: page.map(toView),
-    nextCursor: rows.length > query.limit && last ? encodeCursor({ at: last.createdAt, id: last.id }) : null,
-  };
+  const { page, nextCursor } = pageOf(rows, query.limit, (row) => ({ at: row.createdAt, id: row.id }));
+  return { items: page.map(toView), nextCursor };
 }
 
 /** Mark one read (API Spec NTF-02). Doing it again changes nothing, and the first read time is kept. */

@@ -1,4 +1,5 @@
 import { LIMITS, MiB, type ErrorCode } from '@edugemini/shared';
+import { ApiRequestError } from './api';
 
 // One lookup from an error code to what the user reads (UX Brief §11.2, API Spec A4). Components never show `message`.
 const TEXT: Partial<Record<ErrorCode | 'NETWORK', string>> = {
@@ -36,3 +37,7 @@ export function errorText(code: ErrorCode | 'NETWORK', details?: Record<string, 
   }
   return TEXT[code] ?? GENERIC;
 }
+
+/** The text for anything a request threw: an API error by its code, anything else as an internal error. */
+export const errorTextOf = (error: unknown): string =>
+  error instanceof ApiRequestError ? errorText(error.code, error.details) : errorText('INTERNAL');

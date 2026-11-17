@@ -4,8 +4,7 @@ import { Button } from '../components/ui/Button';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { useAssignments } from '../hooks/use-assignments';
-import { ApiRequestError } from '../lib/api';
-import { errorText } from '../lib/error-text';
+import { errorTextOf } from '../lib/error-text';
 import { browserTimeZone, formatDue } from '../lib/zoned-time';
 
 /**
@@ -39,7 +38,7 @@ export function StudentAssignments({ classId }: { classId: string }) {
         </ul>
       )}
       {assignments.isFetchNextPageError && (
-        <Alert>{errorText(assignments.error instanceof ApiRequestError ? assignments.error.code : 'INTERNAL')}</Alert>
+        <Alert>{errorTextOf(assignments.error)}</Alert>
       )}
       {assignments.hasNextPage && (
         <Button variant="secondary" loading={assignments.isFetchingNextPage} onClick={() => void assignments.fetchNextPage()}>

@@ -10,9 +10,8 @@ import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { StatusChip } from '../components/ui/StatusChip';
 import { useClasses } from '../hooks/use-classes';
-import { ApiRequestError } from '../lib/api';
 import { classMeta } from '../lib/class-meta';
-import { errorText } from '../lib/error-text';
+import { errorTextOf } from '../lib/error-text';
 
 function CreateClassLink() {
   return (
@@ -76,7 +75,7 @@ export function ClassList() {
           ))}
         </ul>
       )}
-      {classes.isFetchNextPageError && <Alert>{errorText(classes.error instanceof ApiRequestError ? classes.error.code : 'INTERNAL')}</Alert>}
+      {classes.isFetchNextPageError && <Alert>{errorTextOf(classes.error)}</Alert>}
       {classes.hasNextPage && (
         <Button variant="secondary" loading={classes.isFetchingNextPage} onClick={() => void classes.fetchNextPage()}>
           Show more classes

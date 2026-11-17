@@ -6,8 +6,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { useMarkAllRead, useMarkRead, useNotifications, useUnreadCount } from '../hooks/use-notifications';
-import { ApiRequestError } from '../lib/api';
-import { errorText } from '../lib/error-text';
+import { errorTextOf } from '../lib/error-text';
 
 /** The notification center (App Flow §10): newest first, unread in bold with a dot, opening an item marks it read. */
 export function Notifications() {
@@ -30,7 +29,7 @@ export function Notifications() {
           </Button>
         )}
       </div>
-      {markAllRead.isError && <Alert>{errorText(markAllRead.error instanceof ApiRequestError ? markAllRead.error.code : 'INTERNAL')}</Alert>}
+      {markAllRead.isError && <Alert>{errorTextOf(markAllRead.error)}</Alert>}
       {notifications.isPending && <PageLoading />}
       {/* A failed first load is an error screen; a failed "Show more" is said next to its button. */}
       {notifications.isError && !notifications.data && <ErrorState error={notifications.error} onRetry={() => void notifications.refetch()} />}
@@ -49,7 +48,7 @@ export function Notifications() {
         </ul>
       )}
       {notifications.isFetchNextPageError && (
-        <Alert>{errorText(notifications.error instanceof ApiRequestError ? notifications.error.code : 'INTERNAL')}</Alert>
+        <Alert>{errorTextOf(notifications.error)}</Alert>
       )}
       {notifications.hasNextPage && (
         <Button variant="secondary" loading={notifications.isFetchingNextPage} onClick={() => void notifications.fetchNextPage()}>

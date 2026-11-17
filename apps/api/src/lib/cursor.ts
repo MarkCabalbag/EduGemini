@@ -16,3 +16,13 @@ export function decodeCursor(cursor: string): Position {
   }
   return after;
 }
+
+/**
+ * Cut a list read with `take: limit + 1` down to one page. The extra row only says there is a next page, which starts
+ * after the position of the page's last row.
+ */
+export function pageOf<T>(rows: T[], limit: number, positionOf: (row: T) => Position): { page: T[]; nextCursor: string | null } {
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return { page, nextCursor: rows.length > limit && last ? encodeCursor(positionOf(last)) : null };
+}
