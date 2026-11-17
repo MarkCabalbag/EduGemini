@@ -255,7 +255,7 @@ Each spike has a pass criterion and a fallback (TRD §17.1). Run a spike before 
 ## Build order (critical path)
 
 1. **M0:** FND-01 to FND-04, then FND-10 with SPK-01 and SPK-02. Then AUTH-02, AUTH-01, and CLS-01 to CLS-05. Then ASG-01, ASG-02, SUB-01, SUB-02, SUB-05, and the rest of M0.
-2. **M1:** NTF-01 (in-app notifications) and SPK-03 (sets pacing), then KEY-01 to KEY-03, then AI-01 to AI-03, then AI-04 to AI-08. SPK-04 runs before SUB-03. FE-04 and AI-11 close out M1.
+2. **M1:** NTF-01 (in-app notifications) and SPK-03 (sets pacing), then KEY-01 and KEY-02, then AI-01 to AI-03 on the fake Gemini adapter (decided 2026-11-16: the pipeline needs only a saved key and its status), then KEY-03 with SPK-03, then AI-04 to AI-08. SPK-04 runs before SUB-03. FE-04 and AI-11 close out M1.
 3. **M2:** REV-01 to REV-05, then SUB-08 and SUB-10, then GB-01 to GB-04. Then AI-09 and ASG-04 (criteria re-grade).
 4. **M3:** NTF-02 to NTF-05, ADM-01 to ADM-06, AUTH-05 to AUTH-10. SPK-05 runs before NTF-02.
 5. **M4 (cut first):** ANN-01 to ANN-05, ASG-11, REV-10, GB-06, GB-07, NTF-06 to NTF-07 if needed.
