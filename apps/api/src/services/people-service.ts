@@ -11,7 +11,7 @@ import type {
   PeopleQuery,
 } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
-import { decodeCursor, encodeCursor } from '../lib/cursor';
+import { decodeCursor, pageOf } from '../lib/cursor';
 import { authorize, type Actor } from '../policy/policy';
 
 /** Join approval and the people in a class (API Spec CLS-10, PPL-01 to PPL-03). All of it is for the owning instructor. */
@@ -74,13 +74,8 @@ export async function listPeople(db: PrismaClient, actor: Actor, classId: string
     enrollmentCounts(db, classId),
     db.enrollment.findMany({ where, orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }], take: query.limit + 1, include: withStudent }),
   ]);
-  const page = rows.slice(0, query.limit);
-  const last = page.at(-1);
-  return {
-    counts,
-    items: page.map(toView),
-    nextCursor: rows.length > query.limit && last ? encodeCursor({ at: last.joinedAt, id: last.id }) : null,
-  };
+  const { page, nextCursor } = pageOf(rows, query.limit, (row) => ({ at: row.joinedAt, id: row.id }));
+  return { counts, items: page.map(toView), nextCursor };
 }
 
 /** Each action, the states it may start from, and where it ends (API Spec PPL-02, Backend Schema §6.2). */

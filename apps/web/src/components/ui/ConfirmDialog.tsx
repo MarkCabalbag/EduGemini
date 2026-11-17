@@ -28,7 +28,7 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-fg/40" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-overlay" />
         {/* A sheet from the bottom on phones, centered and at most 560 px wide from tablets up (UX Brief §14). */}
         <Dialog.Content
           onOpenAutoFocus={(event) => {

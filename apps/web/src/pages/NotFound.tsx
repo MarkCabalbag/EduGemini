@@ -8,6 +8,7 @@ export function NotFound() {
 
   return (
     <div className="max-w-md space-y-4">
+      <title>{`${fromNotification ? 'No longer available' : 'Page not found'} · EduGemini`}</title>
       <h1 className="text-display font-semibold">
         {fromNotification ? 'This item is no longer available.' : "We couldn't find that page."}
       </h1>

@@ -40,6 +40,7 @@ export function SignUp() {
 
   return (
     <div className="max-w-md space-y-6">
+      <title>Create your account · EduGemini</title>
       <h1 className="text-display font-semibold">Create your account</h1>
       {formError && <Alert>{formError}</Alert>}
       <form onSubmit={onSubmit} noValidate className="space-y-4">
@@ -61,10 +62,12 @@ export function SignUp() {
               I accept the{' '}
               <Link to="/terms" target="_blank" className="text-primary underline">
                 Terms
+                <span className="sr-only"> (opens in a new tab)</span>
               </Link>{' '}
               and{' '}
               <Link to="/privacy" target="_blank" className="text-primary underline">
                 Privacy Notice
+                <span className="sr-only"> (opens in a new tab)</span>
               </Link>
             </>
           }

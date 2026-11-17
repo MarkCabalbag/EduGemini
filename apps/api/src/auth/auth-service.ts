@@ -1,7 +1,8 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import type { Logger } from 'pino';
 import type { Me, SignIn, SignUp } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
+import { isUniqueViolation } from '../lib/prisma-errors';
 import { isCommonPassword } from './common-passwords';
 import { ME_SELECT, toMe } from './me';
 import { hashPassword, verifyAgainstDummy, verifyPassword } from './password';
@@ -34,10 +35,7 @@ export async function signUp(db: PrismaClient, input: SignUp): Promise<SignedIn>
     return { me: toMe(user), token };
   } catch (error) {
     // The unique index on email is the source of truth, so two sign-ups racing cannot both win.
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      throw new AppError('EMAIL_TAKEN');
-    }
-    throw error;
+    throw isUniqueViolation(error) ? new AppError('EMAIL_TAKEN') : error;
   }
 }
 

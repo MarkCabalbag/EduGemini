@@ -7,7 +7,7 @@ import { PageLoading } from '../components/ui/Skeleton';
 import { useMe } from '../hooks/use-auth';
 import { useJoinClass, useJoinPreview } from '../hooks/use-classes';
 import { ApiRequestError } from '../lib/api';
-import { errorText } from '../lib/error-text';
+import { errorText, errorTextOf } from '../lib/error-text';
 import { joinedText } from './JoinClass';
 
 /**
@@ -58,10 +58,11 @@ export function JoinLink() {
   return (
     <div className="max-w-md space-y-6">
       <div className="space-y-2">
+        <title>{`Join ${className} · EduGemini`}</title>
         <h1 className="text-display font-semibold">{className}</h1>
         <p className="text-muted">Taught by {instructorFirstName}</p>
       </div>
-      {join.isError && <Alert>{errorText(join.error instanceof ApiRequestError ? join.error.code : 'INTERNAL')}</Alert>}
+      {join.isError && <Alert>{errorTextOf(join.error)}</Alert>}
       {join.data && <Alert variant="info">{joinedText(join.data)}</Alert>}
 
       {!me && (

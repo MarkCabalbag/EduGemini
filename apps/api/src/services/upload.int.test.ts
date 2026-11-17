@@ -26,7 +26,8 @@ import { ENCRYPTED_PDF, makePdf } from '../test/pdf-fixtures';
 import { createTestDb } from '../test/test-db';
 import { newJoinCode } from './class-service';
 import type { EnqueueGrading } from './grading-service';
-import { deleteStagedUploads, storeFile } from './submission-service';
+import { storeFile } from './submission-file-service';
+import { deleteStagedUploads } from './submission-service';
 
 // Runs against the test database, with the files in a temporary folder. Every email carries this run's ID, so tests never
 // collide and cleanup is exact.

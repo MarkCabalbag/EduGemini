@@ -90,6 +90,7 @@ Tokens are CSS variables following the shadcn/ui pattern. Light values are on `:
 | `--focus-ring` | `#4F46E5` | `#A5B4FC` | Keyboard focus outline, 2 px with 2 px offset |
 | `--danger` | `#B91C1C` | `#F87171` | Destructive text and button borders |
 | `--danger-fg` | `#FFFFFF` | `#0F172A` | Text on destructive buttons |
+| `--overlay` | `rgb(15 23 42 / 0.4)` | `rgb(0 0 0 / 0.6)` | Backdrop behind dialogs and sheets; darkens the page in both themes |
 
 ### 5.2 Status colors (chips and banners)
 

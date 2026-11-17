@@ -12,18 +12,8 @@ import { refuseInstructor, requireAction } from '../middleware/authorize';
 import { limiters } from '../middleware/rate-limit';
 import { requireAuth } from '../middleware/session';
 import { validate, validated } from '../middleware/validate';
-import {
-  archiveClass,
-  createClass,
-  disableCode,
-  getClass,
-  joinClass,
-  listClasses,
-  listEnrollments,
-  regenerateCode,
-  restoreClass,
-  updateClass,
-} from '../services/class-service';
+import { archiveClass, createClass, disableCode, getClass, listClasses, regenerateCode, restoreClass, updateClass } from '../services/class-service';
+import { joinClass, listEnrollments } from '../services/join-service';
 
 type ClassDeps = { db: PrismaClient; appUrl: string };
 

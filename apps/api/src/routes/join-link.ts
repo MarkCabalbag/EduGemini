@@ -4,7 +4,7 @@ import { JoinLinkParamsSchema } from '@edugemini/shared';
 import { refuseInstructor } from '../middleware/authorize';
 import { limiters } from '../middleware/rate-limit';
 import { validate, validated } from '../middleware/validate';
-import { previewJoin } from '../services/class-service';
+import { previewJoin } from '../services/join-service';
 
 const preview = { params: JoinLinkParamsSchema };
 

@@ -68,7 +68,7 @@ let listResult: (cursor: string | null, status: string | null) => Response;
 let getResult: (classId: string) => Response;
 let changeResult: (classId: string, action: 'archive' | 'restore') => Response;
 let createResult: (body: CreateBody) => Response;
-let updateResult: (classId: string, body: UpdateBody) => Response;
+let updateResult: (classId: string, body: UpdateBody) => Response | Promise<Response>;
 let joinResult: () => Response;
 
 beforeEach(() => {
@@ -824,6 +824,26 @@ describe('class page', () => {
       expect((await within(dialog).findByRole('alert')).textContent).toContain('This class is archived and read-only.');
       expect(screen.getByRole('dialog')).toBeTruthy();
       expect(screen.getByRole('heading', { name: 'Physics', hidden: true })).toBeTruthy(); // the page behind the dialog is hidden from screen readers
+    });
+
+    it('stays open while the save runs, so Escape cannot close it and lose the answer', async () => {
+      const cls = aClass({ name: 'Physics' });
+      classes = [cls];
+      let answer: (response: Response) => void = () => {};
+      updateResult = () => new Promise((resolve) => (answer = resolve));
+      const user = userEvent.setup();
+      renderAt(`/classes/${cls.id}`);
+
+      const dialog = await openDialog(user);
+      await user.type(within(dialog).getByLabelText('Class name'), ' 2');
+      await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+      await waitFor(() => expect(editCalls(cls)).toHaveLength(1));
+      await user.keyboard('{Escape}');
+
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect((within(dialog).getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true);
+      answer(failure(409, 'CLASS_ARCHIVED'));
+      expect((await within(dialog).findByRole('alert')).textContent).toContain('This class is archived and read-only.');
     });
 
     it('is not offered on an archived class, which is read-only', async () => {

@@ -16,6 +16,7 @@ export function WizardFrame({ classId, title, step, children }: { classId: strin
         Assignments
       </Link>
       <div className="flex flex-wrap items-center justify-between gap-2">
+        <title>{`${title} · EduGemini`}</title>
         <h1 className="text-display font-semibold">{title}</h1>
         {saved && (
           <p className="inline-flex items-center gap-1 text-approved-fg">

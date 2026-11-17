@@ -85,6 +85,20 @@ describe('signed out', () => {
     expect(posts('/auth/signin')[0]?.body).toEqual({ email: 'ada@example.com', password: 'plum-violin-stapler' });
   });
 
+  it('names each page in the tab title, and moves focus to the content on a new page', async () => {
+    const user = userEvent.setup();
+    renderAt('/signin');
+
+    await screen.findByRole('heading', { name: 'Sign in' });
+    expect(document.title).toBe('Sign in · EduGemini');
+    await fillSignIn(user);
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await screen.findByRole('heading', { name: 'Welcome, Ada' });
+    expect(document.title).toBe('My classes · EduGemini');
+    expect(document.activeElement).toBe(screen.getByRole('main'));
+  });
+
   it('shows one generic message for a wrong password', async () => {
     signInResult = () => failure(401, 'INVALID_CREDENTIALS');
     const user = userEvent.setup();

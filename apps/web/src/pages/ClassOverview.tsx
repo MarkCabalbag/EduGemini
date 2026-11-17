@@ -11,7 +11,7 @@ import { StatusChip } from '../components/ui/StatusChip';
 import { useArchiveClass, useClass } from '../hooks/use-classes';
 import { ApiRequestError } from '../lib/api';
 import { classMeta } from '../lib/class-meta';
-import { errorText } from '../lib/error-text';
+import { errorTextOf } from '../lib/error-text';
 import { Assignments } from './Assignments';
 import { ClassCodeCard } from './ClassCodeCard';
 import { EditClassDetails } from './EditClassDetails';
@@ -55,7 +55,7 @@ function ArchiveCard({ cls }: { cls: ClassSummary }) {
           </Button>
         </>
       )}
-      {archive.isError && <Alert>{errorText(archive.error instanceof ApiRequestError ? archive.error.code : 'INTERNAL')}</Alert>}
+      {archive.isError && <Alert>{errorTextOf(archive.error)}</Alert>}
       {asking && (
         <ConfirmDialog
           open
@@ -99,6 +99,7 @@ export function ClassOverview() {
         My classes
       </Link>
       <div className="space-y-2">
+        <title>{`${name} · EduGemini`}</title>
         <h1 className="text-display font-semibold">{name}</h1>
         {archived && <StatusChip tone="info">Archived</StatusChip>}
         {meta && <p className="text-muted">{meta}</p>}

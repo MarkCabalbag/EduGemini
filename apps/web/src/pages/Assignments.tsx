@@ -8,9 +8,8 @@ import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { StatusChip } from '../components/ui/StatusChip';
 import { useAssignments } from '../hooks/use-assignments';
-import { ApiRequestError } from '../lib/api';
 import { resubmissionText, scoringText } from '../lib/assignment-meta';
-import { errorText } from '../lib/error-text';
+import { errorTextOf } from '../lib/error-text';
 import { formatDue } from '../lib/zoned-time';
 
 // What publishing warns about (App Flow §5.1, F16). It never blocks.
@@ -81,7 +80,7 @@ function Group({ heading, query, canEdit }: { heading: string; query: ReturnType
           <AssignmentRow key={assignment.id} assignment={assignment} canEdit={canEdit} />
         ))}
       </ul>
-      {query.isFetchNextPageError && <Alert>{errorText(query.error instanceof ApiRequestError ? query.error.code : 'INTERNAL')}</Alert>}
+      {query.isFetchNextPageError && <Alert>{errorTextOf(query.error)}</Alert>}
       {query.hasNextPage && (
         <Button variant="secondary" loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
           Show more {heading.toLowerCase()}

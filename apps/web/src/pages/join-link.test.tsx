@@ -1,6 +1,6 @@
 ﻿// @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router';
 import type { Me } from '@edugemini/shared';
@@ -184,7 +184,8 @@ describe('join link, signed in', () => {
     renderWithState('/join/K7M2PQ9X', { afterSignIn: true });
 
     expect(await screen.findByText('You joined Biology 101.')).toBeTruthy();
-    expect(screen.getByTestId('state').textContent).toBe('null'); // the history entry no longer says "just signed in"
+    // The history entry no longer says "just signed in". The router replaces it in a transition, which can finish just after the message shows.
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('null'));
     expect(joins()).toHaveLength(1);
   });
 

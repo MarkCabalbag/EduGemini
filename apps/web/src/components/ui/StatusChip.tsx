@@ -10,7 +10,7 @@ const TONES = {
 export function StatusChip({ tone, children }: { tone: keyof typeof TONES; children: string }) {
   const { icon: Icon, colors } = TONES[tone];
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-small font-semibold ${colors}`}>
+    <span className={`inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-micro font-medium ${colors}`}>
       <Icon aria-hidden size={16} />
       {children}
     </span>

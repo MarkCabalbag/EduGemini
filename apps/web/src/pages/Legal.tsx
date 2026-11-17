@@ -5,6 +5,7 @@ import { Alert } from '../components/ui/Alert';
 function LegalPage({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="max-w-2xl space-y-4">
+      <title>{`${title} · EduGemini`}</title>
       <h1 className="text-display font-semibold">{title}</h1>
       <Alert variant="info">
         Draft text (version {TERMS_VERSION}). The final wording is still to be written and approved (EG-DEMO-05).

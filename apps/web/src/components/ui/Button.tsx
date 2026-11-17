@@ -6,7 +6,7 @@ type Variant = 'primary' | 'secondary' | 'danger';
 const STYLES: Record<Variant, string> = {
   primary: 'bg-primary text-primary-fg hover:bg-primary-hover',
   secondary: 'border border-input-border bg-surface text-fg hover:bg-border',
-  danger: 'bg-danger text-primary-fg hover:opacity-90', // for the button that confirms a destructive action (UX Brief §10.2)
+  danger: 'bg-danger text-danger-fg hover:opacity-90', // for the button that confirms a destructive action (UX Brief §10.2)
 };
 
 /** Class names for a button. Also used by links that look like buttons. */

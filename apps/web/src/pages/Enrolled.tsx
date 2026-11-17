@@ -8,8 +8,7 @@ import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { StatusChip } from '../components/ui/StatusChip';
 import { useEnrollments } from '../hooks/use-classes';
-import { ApiRequestError } from '../lib/api';
-import { errorText } from '../lib/error-text';
+import { errorTextOf } from '../lib/error-text';
 
 /** The chip for each enrollment state (UX Brief §8.4). A removed student's class is not listed, so that row is never shown. */
 const STATUS: Record<EnrollmentStatus, { tone: 'approved' | 'pending' | 'info'; label: string }> = {
@@ -70,7 +69,7 @@ export function Enrolled() {
         </ul>
       )}
       {enrollments.isFetchNextPageError && (
-        <Alert>{errorText(enrollments.error instanceof ApiRequestError ? enrollments.error.code : 'INTERNAL')}</Alert>
+        <Alert>{errorTextOf(enrollments.error)}</Alert>
       )}
       {enrollments.hasNextPage && (
         <Button variant="secondary" loading={enrollments.isFetchingNextPage} onClick={() => void enrollments.fetchNextPage()}>

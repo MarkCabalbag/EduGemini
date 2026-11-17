@@ -37,6 +37,7 @@ export function EditAssignment() {
   if (status !== 'DRAFT') {
     return (
       <div className="max-w-2xl space-y-4">
+        <title>{`${title} · EduGemini`}</title>
         <h1 className="text-display font-semibold">{title}</h1>
         <p>This assignment is archived and cannot be edited.</p>
         <Link to={`/classes/${classId}?tab=assignments`} className="font-semibold text-primary underline">

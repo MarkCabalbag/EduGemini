@@ -26,6 +26,7 @@ export function SignIn() {
 
   return (
     <div className="max-w-md space-y-6">
+      <title>Sign in · EduGemini</title>
       <h1 className="text-display font-semibold">Sign in</h1>
       {formError && <Alert>{formError}</Alert>}
       <form onSubmit={onSubmit} noValidate className="space-y-4">

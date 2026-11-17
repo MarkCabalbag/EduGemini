@@ -1,4 +1,5 @@
-import { Link, Outlet } from 'react-router';
+import { useEffect, useRef } from 'react';
+import { Link, Outlet, useLocation } from 'react-router';
 import { useMe, useSignOut } from '../hooks/use-auth';
 import { NotificationBell } from './NotificationBell';
 import { Alert } from './ui/Alert';
@@ -8,6 +9,17 @@ import { Button } from './ui/Button';
 export function Layout() {
   const { data: me, isPending, isError } = useMe();
   const signOut = useSignOut();
+  const { pathname } = useLocation();
+  const main = useRef<HTMLElement>(null);
+  const shownPath = useRef(pathname);
+
+  // On a new page, focus moves to the content, so a screen reader starts there and the link that was clicked is not left
+  // holding focus after it is gone (WCAG 2.4.3). Not on the first page, and not when only `?tab=` changes.
+  useEffect(() => {
+    if (shownPath.current === pathname) return;
+    shownPath.current = pathname;
+    main.current?.focus();
+  }, [pathname]);
 
   // When /me fails (a suspended account, or a server problem) the session cookie may still be valid, so Sign out stays available.
   const canSignOut = Boolean(me) || isError;
@@ -45,7 +57,7 @@ export function Layout() {
           )}
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[1120px] space-y-4 px-4 py-8">
+      <main ref={main} tabIndex={-1} className="mx-auto w-full max-w-[1120px] space-y-4 px-4 py-8">
         {signOut.isError && <Alert>We could not sign you out. Check your connection and try again.</Alert>}
         <Outlet />
       </main>

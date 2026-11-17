@@ -5,7 +5,8 @@ export function Skeleton({ className = '' }: { className?: string }) {
 
 export function PageLoading() {
   return (
-    <div role="status" aria-label="Loading" className="space-y-4">
+    <div role="status" className="space-y-4">
+      <span className="sr-only">Loading</span>
       <Skeleton className="h-8 w-1/2" />
       <Skeleton className="h-24 w-full" />
     </div>

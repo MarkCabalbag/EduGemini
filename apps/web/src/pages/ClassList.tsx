@@ -10,9 +10,8 @@ import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { StatusChip } from '../components/ui/StatusChip';
 import { useClasses } from '../hooks/use-classes';
-import { ApiRequestError } from '../lib/api';
 import { classMeta } from '../lib/class-meta';
-import { errorText } from '../lib/error-text';
+import { errorTextOf } from '../lib/error-text';
 
 function CreateClassLink() {
   return (
@@ -49,6 +48,7 @@ export function ClassList() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
+        <title>My classes · EduGemini</title>
         <h1 className="text-display font-semibold">My classes</h1>
         <div className="flex flex-wrap items-center gap-4">
           {/* Always shown: an instructor who archived their only class has no active ones, and still needs a way back to it. */}
@@ -76,7 +76,7 @@ export function ClassList() {
           ))}
         </ul>
       )}
-      {classes.isFetchNextPageError && <Alert>{errorText(classes.error instanceof ApiRequestError ? classes.error.code : 'INTERNAL')}</Alert>}
+      {classes.isFetchNextPageError && <Alert>{errorTextOf(classes.error)}</Alert>}
       {classes.hasNextPage && (
         <Button variant="secondary" loading={classes.isFetchingNextPage} onClick={() => void classes.fetchNextPage()}>
           Show more classes

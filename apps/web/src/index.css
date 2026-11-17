@@ -17,6 +17,8 @@
   --primary-hover: #4338ca;
   --focus-ring: #4f46e5;
   --danger: #b91c1c;
+  --danger-fg: #ffffff;
+  --overlay: rgb(15 23 42 / 0.4);
   --status-error-bg: #fee2e2;
   --status-error-fg: #991b1b;
   --status-info-bg: #e0f2fe;
@@ -42,6 +44,8 @@
   --primary-hover: #a5b4fc;
   --focus-ring: #a5b4fc;
   --danger: #f87171;
+  --danger-fg: #0f172a;
+  --overlay: rgb(0 0 0 / 0.6);
   --status-error-bg: #450a0a;
   --status-error-fg: #fecaca;
   --status-info-bg: #082f49;
@@ -66,6 +70,8 @@
   --color-primary-hover: var(--primary-hover);
   --color-focus: var(--focus-ring);
   --color-danger: var(--danger);
+  --color-danger-fg: var(--danger-fg);
+  --color-overlay: var(--overlay);
   --color-error-bg: var(--status-error-bg);
   --color-error-fg: var(--status-error-fg);
   --color-info-bg: var(--status-info-bg);
@@ -85,7 +91,10 @@
   --text-title--line-height: 1.75rem;
   --text-small: 0.875rem;
   --text-small--line-height: 1.25rem;
+  --text-micro: 0.75rem;
+  --text-micro--line-height: 1rem;
 
+  --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
 }
@@ -102,6 +111,11 @@ body {
 :focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* An element that only receives focus from code (the page's <main> after navigation) is not a control, so it gets no ring. */
+[tabindex='-1']:focus-visible {
+  outline: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

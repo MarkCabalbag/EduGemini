@@ -8,7 +8,8 @@ import { limiters } from '../middleware/rate-limit';
 import { requireAuth } from '../middleware/session';
 import { validate, validated } from '../middleware/validate';
 import type { EnqueueGrading } from '../services/grading-service';
-import { finalizeVersion, getMySubmission, openVersion, removeFile, storeFile } from '../services/submission-service';
+import { removeFile, storeFile } from '../services/submission-file-service';
+import { finalizeVersion, getMySubmission, openVersion } from '../services/submission-service';
 
 const open = { params: AssignmentParamsSchema };
 const send = { params: FileParamsSchema };

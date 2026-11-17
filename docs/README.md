@@ -38,6 +38,7 @@ Feature Tickets (the work list and build order)  ·  Progress Tracker (where we 
 | [code-standards.md](code-standards.md) | Repository layout, naming, TypeScript rules, patterns, lint rules, test rules | How to write and organize code |
 | [feature-tickets.md](feature-tickets.md) | Tickets (EG-*), their acceptance text, dependencies, build order, open decisions | What to build next and when a ticket is done |
 | [progress-tracker.md](progress-tracker.md) | Build status, milestone counts, spikes, next steps, open questions, build-time decision log | Where we are right now |
+| [apps/web/PRODUCT.md](../apps/web/PRODUCT.md), [apps/web/DESIGN.md](../apps/web/DESIGN.md) | Nothing. Summaries for the Impeccable design skill: product facts, and the visual system as built in `src/index.css` | Never as a source; fix them if they disagree with the doc or code they summarize |
 | `archive/` | Superseded documents | Nothing. Do not build from it |
 
 **Not written yet:** AI Guardrails (prompt text and injection tests, needed before EG-AI-04) and the Deployment Runbook (needed before EG-FND-10). Do not invent them from memory.
