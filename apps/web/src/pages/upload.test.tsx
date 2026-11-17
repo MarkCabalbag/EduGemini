@@ -49,6 +49,7 @@ const assignment: AssignmentDetail = {
   maxResubmissions: 3,
   acceptLate: true,
   criteriaVersion: 1,
+  referenceFiles: [],
 };
 
 const PDF_BYTES = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-

@@ -42,6 +42,7 @@ export function errorText(code: ErrorCode | 'NETWORK', details?: Record<string, 
     if (details?.['limit'] === 'pages') return `This PDF has more than ${LIMITS.maxPdfPages} pages.`;
     if (details?.['limit'] === 'total-size') return `Your files add up to more than ${LIMITS.maxSubmissionBytes / MiB} MB.`;
     if (details?.['limit'] === 'grading-budget') return 'These files are too large to grade together. Remove one and try again.';
+    if (details?.['limit'] === 'reference-count') return `You can add up to ${LIMITS.maxReferenceFiles} reference files.`;
   }
   return TEXT[code] ?? GENERIC;
 }

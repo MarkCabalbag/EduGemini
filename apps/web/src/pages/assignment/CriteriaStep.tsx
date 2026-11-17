@@ -2,10 +2,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { RequiredCriteriaSchema } from '@edugemini/shared';
 import { TextAreaField } from '../../components/ui/TextAreaField';
+import { ReferenceFiles } from './ReferenceFiles';
 import { StepForm, type StepProps } from './StepForm';
 import { useStepSave } from './use-step-save';
 
-/** Step 2: the free-text criteria Gemini grades against. Reference files join this step with their own ticket (ASG-07). */
+/** Step 2: the free-text criteria Gemini grades against, and the reference files that go with them (ASG-07). */
 export function CriteriaStep({ assignment, onSaved, onBack }: StepProps) {
   const { register, handleSubmit, setError, formState } = useForm({
     resolver: zodResolver(RequiredCriteriaSchema),
@@ -23,6 +24,7 @@ export function CriteriaStep({ assignment, onSaved, onBack }: StepProps) {
         error={formState.errors.criteriaText?.message}
         helper='Plain language works best. Example: "Thesis is clear (10 points)." Students do not see this.'
       />
+      <ReferenceFiles assignment={assignment} canChange />
     </StepForm>
   );
 }

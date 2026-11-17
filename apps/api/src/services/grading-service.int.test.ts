@@ -1,14 +1,11 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { Job, PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createFakeGemini, GeminiError, PROMPT_VERSION, type GeminiAdapter } from '@edugemini/ai';
 import { TERMS_VERSION, type GradeJob } from '@edugemini/shared';
 import { GRADE_SUBMISSION, gradeSubmissionHandler } from '../jobs/grade-submission.job';
-import { createLocalStorage } from '../lib/local-storage';
+import { createMemoryStorage } from '../test/memory-storage';
 import { createLogger } from '../lib/logger';
 import type { Pacer } from '../lib/pacing';
 import { createTestDb } from '../test/test-db';
@@ -25,8 +22,7 @@ const ENV = { ENCRYPTION_KEY: randomBytes(32).toString('base64'), ENCRYPTION_KEY
 const PNG_HEAD = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const db = createTestDb();
-let storageDir: string;
-let storage: ReturnType<typeof createLocalStorage>;
+const storage = createMemoryStorage();
 let student: { id: string };
 
 type KeyState = 'ok' | 'none' | 'NEEDS_ATTENTION' | 'QUOTA_REACHED';
@@ -103,8 +99,6 @@ const gradesOf = (submissionId: string) => db.gradeResult.findMany({ where: { su
 
 beforeAll(async () => {
   await db.$connect();
-  storageDir = await mkdtemp(join(tmpdir(), 'edugemini-grading-test-'));
-  storage = createLocalStorage({ dir: storageDir, appUrl: 'http://localhost:5173', secret: 'a-test-secret-of-at-least-32-characters' });
   student = await db.user.create({
     data: { email: `student${EMAIL_END}`, firstName: 'Ada', lastName: 'Lovelace', role: 'STUDENT', termsAcceptedAt: new Date(), termsVersion: TERMS_VERSION },
   });
@@ -114,7 +108,6 @@ afterAll(async () => {
   await db.class.deleteMany({ where: { instructor: { email: { endsWith: EMAIL_END } } } }); // assignments, submissions, grades go with it
   await db.user.deleteMany({ where: { email: { endsWith: EMAIL_END } } });
   await db.$disconnect();
-  await rm(storageDir, { recursive: true, force: true });
 });
 
 describe('gradeSubmission: a result is stored (EG-AI-03, TRD §10.3)', () => {

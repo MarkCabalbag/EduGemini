@@ -3,6 +3,7 @@ import { LIMITS, type DisplayState, type FileView, type GradeJob, type GradeView
 import { AppError } from '../lib/app-error';
 import { lockSubmission } from '../lib/lock';
 import { isUniqueViolation } from '../lib/prisma-errors';
+import { queueDeletions } from '../lib/storage';
 import { authorize, type Actor } from '../policy/policy';
 import { enrollmentOf } from './assignment-service';
 import type { EnqueueGrading } from './grading-service';
@@ -55,11 +56,6 @@ export async function ownVersion(db: PrismaClient, actor: Actor, versionId: stri
   return version;
 }
 
-/** Queue the files' stored objects in the storage outbox (Backend Schema §10.2a); the `storage.cleanup` job deletes them. */
-export async function queueDeletions(tx: Prisma.TransactionClient, bucket: string, files: { storagePath: string | null }[]): Promise<void> {
-  const data = files.flatMap((file) => (file.storagePath ? [{ bucket, objectPath: file.storagePath }] : []));
-  await tx.storageDeletion.createMany({ data, skipDuplicates: true });
-}
 
 /**
  * Open an upload for the student (API Spec SUB-02). While one is open, asking again gives that same one. The database

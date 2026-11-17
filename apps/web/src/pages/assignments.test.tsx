@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AssignmentDetail, ClassSummary, Me, PublishWarning, UpdateAssignment } from '@edugemini/shared';
+import type { AssignmentDetail, ClassSummary, Me, PublishWarning, ReferenceFileView, UpdateAssignment } from '@edugemini/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browserTimeZone } from '../lib/zoned-time';
 import { failure, renderAt } from '../test/helpers';
@@ -63,6 +63,7 @@ const anAssignment = (overrides: Partial<AssignmentDetail> = {}): AssignmentDeta
   maxResubmissions: 3,
   acceptLate: true,
   criteriaVersion: 1,
+  referenceFiles: [],
   ...overrides,
 });
 
@@ -76,9 +77,11 @@ let pageSize: number;
 let denied: (() => Response) | undefined; // makes one assignment read fail
 let publishResult: (assignment: AssignmentDetail) => Response;
 let refuseSave: (() => Response) | undefined; // makes a save (PATCH) fail
+let refuseReference: (() => Response) | undefined; // makes adding a reference file fail
 
 beforeEach(() => {
   calls = [];
+  refuseReference = undefined;
   me = signedInAs('INSTRUCTOR');
   cls = aClass();
   assignments = [];
@@ -95,11 +98,40 @@ beforeEach(() => {
     vi.fn(async (url: string, init?: RequestInit) => {
       const path = url.replace('/api', '');
       const method = init?.method ?? 'GET';
-      const body: unknown = init?.body ? JSON.parse(init.body as string) : undefined;
+      const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body; // a form (FormData) is kept as it is
       calls.push({ path, method, body });
 
       if (path === '/me') return Response.json(me);
       if (method === 'GET' && path === `/classes/${cls.id}`) return Response.json(cls);
+
+      // Reference files (API Spec REF-01 to REF-04): the file lives in its assignment's list, as the API's reads show it.
+      const addFile = /^\/assignments\/([^/?]+)\/reference-files$/.exec(path);
+      if (method === 'POST' && addFile) {
+        const target = assignments.find((a) => a.id === addFile[1]);
+        if (!target) return failure(404, 'NOT_FOUND');
+        if (refuseReference) return refuseReference();
+        const sent = (body as FormData).get('file') as File;
+        const ordinal = [1, 2, 3].find((n) => !target.referenceFiles.some((f) => f.ordinal === n));
+        if (!ordinal) return failure(422, 'FILE_LIMIT', undefined, { limit: 'reference-count' });
+        const created = { id: crypto.randomUUID(), ordinal, label: `Reference file ${ordinal}`, mimeType: sent.type, sizeBytes: sent.size, visibleToStudents: false };
+        target.referenceFiles.push(created);
+        return Response.json(created, { status: 201 });
+      }
+      const fileRoute = /^\/reference-files\/([^/?]+)(\/url)?$/.exec(path);
+      if (fileRoute) {
+        const holder = assignments.find((a) => a.referenceFiles.some((f) => f.id === fileRoute[1]));
+        const file = holder?.referenceFiles.find((f) => f.id === fileRoute[1]);
+        if (!holder || !file) return failure(404, 'NOT_FOUND');
+        if (method === 'GET' && fileRoute[2]) return Response.json({ url: `https://files.example/${file.id}`, expiresAt: '2026-12-01T00:05:00.000Z' });
+        if (method === 'PATCH') {
+          file.visibleToStudents = (body as { visibleToStudents: boolean }).visibleToStudents;
+          return Response.json(file);
+        }
+        if (method === 'DELETE') {
+          holder.referenceFiles = holder.referenceFiles.filter((f) => f !== file);
+          return new Response(null, { status: 204 });
+        }
+      }
 
       const list = /^\/classes\/[^/?]+\/assignments\?(.*)$/.exec(path);
       if (method === 'GET' && list) {
@@ -437,7 +469,12 @@ describe('editing a published assignment', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Essay 2' })).toBeTruthy();
     expect(screen.getByText(/published, so changes apply right away/)).toBeTruthy();
     expect(screen.getByText(/criteria cannot be changed yet/)).toBeTruthy();
-    expect(screen.getAllByRole('region').map((r) => r.querySelector('h2')?.textContent)).toEqual(['Basics', 'Due date and scoring', 'Rules']);
+    expect(screen.getAllByRole('region').map((r) => r.querySelector('h2')?.textContent)).toEqual([
+      'Basics',
+      'Due date and scoring',
+      'Reference files (optional, up to 3)',
+      'Rules',
+    ]);
     expect(screen.getAllByRole('button', { name: 'Save changes' })).toHaveLength(3);
     expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
     expect(screen.queryByLabelText('Grading criteria')).toBeNull();
@@ -697,5 +734,151 @@ describe('the assignment page, as a student', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }));
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Essay 2' })).toBeTruthy();
+  });
+});
+
+describe('reference files', () => {
+  const aFile = (ordinal: number, overrides: Partial<ReferenceFileView> = {}): ReferenceFileView => ({
+    id: crypto.randomUUID(),
+    ordinal,
+    label: `Reference file ${ordinal}`,
+    mimeType: 'application/pdf',
+    sizeBytes: 2048,
+    visibleToStudents: false,
+    ...overrides,
+  });
+  const pdf = (name = 'rubric.pdf') => new File([new Uint8Array(2048)], name, { type: 'application/pdf' });
+  const addInput = () => screen.getByLabelText('Add a reference file') as HTMLInputElement;
+  const rows = () =>
+    within(screen.getByRole('region', { name: 'Reference files (optional, up to 3)' }))
+      .getAllByRole('listitem')
+      .map((row) => row.textContent ?? '');
+  const stepTwo = async (assignment: AssignmentDetail) => {
+    renderAt(`/assignments/${assignment.id}/edit?step=2`);
+    await screen.findByLabelText('Grading criteria');
+  };
+
+  it('lists the files of a draft with their size, and adds one: the file goes in a form, and then shows in the list', async () => {
+    const draft = anAssignment({ referenceFiles: [aFile(1)] });
+    assignments = [draft];
+    const user = userEvent.setup();
+    await stepTwo(draft);
+
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toContain('Reference file 1 (2 KB)');
+    await user.upload(addInput(), pdf('rubric.pdf'));
+
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    expect(rows()[1]).toContain('Reference file 2 (2 KB)');
+    const [post] = callsTo('POST', `/assignments/${draft.id}/reference-files`);
+    expect(post?.body).toBeInstanceOf(FormData);
+    expect(((post?.body as FormData).get('file') as File).name).toBe('rubric.pdf');
+  });
+
+  it('turns visibility on for one file, which is off to begin with', async () => {
+    const draft = anAssignment({ referenceFiles: [aFile(1)] });
+    assignments = [draft];
+    const user = userEvent.setup();
+    await stepTwo(draft);
+
+    const box = screen.getByRole('checkbox', { name: 'Visible to students, Reference file 1' }) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    await user.click(box);
+
+    await vi.waitFor(() => expect((screen.getByRole('checkbox', { name: 'Visible to students, Reference file 1' }) as HTMLInputElement).checked).toBe(true));
+    expect(callsTo('PATCH', `/reference-files/${draft.referenceFiles[0]?.id}`)[0]?.body).toEqual({ visibleToStudents: true });
+  });
+
+  it('removes a file', async () => {
+    const draft = anAssignment({ referenceFiles: [aFile(1), aFile(2)] });
+    assignments = [draft];
+    const user = userEvent.setup();
+    await stepTwo(draft);
+
+    await user.click(screen.getByRole('button', { name: 'Remove Reference file 1' }));
+
+    await vi.waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0]).toContain('Reference file 2');
+    expect(callsTo('DELETE', '/reference-files/')).toHaveLength(1);
+  });
+
+  it('offers no more files once there are three, and says so when the server refuses a fourth', async () => {
+    const full = anAssignment({ referenceFiles: [aFile(1), aFile(2), aFile(3)] });
+    assignments = [full];
+    await stepTwo(full);
+    expect(addInput().disabled).toBe(true);
+    cleanup();
+
+    const room = anAssignment({ referenceFiles: [aFile(1)] });
+    assignments = [room];
+    refuseReference = () => failure(422, 'FILE_LIMIT', undefined, { limit: 'reference-count' });
+    const user = userEvent.setup();
+    await stepTwo(room);
+    await user.upload(addInput(), pdf());
+
+    expect((await screen.findByRole('alert')).textContent).toBe('You can add up to 3 reference files.');
+  });
+
+  it('lists the files of a published assignment and lets the instructor show or hide them, but not add or remove (that needs the re-grade confirmation)', async () => {
+    const published = anAssignment({ status: 'PUBLISHED', criteriaText: 'Thesis is clear (10 points).', referenceFiles: [aFile(1)] });
+    assignments = [published];
+    const user = userEvent.setup();
+    renderAt(`/assignments/${published.id}/edit`);
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Visible to students, Reference file 1' }));
+
+    await vi.waitFor(() => expect(callsTo('PATCH', `/reference-files/${published.referenceFiles[0]?.id}`)).toHaveLength(1));
+    expect(screen.queryByLabelText('Add a reference file')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Remove/ })).toBeNull();
+  });
+
+  describe('as a student', () => {
+    beforeEach(() => {
+      me = signedInAs('STUDENT');
+      cls = aStudentClass();
+    });
+
+    it('lists the visible files with an Open button that opens a fresh link in a new tab', async () => {
+      const file = aFile(2, { visibleToStudents: true });
+      const assignment = anAssignment({ status: 'PUBLISHED', criteriaText: 'Thesis is clear (10 points).', referenceFiles: [file] }); // the API sends a student only the visible ones
+      assignments = [assignment];
+      const tab = { location: { href: '' }, opener: window as unknown, close: vi.fn() };
+      vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+      const user = userEvent.setup();
+      renderAt(`/assignments/${assignment.id}`);
+
+      const heading = await screen.findByRole('heading', { name: 'Reference files' });
+      const items = within(heading.closest('section')!).getAllByRole('listitem');
+      expect(items).toHaveLength(1);
+      expect(items[0]?.textContent).toContain('Reference file 2');
+      await user.click(screen.getByRole('button', { name: 'Open Reference file 2' }));
+
+      await vi.waitFor(() => expect(tab.location.href).toBe(`https://files.example/${file.id}`));
+      expect(tab.opener).toBeNull(); // the new page cannot reach back to this one
+      expect(callsTo('GET', `/reference-files/${file.id}/url`)).toHaveLength(1);
+    });
+
+    it('shows no Reference files part when there is nothing visible, and says so in an alert when a link cannot be made', async () => {
+      const none = anAssignment({ status: 'PUBLISHED', criteriaText: 'x' });
+      assignments = [none];
+      renderAt(`/assignments/${none.id}`);
+      expect(await screen.findByRole('heading', { level: 1, name: 'Essay 2' })).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: 'Reference files' })).toBeNull();
+      cleanup();
+
+      const file = aFile(1, { visibleToStudents: true });
+      const gone = anAssignment({ status: 'PUBLISHED', criteriaText: 'x', referenceFiles: [file] });
+      assignments = [gone];
+      const tab = { location: { href: '' }, opener: window as unknown, close: vi.fn() };
+      vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+      const user = userEvent.setup();
+      renderAt(`/assignments/${gone.id}`);
+      await user.click(await screen.findByRole('button', { name: 'Open Reference file 1' }));
+      assignments = []; // the file is hidden or removed meanwhile, so the link is refused
+      await user.click(screen.getByRole('button', { name: 'Open Reference file 1' }));
+
+      expect((await screen.findAllByRole('alert')).some((alert) => alert.textContent === 'Something went wrong.')).toBe(true);
+      expect(tab.close).toHaveBeenCalled();
+    });
   });
 });

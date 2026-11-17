@@ -387,6 +387,8 @@ Layout notes:
 - The stepper shows "Step 2 of 5: Criteria" as text; the dots are supporting detail.
 - "Draft saved" appears after each autosave (App Flow 5.1, step 1 and F15). It is `status-approved` text with a check icon, not a toast.
 - The visibility toggle is labeled in full ("Visible to students"), and the helper text under the list states who sees the file.
+- A row shows the label "Reference file N" and the size, not the file name (the API stores no name, API Spec A5), then Open, "Visible to students" and Remove; the mock above is only the layout. "Add a reference file" is disabled once there are three. On a published assignment the list shows the files and the toggle but no Add or Remove, until the re-grade confirmation exists (ASG-04).
+- On the student assignment page the visible files are listed under "Reference files", each with an Open button that opens the file in a new tab.
 - On phones, the stepper collapses to "Step 2 of 5: Criteria" with a progress bar.
 - Publishing returns to the Assignments tab, where an info message says "<Title> is published. Approved students can see it now." Each warning follows on its own line: "The due date has already passed, so every submission will be marked Late." and "No Gemini key is connected, so submissions will wait for your review instead of being graded by AI."
 - "Save as draft" on the Review step only leaves the wizard, because every step has already saved the draft.

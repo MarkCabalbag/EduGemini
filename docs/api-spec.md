@@ -315,6 +315,8 @@ Changing criteria or reference files re-grades unapproved work (FR-ASG-04). The 
 
 Edits that do not change criteria or files (title, instructions, label, limits, late policy, due date) need no token. A due-date change never re-grades (D6).
 
+A draft has nothing to re-grade, so adding or removing a reference file on a draft needs no token (an `impactToken` sent with it is ignored). On a published assignment the token is required; until the impact check is built (ASG-04), adding or removing a reference file there answers `CONFIRMATION_REQUIRED`, as a criteria edit does.
+
 ### A7. Upload protocol
 
 Uploads are a three-step flow so that a retry never loses files and a submission exists only when every file is stored (FR-SUB-03).
@@ -951,9 +953,9 @@ Reference files are part of the criteria (FR-ASG-07). Adding, replacing, or remo
 - **FR:** FR-ASG-07, FR-SUB-02.
 - **Request:** `multipart/form-data` with:
   - `file`: one PDF, JPEG, or PNG (10 MiB maximum, checked by content).
-  - `impactToken`: required (A6).
-- **Response:** `201` `ReferenceFileView`. The ordinal is the next free one from 1 to 3.
-- **Errors:** `FILE_LIMIT` with `details.limit: "reference-count"` when three files already exist; `CONFIRMATION_REQUIRED`, `CONFIRMATION_STALE`, `FILE_TYPE`, `FILE_TOO_LARGE`, `FILE_ERROR`.
+  - `impactToken`: required on a published assignment, and ignored on a draft (A6).
+- **Response:** `201` `ReferenceFileView`. The ordinal is the next free one from 1 to 3. The file is stored at `reference/<classId>/<assignmentId>/<uuid>.<ext>` (TRD §9.3).
+- **Errors:** `FILE_LIMIT` with `details.limit: "reference-count"` when three files already exist (or `"pages"` for a PDF of more than 20); `CONFIRMATION_REQUIRED`, `CONFIRMATION_STALE`, `FILE_TYPE`, `FILE_TOO_LARGE`, `FILE_ERROR`; `VALIDATION` when the form has no `file` field; `CLASS_ARCHIVED`; `CONFLICT` for an archived assignment.
 - **Effects:** same as a criteria change in ASG-04 (re-grade debounce).
 - **Test:** `assignment.spec`, `upload.spec` (reference file rules).
 
@@ -970,7 +972,7 @@ Reference files are part of the criteria (FR-ASG-07). Adding, replacing, or remo
 `DELETE /api/reference-files/{fileId}` · Standard set: `STD-MUT` minus `VALIDATION`
 - **Access:** owning instructor.
 - **FR:** FR-ASG-07.
-- **Request:** header `X-Impact-Token` (A6). Required.
+- **Request:** header `X-Impact-Token` (A6). Required on a published assignment, not on a draft.
 - **Response:** `204`.
 - **Errors:** `CONFIRMATION_REQUIRED`, `CONFIRMATION_STALE`.
 - **Effects:** removes the row and writes the storage outbox entry. Re-grades as a criteria change.
@@ -1576,7 +1578,7 @@ Provider facts marked "confirmed" were checked against the sources listed at the
 ### C.4 Supabase Storage
 
 - **Purpose:** private object storage for submission files, reference files, and announcement attachments (TRD §9).
-- **Interface:** `StorageAdapter`, with the operations below. Two implementations: `supabase` (production) and `local` (development, writes under `STORAGE_LOCAL_DIR`). The local `signedUrl` returns `<APP_URL>/api/dev/files?bucket=&path=&expires=&sig=`, signed with `SESSION_SECRET`. The route that serves it exists only when `STORAGE_DRIVER=local`, and every failure there (bad signature, expired link, missing file) is `NOT_FOUND`.
+- **Interface:** `StorageAdapter`, with the operations below. The one real implementation is `supabase`, used in development and production alike (there is no local-disk storage and no storage setting, decided 2026-11-17). The tests use an in-memory fake that holds the objects in memory and returns a made-up link.
 
   | Operation | Behavior |
   |---|---|
@@ -1586,13 +1588,14 @@ Provider facts marked "confirmed" were checked against the sources listed at the
   | `remove(bucket, paths[])` | Idempotent: a missing object counts as removed |
   | `exists(bucket, path)` | Used by the cleanup job before it marks an outbox row complete |
 
-- **Calls:** the adapter calls the Storage REST API with `fetch` and the service-role key, so there is no `supabase-js` dependency (TRD T-D11): `POST /storage/v1/object/{bucket}/{path}` with `x-upsert: true` (put), `GET` on the same path (get), `POST /storage/v1/object/sign/{bucket}/{path}` with `{ expiresIn }` in seconds (signedUrl), `DELETE /storage/v1/object/{bucket}` with `{ prefixes }` (remove) and `HEAD` on the object path (exists). Storage answers 400 or 404 for a missing object. `remove` counts a missing object as removed. **Verify** all of this against Supabase's own reference and a real bucket, since it was written from the client library's behavior and mirror sites.
-- **Auth and secrets:** the service-role key (`SUPABASE_SERVICE_ROLE_KEY`) on the API only. Buckets are private. The key never reaches the browser or the build.
+- **Calls:** the adapter calls the Storage REST API with `fetch` and the service-role key, so there is no `supabase-js` dependency (TRD T-D11): `POST /storage/v1/object/{bucket}/{path}` with `x-upsert: true` (put), `GET` on the same path (get), `POST /storage/v1/object/sign/{bucket}/{path}` with `{ expiresIn }` in seconds (signedUrl), `DELETE /storage/v1/object/{bucket}` with `{ prefixes }` (remove) and `HEAD` on the object path (exists). Storage answers 400 or 404 for a missing object. `remove` counts a missing object as removed. Run against a real private bucket on 2026-11-17 (a streamed put from a file, `HEAD` for exists before and after, the sign response and a download of the signed link, remove): all of it worked as written.
+- **Auth and secrets:** the API key (`SUPABASE_SERVICE_ROLE_KEY`) on the API only. It can be the new secret key (`sb_secret_...`), which is the one to use because Supabase retires the legacy JWT `service_role` key in early 2027; the adapter sends it as both `apikey` and `Authorization: Bearer`, and Storage accepted that. Buckets are private. The key never reaches the browser or the build.
+- **Bucket setup (done once, in the Supabase dashboard, Storage):** create a private bucket (private is the default; the app reads files only through signed links, [Supabase: buckets fundamentals](https://supabase.com/docs/guides/storage/buckets/fundamentals)) and put its exact name in `STORAGE_BUCKET`. A bucket can also restrict file types and size. If it lists allowed file types, `application/pdf`, `image/jpeg` and `image/png` must be among them, because those are the only types the app sends; a type outside the list is refused by Storage (`415 invalid_mime_type`), which the adapter reports as `SERVICE_UNAVAILABLE` for storage. The size limit must be at least 10 MiB (the dev bucket's is 50 MiB).
 - **Object paths:** generated by the server from IDs and an ordinal (TRD §9.1). User-supplied file names never appear in paths.
 - **Timeouts and retries:** 30 seconds per operation. `put` does not retry: a stream can be read once, so the upload route, which holds the temporary file (TRD §9.1), calls it again. Deletes are retried by the outbox job (Backend Schema §10.1), not inline.
 - **Limits (verify):** free-tier storage size (**1 GB** in Backend Schema §15.2; verify the current figure) and egress. Storage is the binding constraint for the free tier, which is why client-side resize is proposed (Backend Schema §15.2, open question 2).
 - **Failure behavior:** if storage is down, the file PUT returns `503 SERVICE_UNAVAILABLE` with `details.service: "storage"` and the student keeps the file on the device, so they can retry. Nothing is stored partially.
-- **Test substitute:** the `local` adapter in development and CI.
+- **Test substitute:** the in-memory fake (`test/memory-storage.ts`) in the integration tests and CI. CI needs no bucket for them.
 - **Spike:** S1 (upload path) and the storage tests in the E2E suite.
 
 ### C.5 Email (SMTP)
@@ -1885,7 +1888,6 @@ These are the items marked **verify** in Part C. None is needed to write the spe
 | Gemini per-minute and per-day limits for the chosen model | C.1 | S3 |
 | Gemini daily versus per-minute quota error details | C.1 | S3 (TQ3) |
 | Files API retention (48 hours, third-party source) | C.1 | Not used in v1; confirm before any change |
-| Supabase Storage REST routes and answers the adapter relies on: a streamed upload with no `Content-Length`, `HEAD` for `exists`, the answer for a missing object, the sign response | C.4 | S1 or the first run against a real bucket |
 | Supabase pooler username form (`role.project-ref`) | C.3 | S2 |
 | Vercel request-body limit for external rewrites | C.6 | S1 (10 MiB upload) |
 | Brevo SMTP host, port, and daily limit (300 per day, from its help center) | C.5 | S5 |

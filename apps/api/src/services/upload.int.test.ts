@@ -1,7 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { Prisma } from '@prisma/client';
 import request from 'supertest';
@@ -10,6 +7,8 @@ import {
   FileViewSchema,
   LIMITS,
   MiB,
+  ReferenceFileLinkSchema,
+  ReferenceFileViewSchema,
   StudentSubmissionSchema,
   TERMS_VERSION,
   VersionViewSchema,
@@ -19,7 +18,7 @@ import {
 } from '@edugemini/shared';
 import { createApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
-import { createLocalStorage } from '../lib/local-storage';
+import { createMemoryStorage } from '../test/memory-storage';
 import { createLogger } from '../lib/logger';
 import { uploadsRouter } from '../routes/uploads';
 import { ENCRYPTED_PDF, makePdf } from '../test/pdf-fixtures';
@@ -38,8 +37,7 @@ const BUCKET = `test-${RUN}`;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const db = createTestDb();
-let storageDir: string;
-let storage: ReturnType<typeof createLocalStorage>;
+const storage = createMemoryStorage();
 
 // Finalize sends a grading job (AI-08). The tests record the jobs instead of running a worker; a test can replace `sender`.
 const sent: GradeJob[] = [];
@@ -139,8 +137,6 @@ let student: TestUser;
 beforeAll(async () => {
   await db.$connect();
   PDF = await makePdf(1);
-  storageDir =await mkdtemp(join(tmpdir(), 'edugemini-upload-test-'));
-  storage = createLocalStorage({ dir: storageDir, appUrl: APP_URL, secret: 'a-test-secret-of-at-least-32-characters' });
   owner = await signedInUser('owner', 'INSTRUCTOR');
   cls = await seedClass(owner.user.id);
   student = await enrolledStudent('student', cls.id);
@@ -151,7 +147,6 @@ afterAll(async () => {
   await db.class.deleteMany({ where: { instructor: { email: { endsWith: EMAIL_END } } } }); // assignments, submissions, files go with it
   await db.user.deleteMany({ where: { email: { endsWith: EMAIL_END } } });
   await db.$disconnect();
-  await rm(storageDir, { recursive: true, force: true });
 });
 
 describe('POST /api/assignments/:id/versions (SUB-02)', () => {
@@ -1198,5 +1193,291 @@ describe('GET /api/assignments/:id/me (SUB-01)', () => {
     expect((await getMine(build(), published.id, pending.cookie)).body.error.code).toBe('ENROLLMENT_PENDING');
     for (const who of [declined, outsider]) expect((await getMine(build(), published.id, who.cookie)).body.error.code).toBe('NOT_FOUND');
     expect((await getMine(build(), published.id)).status).toBe(401);
+  });
+});
+
+describe('reference files (API Spec REF-01 to REF-04)', () => {
+  const draft = (classId = cls.id) => seedAssignment(classId, { status: 'DRAFT', publishedAt: null });
+
+  /** The instructor's form: the file in a form, as the browser sends it. */
+  const addReference = (assignmentId: string, cookie: string | undefined, body: Buffer, name = 'rubric.pdf', type = 'application/pdf') => {
+    const req = request(build()).post(`/api/assignments/${assignmentId}/reference-files`).set('Origin', APP_URL);
+    if (cookie) req.set('Cookie', cookie);
+    return req.attach('file', body, { filename: name, contentType: type });
+  };
+  const patchReference = (fileId: string, cookie: string | undefined, body: object) => {
+    const req = request(build()).patch(`/api/reference-files/${fileId}`).set('Origin', APP_URL);
+    return (cookie ? req.set('Cookie', cookie) : req).send(body);
+  };
+  const deleteReference = (fileId: string, cookie?: string) => {
+    const req = request(build()).delete(`/api/reference-files/${fileId}`).set('Origin', APP_URL);
+    return cookie ? req.set('Cookie', cookie) : req;
+  };
+  const linkTo = (fileId: string, cookie?: string) => {
+    const req = request(build()).get(`/api/reference-files/${fileId}/url`);
+    return cookie ? req.set('Cookie', cookie) : req;
+  };
+  const rowsOf = (assignmentId: string) => db.referenceFile.findMany({ where: { assignmentId }, orderBy: { ordinal: 'asc' } });
+  const objectsStored = async () => storage.count();
+  const readBy = (assignmentId: string, cookie: string) => request(build()).get(`/api/assignments/${assignmentId}`).set('Cookie', cookie);
+  const publish = (assignmentId: string) =>
+    db.assignment.update({ where: { id: assignmentId }, data: { status: 'PUBLISHED', publishedAt: new Date() } });
+
+  let other: TestUser;
+  let admin: TestUser;
+  beforeAll(async () => {
+    other = await signedInUser('ref-other', 'INSTRUCTOR');
+    admin = await signedInUser('ref-admin', 'SUPER_ADMIN');
+  });
+
+  it('adds a PDF, a JPEG and a PNG to a draft with no token, each in the next place, stored and with its hash', async () => {
+    const assignment = await draft();
+    const files = [
+      { body: PDF, name: 'a.pdf', type: 'application/pdf' },
+      { body: JPEG, name: 'b.jpg', type: 'image/jpeg' },
+      { body: PNG, name: 'c.png', type: 'image/png' },
+    ];
+
+    for (const [index, file] of files.entries()) {
+      const res = await addReference(assignment.id, owner.cookie, file.body, file.name, file.type).field('impactToken', 'ignored on a draft');
+      expect(res.status, file.name).toBe(201);
+      expect(ReferenceFileViewSchema.parse(res.body)).toEqual({
+        id: expect.any(String),
+        ordinal: index + 1,
+        label: `Reference file ${index + 1}`,
+        mimeType: file.type,
+        sizeBytes: file.body.length,
+        visibleToStudents: false, // off until the instructor turns it on
+      });
+    }
+
+    const rows = await rowsOf(assignment.id);
+    expect(rows.map((row) => row.mimeType)).toEqual(['application/pdf', 'image/jpeg', 'image/png']);
+    for (const [index, row] of rows.entries()) {
+      expect(await storage.exists(BUCKET, row.storagePath)).toBe(true);
+      expect(row.sha256).toBe(createHash('sha256').update(files[index]!.body).digest('hex'));
+      expect(row.storagePath).toMatch(new RegExp(`^reference/${cls.id}/${assignment.id}/[0-9a-f-]{36}\\.(pdf|jpg|png)$`)); // built from IDs, never the name
+    }
+  });
+
+  it('refuses a fourth file with FILE_LIMIT reference-count and stores nothing more', async () => {
+    const assignment = await draft();
+    for (const name of ['1.pdf', '2.pdf', '3.pdf']) expect((await addReference(assignment.id, owner.cookie, PDF, name)).status).toBe(201);
+    const before = await objectsStored();
+
+    const res = await addReference(assignment.id, owner.cookie, PDF, '4.pdf');
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatchObject({ code: 'FILE_LIMIT', details: { limit: 'reference-count' } });
+    expect(await rowsOf(assignment.id)).toHaveLength(3);
+    expect(await objectsStored()).toBe(before);
+  });
+
+  it('gives a removed file’s place to the next one, and leaves the other places alone', async () => {
+    const assignment = await draft();
+    const ids: string[] = [];
+    for (const name of ['1.pdf', '2.pdf', '3.pdf']) ids.push((await addReference(assignment.id, owner.cookie, PDF, name)).body.id);
+
+    expect((await deleteReference(ids[1]!, owner.cookie)).status).toBe(204);
+    expect((await rowsOf(assignment.id)).map((row) => row.ordinal)).toEqual([1, 3]);
+
+    const again = await addReference(assignment.id, owner.cookie, PNG, 'again.png', 'image/png');
+    expect(again.body.ordinal).toBe(2);
+  });
+
+  it('removing a file queues its object for deletion, and the row is gone', async () => {
+    const assignment = await draft();
+    const added = await addReference(assignment.id, owner.cookie, PDF);
+    const [row] = await rowsOf(assignment.id);
+
+    expect((await deleteReference(added.body.id, owner.cookie)).status).toBe(204);
+
+    expect(await rowsOf(assignment.id)).toHaveLength(0);
+    expect(await db.storageDeletion.count({ where: { bucket: BUCKET, objectPath: row!.storagePath, completedAt: null } })).toBe(1);
+  });
+
+  it('judges the file by its content: text called .pdf, an empty file and a PDF that cannot be read are refused, and nothing is stored', async () => {
+    const assignment = await draft();
+    const before = await objectsStored();
+
+    const text = await addReference(assignment.id, owner.cookie, Buffer.from('just some text'), 'essay.pdf');
+    expect([text.status, text.body.error.code]).toEqual([415, 'FILE_TYPE']);
+    const empty = await addReference(assignment.id, owner.cookie, Buffer.alloc(0), 'empty.pdf');
+    expect([empty.status, empty.body.error.code]).toEqual([415, 'FILE_TYPE']);
+    const encrypted = await addReference(assignment.id, owner.cookie, ENCRYPTED_PDF, 'locked.pdf');
+    expect(encrypted.body.error).toMatchObject({ code: 'FILE_ERROR', details: { failureCode: 'PASSWORD' } });
+    const broken = await addReference(assignment.id, owner.cookie, Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from('not a real pdf')]), 'broken.pdf');
+    expect(broken.body.error).toMatchObject({ code: 'FILE_ERROR', details: { failureCode: 'CORRUPT' } });
+    const long = await addReference(assignment.id, owner.cookie, await makePdf(LIMITS.maxPdfPages + 1), 'long.pdf');
+    expect(long.body.error).toMatchObject({ code: 'FILE_LIMIT', details: { limit: 'pages' } });
+
+    expect(await rowsOf(assignment.id)).toHaveLength(0);
+    expect(await objectsStored()).toBe(before);
+  });
+
+  it('refuses a file over 10 MiB with FILE_TOO_LARGE and stores nothing, and takes one of exactly 10 MiB', async () => {
+    const assignment = await draft();
+    const before = await objectsStored();
+
+    const over = await addReference(assignment.id, owner.cookie, pngOfSize(LIMITS.maxFileBytes + 1), 'big.png', 'image/png');
+    expect([over.status, over.body.error.code]).toEqual([413, 'FILE_TOO_LARGE']);
+    expect(await rowsOf(assignment.id)).toHaveLength(0);
+    expect(await objectsStored()).toBe(before);
+
+    const exact = await addReference(assignment.id, owner.cookie, pngOfSize(LIMITS.maxFileBytes), 'edge.png', 'image/png');
+    expect(exact.status).toBe(201);
+  });
+
+  it('wants a form with a file in a field called file', async () => {
+    const assignment = await draft();
+    const url = `/api/assignments/${assignment.id}/reference-files`;
+    const post = () => request(build()).post(url).set('Origin', APP_URL).set('Cookie', owner.cookie);
+
+    const json = await post().send({ file: 'x' });
+    expect([json.status, json.body.error.code]).toEqual([415, 'UNSUPPORTED_MEDIA_TYPE']);
+    const wrongName = await post().attach('upload', PDF, 'a.pdf');
+    expect([wrongName.status, wrongName.body.error.code]).toEqual([400, 'VALIDATION']);
+    const noFile = await post().field('impactToken', 'x');
+    expect([noFile.status, noFile.body.error.code]).toEqual([400, 'VALIDATION']);
+    expect(await rowsOf(assignment.id)).toHaveLength(0);
+  });
+
+  it('gives two adds at the same moment different places, and four at once leave exactly three files and objects', async () => {
+    const assignment = await draft();
+    const before = await objectsStored();
+
+    const results = await Promise.all([1, 2, 3, 4].map((n) => addReference(assignment.id, owner.cookie, PDF, `${n}.pdf`)));
+
+    expect(results.map((res) => res.status).sort()).toEqual([201, 201, 201, 422]);
+    expect((await rowsOf(assignment.id)).map((row) => row.ordinal)).toEqual([1, 2, 3]);
+    expect(await objectsStored()).toBe(before + 3); // the one that lost the place removed its object again
+  });
+
+  it('on a published assignment, adding or removing needs the re-grade confirmation, which does not exist yet', async () => {
+    const assignment = await draft();
+    const added = await addReference(assignment.id, owner.cookie, PDF);
+    await publish(assignment.id);
+    const before = await objectsStored();
+
+    const add = await addReference(assignment.id, owner.cookie, PDF, 'late.pdf').field('impactToken', 'whatever');
+    expect([add.status, add.body.error.code]).toEqual([422, 'CONFIRMATION_REQUIRED']);
+    const remove = await deleteReference(added.body.id, owner.cookie);
+    expect([remove.status, remove.body.error.code]).toEqual([422, 'CONFIRMATION_REQUIRED']);
+
+    const rows = await rowsOf(assignment.id);
+    expect(rows).toHaveLength(1);
+    expect(await objectsStored()).toBe(before);
+    expect(await db.storageDeletion.count({ where: { bucket: BUCKET, objectPath: rows[0]!.storagePath } })).toBe(0);
+  });
+
+  it('shows or hides a file from students, also after publishing, and the body must be exactly that', async () => {
+    const assignment = await draft();
+    const added = await addReference(assignment.id, owner.cookie, PDF);
+    await publish(assignment.id);
+
+    const shown = await patchReference(added.body.id, owner.cookie, { visibleToStudents: true });
+    expect(shown.status).toBe(200);
+    expect(shown.body).toMatchObject({ id: added.body.id, visibleToStudents: true });
+    expect((await rowsOf(assignment.id))[0]!.visibleToStudents).toBe(true);
+    expect((await patchReference(added.body.id, owner.cookie, { visibleToStudents: false })).body.visibleToStudents).toBe(false);
+
+    for (const bad of [{}, { visibleToStudents: 'yes' }, { visibleToStudents: true, label: 'x' }]) {
+      const res = await patchReference(added.body.id, owner.cookie, bad);
+      expect([res.status, res.body.error.code], JSON.stringify(bad)).toEqual([400, 'VALIDATION']);
+    }
+  });
+
+  it('shows an instructor every file and a student only the ones marked visible, on a published assignment', async () => {
+    const assignment = await draft();
+    const first = await addReference(assignment.id, owner.cookie, PDF, '1.pdf');
+    await addReference(assignment.id, owner.cookie, PNG, '2.png', 'image/png');
+    await patchReference(first.body.id, owner.cookie, { visibleToStudents: true });
+    await publish(assignment.id);
+
+    const instructorView = await readBy(assignment.id, owner.cookie);
+    const studentView = await readBy(assignment.id, student.cookie);
+
+    expect(instructorView.body.referenceFiles.map((file: { label: string }) => file.label)).toEqual(['Reference file 1', 'Reference file 2']);
+    expect(studentView.body.referenceFiles).toEqual([expect.objectContaining({ id: first.body.id, label: 'Reference file 1', visibleToStudents: true })]);
+  });
+
+  it('is the owning instructor’s alone to add, change and remove: others find nothing, and signed out is 401', async () => {
+    const assignment = await draft();
+    const added = await addReference(assignment.id, owner.cookie, PDF);
+    const before = await objectsStored();
+
+    for (const who of [other, student, admin]) {
+      for (const res of [
+        await addReference(assignment.id, who.cookie, PDF),
+        await patchReference(added.body.id, who.cookie, { visibleToStudents: true }),
+        await deleteReference(added.body.id, who.cookie),
+      ]) {
+        expect([res.status, res.body.error.code], who.user.email).toEqual([404, 'NOT_FOUND']);
+      }
+    }
+    expect((await addReference(randomUUID(), owner.cookie, PDF)).body.error.code).toBe('NOT_FOUND');
+    expect((await patchReference(randomUUID(), owner.cookie, { visibleToStudents: true })).body.error.code).toBe('NOT_FOUND');
+    expect((await deleteReference(randomUUID(), owner.cookie)).body.error.code).toBe('NOT_FOUND');
+    expect((await addReference(assignment.id, undefined, PDF)).status).toBe(401);
+    expect((await patchReference(added.body.id, undefined, { visibleToStudents: true })).status).toBe(401);
+    expect((await deleteReference(added.body.id)).status).toBe(401);
+
+    expect(await rowsOf(assignment.id)).toHaveLength(1);
+    expect(await objectsStored()).toBe(before);
+  });
+
+  it('is read-only in an archived class', async () => {
+    const archived = await seedClass(owner.user.id);
+    const assignment = await draft(archived.id);
+    const added = await addReference(assignment.id, owner.cookie, PDF);
+    await db.class.update({ where: { id: archived.id }, data: { archivedAt: new Date() } });
+
+    for (const res of [
+      await addReference(assignment.id, owner.cookie, PDF),
+      await patchReference(added.body.id, owner.cookie, { visibleToStudents: true }),
+      await deleteReference(added.body.id, owner.cookie),
+    ]) {
+      expect([res.status, res.body.error.code]).toEqual([409, 'CLASS_ARCHIVED']);
+    }
+    expect(await rowsOf(assignment.id)).toHaveLength(1);
+  });
+
+  it('gives the owner a five-minute link, and a student one only for a visible file of a published assignment', async () => {
+    const assignment = await draft();
+    const added = await addReference(assignment.id, owner.cookie, PDF);
+
+    const ownerLink = await linkTo(added.body.id, owner.cookie);
+    expect(ownerLink.status).toBe(200);
+    expect(ReferenceFileLinkSchema.parse(ownerLink.body).url.length).toBeGreaterThan(10);
+    const lasts = new Date(ownerLink.body.expiresAt).getTime() - Date.now();
+    expect(lasts).toBeGreaterThan(4 * 60 * 1000);
+    expect(lasts).toBeLessThanOrEqual(5 * 60 * 1000);
+
+    // Hidden, and the assignment is still a draft: nothing for the student.
+    expect((await linkTo(added.body.id, student.cookie)).body.error.code).toBe('NOT_FOUND');
+    await patchReference(added.body.id, owner.cookie, { visibleToStudents: true });
+    expect((await linkTo(added.body.id, student.cookie)).status).toBe(404); // visible, but the assignment is not published
+    await publish(assignment.id);
+    expect((await linkTo(added.body.id, student.cookie)).status).toBe(200);
+    await patchReference(added.body.id, owner.cookie, { visibleToStudents: false });
+    expect((await linkTo(added.body.id, student.cookie)).body.error.code).toBe('NOT_FOUND'); // hidden again
+  });
+
+  it('gives no link to a pending, declined, removed or outside student, another instructor or the Super Admin, whatever the file shows', async () => {
+    const assignment = await draft();
+    const added = await addReference(assignment.id, owner.cookie, PDF);
+    await patchReference(added.body.id, owner.cookie, { visibleToStudents: true });
+    await publish(assignment.id);
+    const pending = await enrolledStudent('ref-pending', cls.id, 'PENDING');
+    const declined = await enrolledStudent('ref-declined', cls.id, 'DECLINED');
+    const removed = await enrolledStudent('ref-removed', cls.id, 'REMOVED');
+    const outsider = await signedInUser('ref-outsider', 'STUDENT');
+
+    for (const who of [pending, declined, removed, outsider, other, admin]) {
+      const res = await linkTo(added.body.id, who.cookie);
+      expect([res.status, res.body.error.code], who.user.email).toEqual([404, 'NOT_FOUND']);
+    }
+    expect((await linkTo(added.body.id)).status).toBe(401);
+    expect((await linkTo(randomUUID(), owner.cookie)).status).toBe(404);
   });
 });

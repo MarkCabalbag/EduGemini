@@ -15,9 +15,9 @@ import { decodeCursor, pageOf } from '../lib/cursor';
 import { lockClass } from '../lib/lock';
 import { isUniqueViolation } from '../lib/prisma-errors';
 import { authorize, decide, type Actor } from '../policy/policy';
+import { queueDeletions } from '../lib/storage';
 import { notify } from './notification-service';
 import { enrollmentCounts } from './people-service';
-import { queueDeletions } from './submission-service';
 
 // 32 characters: letters without I and O, digits 2 to 9 (Backend Schema §4.7). No look-alikes (PRD FR-CLS-02).
 const JOIN_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

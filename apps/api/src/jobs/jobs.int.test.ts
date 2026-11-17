@@ -1,7 +1,4 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { PgBoss } from 'pg-boss';
 import request from 'supertest';
@@ -10,7 +7,7 @@ import { createFakeGemini } from '@edugemini/ai';
 import { TERMS_VERSION } from '@edugemini/shared';
 import { createApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
-import { createLocalStorage } from '../lib/local-storage';
+import { createMemoryStorage } from '../test/memory-storage';
 import { createLogger } from '../lib/logger';
 import type { StorageAdapter } from '../lib/storage';
 import { uploadsRouter } from '../routes/uploads';
@@ -29,8 +26,7 @@ const BUCKET = `test-${RUN}`;
 const logger = createLogger('silent', 'test');
 
 const db = createTestDb();
-let storageDir: string;
-let storage: StorageAdapter;
+const storage = createMemoryStorage();
 
 const putObject = (path: string) => storage.put(BUCKET, path, Readable.from([Buffer.from('object')]), 'application/pdf', 1024);
 const queueDeletion = (path: string, data: { attempts?: number; completedAt?: Date } = {}) =>
@@ -39,8 +35,6 @@ const row = (path: string) => db.storageDeletion.findUniqueOrThrow({ where: { bu
 
 beforeAll(async () => {
   await db.$connect();
-  storageDir = await mkdtemp(join(tmpdir(), 'edugemini-jobs-test-'));
-  storage = createLocalStorage({ dir: storageDir, appUrl: 'http://localhost:5173', secret: 'a-test-secret-of-at-least-32-characters' });
 });
 
 afterAll(async () => {
@@ -48,7 +42,6 @@ afterAll(async () => {
   await db.class.deleteMany({ where: { instructor: { email: { endsWith: `-${RUN}@example.test` } } } }); // assignments, submissions go with it
   await db.user.deleteMany({ where: { email: { endsWith: `-${RUN}@example.test` } } });
   await db.$disconnect();
-  await rm(storageDir, { recursive: true, force: true });
 });
 
 describe('storage.cleanup (the storage outbox)', () => {

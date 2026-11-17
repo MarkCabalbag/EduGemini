@@ -4,6 +4,7 @@ import { Link } from 'react-router';
 import type { AssignmentDetail } from '@edugemini/shared';
 import { BasicsStep } from './BasicsStep';
 import { DueScoringStep } from './DueScoringStep';
+import { ReferenceFiles } from './ReferenceFiles';
 import { RulesStep } from './RulesStep';
 
 /**
@@ -23,7 +24,7 @@ export function PublishedEdit({ assignment }: { assignment: AssignmentDetail }) 
       <div className="space-y-2">
         <title>{`${assignment.title} · EduGemini`}</title>
         <h1 className="text-display font-semibold">{assignment.title}</h1>
-        <p>This assignment is published, so changes apply right away. The grading criteria cannot be changed yet.</p>
+        <p>This assignment is published, so changes apply right away. The grading criteria cannot be changed yet, and neither can the reference files, except who sees them.</p>
         {/* Always on the page, so a screen reader announces the text when it appears. Any new save clears it. */}
         <p role="status" className="inline-flex min-h-6 items-center gap-1 text-approved-fg">
           {saved && (
@@ -46,6 +47,7 @@ export function PublishedEdit({ assignment }: { assignment: AssignmentDetail }) 
         </h2>
         <DueScoringStep {...part('Due date and scoring')} />
       </section>
+      <ReferenceFiles assignment={assignment} canChange={false} />
       <section aria-labelledby="published-rules" className="space-y-4" onSubmitCapture={() => setSaved(undefined)}>
         <h2 id="published-rules" className="text-title font-semibold">
           Rules

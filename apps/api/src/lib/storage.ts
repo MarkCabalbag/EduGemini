@@ -1,10 +1,13 @@
 import { createHash } from 'node:crypto';
+import { open } from 'node:fs/promises';
 import { Readable } from 'node:stream';
+import type { Prisma } from '@prisma/client';
+import { SNIFF_BYTES } from '@edugemini/shared';
 import { AppError } from './app-error';
 
-// The storage adapter (API Spec C.4). Two implementations: local-storage.ts (development) and supabase-storage.ts.
-// Callers get one from create-storage.ts. Buckets are private: a file is reached only through `signedUrl`, after the
-// caller has checked who may see it (TRD §7.4). Paths are built from IDs by the caller, never from file names.
+// The storage adapter (API Spec C.4). The one implementation is supabase-storage.ts; the tests use an in-memory fake
+// (test/memory-storage.ts). Buckets are private: a file is reached only through `signedUrl`, after the caller has checked
+// who may see it (TRD §7.4). Paths are built from IDs by the caller, never from file names.
 
 export type StoredObject = { size: number; sha256: string };
 
@@ -47,4 +50,21 @@ export function measure(body: Readable, maxBytes: number) {
     wasTooLarge: () => tooLarge,
     result: (): StoredObject => ({ size, sha256: hash.digest('hex') }),
   };
+}
+
+/** Queue the files' stored objects in the storage outbox (Backend Schema §10.1); the `storage.cleanup` job deletes them after the commit. */
+export async function queueDeletions(tx: Prisma.TransactionClient, bucket: string, files: { storagePath: string | null }[]): Promise<void> {
+  const data = files.flatMap((file) => (file.storagePath ? [{ bucket, objectPath: file.storagePath }] : []));
+  await tx.storageDeletion.createMany({ data, skipDuplicates: true });
+}
+
+/** The first bytes of a file on disk, enough to tell its type (`sniffFileType`). */
+export async function readHead(path: string): Promise<Buffer> {
+  const file = await open(path);
+  try {
+    const { buffer, bytesRead } = await file.read(Buffer.alloc(SNIFF_BYTES), 0, SNIFF_BYTES, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await file.close();
+  }
 }

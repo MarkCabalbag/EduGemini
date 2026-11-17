@@ -49,11 +49,13 @@ function sendFile(url: string, method: string, file: { blob: Blob; name: string 
   });
 }
 
+/** JSON, or a form (`FormData`) for the one kind of request that carries a file inside a form (API Spec REF-01): then the browser sets the content type, with its boundary. */
 async function sendJson(url: string, method: string, body: unknown): Promise<Answer> {
+  const isForm = body instanceof FormData;
   const response = await fetch(url, {
     method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined || isForm ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
   });
   return { status: response.status, data: response.status === 204 ? undefined : await response.json().catch(() => undefined) };
 }

@@ -18,12 +18,11 @@ const EnvSchema = z
     DIRECT_URL: postgresUrl,
     PGBOSS_URL: postgresUrl,
 
-    // Storage
-    STORAGE_DRIVER: z.enum(['supabase', 'local']).default('local'),
-    STORAGE_LOCAL_DIR: z.string().min(1).default('.storage'),
-    STORAGE_BUCKET: z.string().min(1).default('edugemini'),
-    SUPABASE_URL: url.optional(),
-    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+    // Storage: files always go to a private Supabase Storage bucket (API Spec C.4). The bucket has no default, so a wrong name
+    // cannot go unnoticed: the name must be the one created in the dashboard.
+    STORAGE_BUCKET: z.string().min(1),
+    SUPABASE_URL: url,
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 
     // Secrets
     ENCRYPTION_KEY: z
@@ -54,7 +53,6 @@ const EnvSchema = z
         }
       }
     };
-    if (e.STORAGE_DRIVER === 'supabase') need(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'], 'STORAGE_DRIVER=supabase');
     if (e.MAIL_DRIVER === 'smtp') need(['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'], 'MAIL_DRIVER=smtp');
     if (e.NODE_ENV === 'production') {
       const forbid = (bad: boolean, name: keyof typeof e, message: string) => {
@@ -62,7 +60,6 @@ const EnvSchema = z
       };
       forbid(e.MAIL_DRIVER === 'fake', 'MAIL_DRIVER', 'the fake mailer is not allowed in production');
       forbid(e.GEMINI_MODE === 'fake', 'GEMINI_MODE', 'the fake Gemini adapter is not allowed in production');
-      forbid(e.STORAGE_DRIVER === 'local', 'STORAGE_DRIVER', 'local storage is not allowed in production');
     }
   });
 

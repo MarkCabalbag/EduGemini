@@ -39,13 +39,15 @@ describe('env', () => {
     expect(env.SMTP_PORT).toBe(587);
   });
 
-  it('requires Supabase credentials only for the supabase storage driver', () => {
-    expect(() => parseEnv({ ...example, STORAGE_DRIVER: 'supabase' })).toThrowError(/SUPABASE_URL/);
+  it('always needs the bucket name and the Supabase URL and key, with no default for any of them', () => {
+    for (const name of ['STORAGE_BUCKET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']) {
+      const { [name]: _left, ...without } = example;
+      expect(() => parseEnv(without), name).toThrowError(new RegExp(name));
+    }
+    expect(() => parseEnv({ ...example, SUPABASE_URL: 'not a url' })).toThrowError(/SUPABASE_URL/);
   });
 
-  it('refuses fakes and local storage in production', () => {
-    expect(() => parseEnv({ ...example, NODE_ENV: 'production' })).toThrowError(
-      /MAIL_DRIVER[\s\S]*GEMINI_MODE[\s\S]*STORAGE_DRIVER/,
-    );
+  it('refuses the fake mailer and the fake Gemini in production', () => {
+    expect(() => parseEnv({ ...example, NODE_ENV: 'production' })).toThrowError(/MAIL_DRIVER[\s\S]*GEMINI_MODE/);
   });
 });

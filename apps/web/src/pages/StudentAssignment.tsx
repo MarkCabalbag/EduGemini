@@ -2,15 +2,17 @@ import { ArrowLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import type { AssignmentDetail } from '@edugemini/shared';
+import { Alert } from '../components/ui/Alert';
+import { Button } from '../components/ui/Button';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { StatusChip } from '../components/ui/StatusChip';
-import { useAssignment } from '../hooks/use-assignments';
+import { useAssignment, useOpenReferenceFile } from '../hooks/use-assignments';
 import { useClass } from '../hooks/use-classes';
 import { useMySubmission } from '../hooks/use-submission';
 import { ApiRequestError } from '../lib/api';
 import { scoringText } from '../lib/assignment-meta';
-import { errorText } from '../lib/error-text';
+import { errorText, errorTextOf } from '../lib/error-text';
 import { browserTimeZone, formatDue } from '../lib/zoned-time';
 import { NotFound } from './NotFound';
 import { SubmissionReceipt } from './SubmissionReceipt';
@@ -24,6 +26,28 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
     <section className="space-y-1">
       <h2 className="text-title font-semibold">{title}</h2>
       <p className="whitespace-pre-line">{children}</p>
+    </section>
+  );
+}
+
+/** The reference files the instructor marked visible (the API sends a student only those). Each opens in a new tab through a link that lasts five minutes (API Spec REF-04). */
+function ReferenceFileList({ files }: { files: AssignmentDetail['referenceFiles'] }) {
+  const open = useOpenReferenceFile();
+  return (
+    <section className="space-y-2">
+      <h2 className="text-title font-semibold">Reference files</h2>
+      <ul className="space-y-1">
+        {files.map((file) => (
+          <li key={file.id} className="flex flex-wrap items-center gap-3">
+            <span>{file.label}</span>
+            <Button type="button" variant="secondary" loading={open.isPending && open.variables === file.id} onClick={() => open.mutate(file.id)}>
+              Open{' '}
+              <span className="sr-only">{file.label}</span>
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {open.isError && <Alert>{errorTextOf(open.error)}</Alert>}
     </section>
   );
 }
@@ -82,6 +106,7 @@ function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
       </div>
       {assignment.instructions && <Section title="Instructions">{assignment.instructions}</Section>}
       <Section title="Criteria">{assignment.criteriaText}</Section>
+      {assignment.referenceFiles.length > 0 && <ReferenceFileList files={assignment.referenceFiles} />}
       <SubmissionArea assignmentId={assignment.id} canUpload={cls.data?.status === 'ACTIVE'} />
       <p className="text-small text-muted">{DISCLOSURE}</p>
     </div>

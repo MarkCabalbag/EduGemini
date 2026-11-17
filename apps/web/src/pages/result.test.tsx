@@ -48,6 +48,7 @@ const assignment: AssignmentDetail = {
   maxResubmissions: 3,
   acceptLate: true,
   criteriaVersion: 1,
+  referenceFiles: [],
 };
 
 const FEEDBACK = 'Clear thesis.\nThe second paragraph needs a source.';

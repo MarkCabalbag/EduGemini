@@ -54,6 +54,7 @@ These were proposed and approved in the planning step.
 | Email | nodemailer over SMTP to a free transactional provider (Brevo is the candidate); an in-memory fake mailer in development and tests (Section 13.5) | Free; no domain required (T-D3) |
 | AI | `@google/genai` with a Gemini model | Chosen stack |
 | Image and PDF | `sharp` (HEIC support, to be confirmed in spike S4) or `heic-convert` (pure JS fallback); `pdf-lib` for page count and encryption detection | Works in a 512 MB container |
+| Multipart forms | `multer` (disk storage, so a file is never held in memory) for the forms that carry a file: reference files (REF-01) and, later, announcement attachments (ANN-02). Owner-approved 2026-11-17 | The per-file submission upload sends raw bytes and does not need it |
 | Tests | Vitest (unit), Testing Library with jsdom (web screens), Supertest (API integration), Playwright (end-to-end UI and API), `@axe-core/playwright` (accessibility), `eslint-plugin-playwright` (lint rules) | Standard and free; Playwright covers four browser engines and mobile viewports (Section 16.2a) |
 | CI | GitHub Actions | Free for public repos; ample minutes for a small project |
 
@@ -92,7 +93,7 @@ Rules that follow from this shape:
 ## 4. Environments and hosting
 
 ### 4.1 Environments
-- **Local:** no Docker and no local Postgres. The API runs on the developer's machine against a hosted Supabase Postgres. Two free Supabase projects: `edugemini` (development now, production at deploy) and `edugemini-test` (end-to-end tests and every destructive command, Section 16.2a). The Vite dev server proxies `/api` to the local API, so the browser still sees one origin. File storage uses a local-disk adapter behind the same `StorageAdapter` interface. Email uses the fake mailer (`MAIL_DRIVER=fake`, Section 13.5). Gemini runs in `GEMINI_MODE=fake` for development and CI.
+- **Local:** no Docker and no local Postgres. The API runs on the developer's machine against a hosted Supabase Postgres. Two free Supabase projects: `edugemini` (development now, production at deploy) and `edugemini-test` (end-to-end tests and every destructive command, Section 16.2a). The Vite dev server proxies `/api` to the local API, so the browser still sees one origin. File storage is always a private Supabase Storage bucket, in development too: there is no local-disk storage, so the developer creates a private bucket in the `edugemini` project (API Spec C.4). The integration tests use an in-memory fake behind the same `StorageAdapter` interface (no disk, no network). Email uses the fake mailer (`MAIL_DRIVER=fake`, Section 13.5). Gemini runs in `GEMINI_MODE=fake` for development and CI.
 - **CI:** GitHub Actions runs a plain Postgres service container, so CI never touches Supabase (Section 16.3).
 - **Production:** Vercel (web), Render (API and worker), Supabase (Postgres and Storage), SMTP provider, UptimeRobot (monitoring).
 - No separate staging environment in v1.
@@ -303,6 +304,7 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 - Staged versions (status `UPLOADING`) opened more than 24 hours ago are deleted with their files and objects by the `staged.cleanup` job (Section 12). The submission row stays, because an instructor's allowance may be on it.
 - Stored files follow the retention rules in Section 5.5 and Section 12.
 - Downloads use signed URLs valid for 5 minutes, issued only after the authorization check (Section 7.4).
+- Reference files are stored at `reference/<classId>/<assignmentId>/<uuid>.<ext>`, built from IDs and the type found in the file's first bytes, never from its name. Replaced and removed files go through the storage outbox (Backend Schema §10.1).
 
 ### 9.4 Memory on a 512 MB host
 - Uploads stream to disk; no file is held fully in memory.
@@ -809,10 +811,8 @@ None open. The PRD and this document agree. A future deviation is recorded here 
 | `DIRECT_URL` | API | Supabase session pooler, owner role (migrations, `db:boss:init`) |
 | `PGBOSS_URL` | API | Supabase session pooler, runtime role (pg-boss at runtime) |
 | `SUPABASE_URL` | API | Storage endpoint |
-| `SUPABASE_SERVICE_ROLE_KEY` | API only | Storage access (never in the web build) |
-| `STORAGE_BUCKET` | API | Private bucket name |
-| `STORAGE_DRIVER` | API | `supabase` or `local` (development) |
-| `STORAGE_LOCAL_DIR` | API (development) | Folder used by the `local` storage driver |
+| `SUPABASE_SERVICE_ROLE_KEY` | API only | Storage access (never in the web build). Holds the new secret key (`sb_secret_...`); the legacy `service_role` key is retired in early 2027 |
+| `STORAGE_BUCKET` | API | Exact name of the private bucket (bucket setup: API Spec C.4). Required, no default |
 | `ENCRYPTION_KEY` | API only | 32 bytes, base64; AES-256-GCM for instructor keys |
 | `ENCRYPTION_KEY_VERSION` | API | Integer; increments on rotation |
 | `SESSION_SECRET` | API only | Signs the return-to cookie |
