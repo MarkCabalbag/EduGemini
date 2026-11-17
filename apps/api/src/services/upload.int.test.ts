@@ -1054,6 +1054,8 @@ describe('GET /api/assignments/:id/me (SUB-01)', () => {
       firstSubmittedAt: null,
       latestSubmittedAt: null,
       files: [],
+      grade: null,
+      instructorComment: null,
       draftVersion: null,
     });
   });
@@ -1105,6 +1107,77 @@ describe('GET /api/assignments/:id/me (SUB-01)', () => {
     expect((await getMine(build(), closed.id, student.cookie)).body).toMatchObject({ isLate: false, closed: true });
     await db.submission.create({ data: { assignmentId: closed.id, studentId: student.user.id, lateAllowed: true } });
     expect((await getMine(build(), closed.id, student.cookie)).body.closed).toBe(false);
+  });
+
+  describe('the result (AI-11)', () => {
+    /** A submitted assignment whose grading has finished as the worker leaves it: the active AI grade, and the state `state`. */
+    async function graded(state: 'QUEUED' | 'GRADING' | 'AI_GENERATED' | 'NEEDS_MANUAL_REVIEW' | 'INSTRUCTOR_APPROVED', overrides: Partial<Prisma.AssignmentUncheckedCreateInput> = {}) {
+      const assignment = await seedAssignment(cls.id, overrides);
+      const { versionId, ids } = await upload(assignment.id, student);
+      await finalize(build(), versionId, student.cookie, ids);
+      const submission = await submissionOf(assignment.id, student);
+      const grade = await db.gradeResult.create({
+        data: { submissionId: submission.id, versionId, source: 'AI', status: 'ACTIVE', score: 42.5, feedback: 'Clear thesis.\nCite a source.', criteriaVersion: 1, model: 'fake', promptVersion: 'grade-v1', confidence: 'high', readabilityIssue: true },
+      });
+      await db.submission.update({
+        where: { id: submission.id },
+        data: { state, activeGradeId: state === 'NEEDS_MANUAL_REVIEW' ? null : grade.id, manualReviewCause: state === 'NEEDS_MANUAL_REVIEW' ? 'AI_FAILED' : null, approvedAt: state === 'INSTRUCTOR_APPROVED' ? new Date() : null, instructorComment: 'See me after class.' },
+      });
+      return assignment;
+    }
+
+    it('gives the score, the feedback and the AI chip while the result is AI-generated, and nothing else about the grade', async () => {
+      const assignment = await graded('AI_GENERATED');
+      const res = await getMine(build(), assignment.id, student.cookie);
+
+      expect(StudentSubmissionSchema.parse(res.body)).toMatchObject({
+        state: 'AI_GENERATED',
+        grade: { source: 'AI', score: 42.5, maxScore: 100, scoringFormat: 'POINTS', letter: null, percentage: 43, feedback: 'Clear thesis.\nCite a source.', chip: 'status-ai' },
+        instructorComment: null, // only an approved grade carries the instructor's comment
+      });
+      expect(Object.keys(res.body.grade).sort()).toEqual(['chip', 'feedback', 'letter', 'maxScore', 'percentage', 'score', 'scoringFormat', 'source']);
+      expect(JSON.stringify(res.body)).not.toMatch(/promptVersion|confidence|readability|model|manualReviewCause/);
+    });
+
+    it('gives the approved chip and the instructor comment once the grade is approved', async () => {
+      const assignment = await graded('INSTRUCTOR_APPROVED');
+      const res = await getMine(build(), assignment.id, student.cookie);
+
+      expect(res.body).toMatchObject({ state: 'INSTRUCTOR_APPROVED', grade: { chip: 'status-approved' }, instructorComment: 'See me after class.' });
+    });
+
+    it('rounds the percentage to a whole number, from the assignment maximum', async () => {
+      const assignment = await graded('AI_GENERATED', { scoringFormat: 'PERCENTAGE', maxScore: 100 });
+      expect((await getMine(build(), assignment.id, student.cookie)).body.grade).toMatchObject({ scoringFormat: 'PERCENTAGE', score: 42.5, percentage: 43 });
+    });
+
+    it.each(['QUEUED', 'GRADING'] as const)('has no grade while the state is %s, even if an old one is still stored', async (state) => {
+      const assignment = await graded(state);
+      expect((await getMine(build(), assignment.id, student.cookie)).body).toMatchObject({ state: 'GRADING', grade: null, instructorComment: null });
+    });
+
+    it('is awaiting review with no grade and no cause when the submission needs manual review', async () => {
+      const assignment = await graded('NEEDS_MANUAL_REVIEW');
+      const res = await getMine(build(), assignment.id, student.cookie);
+
+      expect(res.body).toMatchObject({ state: 'AWAITING_REVIEW', grade: null, instructorComment: null });
+      expect(JSON.stringify(res.body)).not.toMatch(/AI_FAILED|manualReviewCause/);
+    });
+
+    it('drops the old grade when the student resubmits', async () => {
+      const assignment = await graded('AI_GENERATED');
+      const second = await upload(assignment.id, student);
+      await finalize(build(), second.versionId, student.cookie, second.ids);
+
+      expect((await getMine(build(), assignment.id, student.cookie)).body).toMatchObject({ state: 'GRADING', grade: null });
+    });
+
+    it("never shows one student's grade to another", async () => {
+      const assignment = await graded('AI_GENERATED');
+      const other = await enrolledStudent('me-other-student', cls.id, 'ACTIVE');
+
+      expect((await getMine(build(), assignment.id, other.cookie)).body).toMatchObject({ state: 'NOT_SUBMITTED', grade: null });
+    });
   });
 
   it('says Unlimited when the assignment has no resubmission limit', async () => {

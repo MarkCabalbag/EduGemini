@@ -96,6 +96,8 @@ const submission = (overrides: Partial<StudentSubmission> = {}): StudentSubmissi
   firstSubmittedAt: null,
   latestSubmittedAt: null,
   files: [],
+  grade: null,
+  instructorComment: null,
   draftVersion: null,
   ...overrides,
 });

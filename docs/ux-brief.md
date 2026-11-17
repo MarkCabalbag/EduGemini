@@ -615,9 +615,9 @@ Layout notes:
 - After submit, the page shows the receipt in place of the upload control: timestamp, file list, and "Grading in progress, usually about a minute" (App Flow 6, step 5). It is shown again whenever the student returns to the page.
 
 **Result, after grading (student)**
-- Chip, score, feedback, the disclosure line, attempts left, and the resubmit control.
+- Chip, score, feedback, the disclosure line, attempts left, and the resubmit control. The result block under the chip has a "Score" heading and a "Feedback" heading (an approved grade with an instructor comment adds an "Instructor comment" heading) *(new wording)*. The page asks for the result every 5 seconds while it is Grading, so it appears without a refresh.
 - At 0 attempts left, the resubmit control is replaced by "You've used all your resubmissions. Your instructor can give you more." (App Flow 6, step 7).
-- Score shown in the assignment's format: "42 / 50", "84%", or "B+ (87)".
+- Score shown in the assignment's format: "42 / 50", "84%", or "B+ (87)". A letter assignment shows "87 / 100" until the letter scale exists (AI-05).
 
 **Class page, student (layout notes; App Flow 6, step 2)**
 - Assignment list ordered by nearest due date. Each row: title, label (Could), due date in the viewer's time zone, and the student's status chip.

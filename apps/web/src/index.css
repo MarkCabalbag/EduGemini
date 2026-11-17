@@ -27,6 +27,8 @@
   --status-approved-fg: #166534;
   --status-pending-bg: #f1f5f9;
   --status-pending-fg: #334155;
+  --status-ai-bg: #eef2ff;
+  --status-ai-fg: #3730a3;
   --shadow-raised: 0 1px 2px rgb(15 23 42 / 0.06);
   --shadow-overlay: 0 8px 24px rgb(15 23 42 / 0.12);
 }
@@ -54,6 +56,8 @@
   --status-approved-fg: #bbf7d0;
   --status-pending-bg: #1e293b;
   --status-pending-fg: #cbd5e1;
+  --status-ai-bg: #1e1b4b;
+  --status-ai-fg: #c7d2fe;
   --shadow-raised: none;
   --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.5);
 }
@@ -80,6 +84,8 @@
   --color-approved-fg: var(--status-approved-fg);
   --color-pending-bg: var(--status-pending-bg);
   --color-pending-fg: var(--status-pending-fg);
+  --color-ai-bg: var(--status-ai-bg);
+  --color-ai-fg: var(--status-ai-fg);
   --shadow-raised: var(--shadow-raised);
   --shadow-overlay: var(--shadow-overlay);
   --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;

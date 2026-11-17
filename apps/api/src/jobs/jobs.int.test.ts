@@ -294,6 +294,10 @@ describe('the worker (startJobs)', () => {
       expect(grade).toMatchObject({ source: 'AI', status: 'ACTIVE', model: 'fake' });
       expect(Number(grade.score)).toBe(85);
       expect(await attemptsOf(id)).toMatchObject([{ attemptNo: 1, outcome: 'SUCCESS' }]);
+
+      // The student's own page reads the result (AI-11).
+      const mine = await request(app).get(`/api/assignments/${submission.assignmentId}/me`).set('Cookie', cookie);
+      expect(mine.body).toMatchObject({ state: 'AI_GENERATED', grade: { source: 'AI', score: 85, maxScore: 100, chip: 'status-ai', feedback: grade.feedback } });
       expect(await db.notification.count({ where: { userId: studentId, type: 'SUBMISSION_GRADED' } })).toBeGreaterThan(0);
     });
 

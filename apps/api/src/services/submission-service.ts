@@ -1,5 +1,5 @@
 import type { Assignment, Prisma, PrismaClient, SubmissionFile, SubmissionState, SubmissionVersion } from '@prisma/client';
-import { LIMITS, type DisplayState, type FileView, type GradeJob, type StudentSubmission, type VersionView } from '@edugemini/shared';
+import { LIMITS, type DisplayState, type FileView, type GradeJob, type GradeView, type StudentSubmission, type VersionView } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import { lockSubmission } from '../lib/lock';
 import { isUniqueViolation } from '../lib/prisma-errors';
@@ -154,6 +154,33 @@ const DISPLAY_STATE: Record<SubmissionState, DisplayState> = {
 };
 
 /**
+ * The grade the student sees: the active grade, only while the submission is `AI_GENERATED` or `INSTRUCTOR_APPROVED`.
+ * Nothing but the score, the feedback and the chip goes out: no model, prompt version, confidence or cause (API Spec A5).
+ */
+async function gradeViewOf(
+  db: Prisma.TransactionClient,
+  submission: { state: SubmissionState | null; activeGradeId: string | null },
+  assignment: Pick<Assignment, 'maxScore' | 'scoringFormat'>,
+): Promise<GradeView | null> {
+  const { state, activeGradeId } = submission;
+  if ((state !== 'AI_GENERATED' && state !== 'INSTRUCTOR_APPROVED') || !activeGradeId) return null;
+  const grade = await db.gradeResult.findUnique({ where: { id: activeGradeId } });
+  if (!grade || grade.score === null) return null;
+  const score = Number(grade.score);
+  const maxScore = Number(assignment.maxScore);
+  return {
+    source: grade.source,
+    score,
+    maxScore,
+    scoringFormat: assignment.scoringFormat,
+    letter: grade.letter,
+    percentage: Math.round((score / maxScore) * 100),
+    feedback: grade.feedback ?? '',
+    chip: state === 'INSTRUCTOR_APPROVED' ? 'status-approved' : 'status-ai',
+  };
+}
+
+/**
  * The student's own submission for one assignment (API Spec SUB-01), read through `db`, which may be a transaction.
  * `UPLOADING` shows only while nothing is stored yet; after that the state is the submission's, and an upload opened
  * for a resubmission is `draftVersion`. `closed` is reported here and refused by `openVersion` and `finalizeVersion`.
@@ -181,6 +208,8 @@ async function studentSubmissionOf(db: Prisma.TransactionClient, studentId: stri
     firstSubmittedAt: submission?.firstSubmittedAt?.toISOString() ?? null,
     latestSubmittedAt: latest?.toISOString() ?? null,
     files: current?.files.map(toFileView) ?? [],
+    grade: submission ? await gradeViewOf(db, submission, assignment) : null,
+    instructorComment: submission?.state === 'INSTRUCTOR_APPROVED' ? submission.instructorComment : null,
     draftVersion: draft ? { ...toVersionView(draft), files: draft.files.map(toFileView) } : null,
   };
 }

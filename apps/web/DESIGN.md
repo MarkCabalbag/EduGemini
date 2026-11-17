@@ -18,6 +18,8 @@ colors:
   status-approved-fg: "#166534"
   status-pending-bg: "#f1f5f9"
   status-pending-fg: "#334155"
+  status-ai-bg: "#eef2ff"
+  status-ai-fg: "#3730a3"
   status-info-bg: "#e0f2fe"
   status-info-fg: "#075985"
   status-error-bg: "#fee2e2"
@@ -161,11 +163,12 @@ A cool slate paper palette with a single indigo ink.
 ### Status
 - **Approved** (`status-approved-*`): green pair for instructor-approved, final grades.
 - **Pending** (`status-pending-*`): slate pair for waiting, in progress, or awaiting review.
+- **AI** (`status-ai-*`): indigo pair, with a sparkles icon, for an AI-generated result that the instructor has not approved yet.
 - **Info** (`status-info-*`): sky pair for neutral information.
 - **Error** (`status-error-*`) and **Danger** (`danger`, with `danger-fg` text): red for problems the user must fix and for destructive actions.
 - **Overlay** (`overlay`): the backdrop behind dialogs and sheets. It darkens the page in both themes (black at 60% in dark).
 
-The UX brief also defines `status-ai`, `status-late`, and `status-review` tones; they are not in the code yet.
+The UX brief also defines `status-late` and `status-review` tones; they are not in the code yet.
 
 ### Named Rules
 **The One Ink Rule.** Chalk Indigo is the only accent. It marks what you can act on (buttons, links, focus) and small signals of progress or something new (the unread dot, the notification count, the stepper bar). Nothing else is indigo.

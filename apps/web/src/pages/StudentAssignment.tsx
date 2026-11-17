@@ -31,8 +31,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 /**
  * The student's part of the page: the upload control (with the files of an upload still open) until they have submitted, then the receipt. When the due date has
- * passed and late work is closed, a student who has not submitted sees that instead of the upload control. A resubmit
- * control and the result block come with their tickets, so for now a submitted student sees the receipt only.
+ * passed and late work is closed, a student who has not submitted sees that instead of the upload control. A submitted student
+ * sees the receipt, with the result once it is ready (the page asks again every 5 seconds until then). The resubmit control
+ * comes with its ticket.
  */
 function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; canUpload: boolean }) {
   const mine = useMySubmission(assignmentId);
@@ -58,7 +59,7 @@ function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; can
 
 /**
  * What an approved student reads about one published assignment (App Flow §6 step 3), and the control to upload their files.
- * An archived class is read-only, so it has no upload control (UX Brief, student pages). The result block comes with grading.
+ * An archived class is read-only, so it has no upload control (UX Brief, student pages).
  */
 function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
   // The class gives the name for the way back, and says whether it is archived (read-only). The page works without it.
