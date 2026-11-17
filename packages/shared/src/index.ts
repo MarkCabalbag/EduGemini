@@ -4,6 +4,7 @@ export * from './classes';
 export * from './enums';
 export * from './errors';
 export * from './file-type';
+export * from './grading';
 export * from './keys';
 export * from './limits';
 export * from './notifications';
