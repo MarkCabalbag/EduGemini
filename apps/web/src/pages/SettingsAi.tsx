@@ -9,11 +9,9 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { TextField } from '../components/ui/TextField';
-import { useMe } from '../hooks/use-auth';
 import { useKey, useRemoveKey, useSaveKey } from '../hooks/use-key';
 import { errorTextOf } from '../lib/error-text';
 import { showApiError } from '../lib/form-errors';
-import { NotFound } from './NotFound';
 
 /** The Google AI Studio link of the setup steps (PRD FR-KEY-07). The docs name the link but not its address; this one is the owner's. */
 const AI_STUDIO_URL = 'https://aistudio.google.com/docs';
@@ -162,8 +160,7 @@ function KeyPage() {
   );
 }
 
-/** Settings > AI (instructors only, TRD §15.1). The API refuses everyone else too; this keeps a student from getting the page. */
+/** Settings > AI (instructors only, TRD §15.1; the route is behind `RequireRole`). */
 export function SettingsAi() {
-  const me = useMe().data;
-  return me?.role === 'INSTRUCTOR' ? <KeyPage /> : <NotFound />;
+  return <KeyPage />;
 }

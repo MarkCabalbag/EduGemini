@@ -8,10 +8,8 @@ import { Button } from '../components/ui/Button';
 import { Checkbox } from '../components/ui/Checkbox';
 import { TextAreaField } from '../components/ui/TextAreaField';
 import { TextField } from '../components/ui/TextField';
-import { useMe } from '../hooks/use-auth';
 import { useCreateClass } from '../hooks/use-classes';
 import { showApiError } from '../lib/form-errors';
-import { NotFound } from './NotFound';
 
 const SHOWN_FIELDS = ['name', 'description', 'section', 'subject', 'room', 'attestation.confirmed'];
 
@@ -20,7 +18,6 @@ const ATTESTATION =
   "I have the authority to collect and upload my students' work, and my students (or their guardians where required) have been told it is processed by AI.";
 
 export function CreateClass() {
-  const me = useMe().data;
   const navigate = useNavigate();
   const createClass = useCreateClass();
   const [formError, setFormError] = useState<string>();
@@ -30,9 +27,6 @@ export function CreateClass() {
   });
   const { errors } = formState;
   const attested = watch('attestation.confirmed');
-
-  // The API refuses everyone else too; this just keeps the form from showing to a student (API Spec A3).
-  if (me?.role !== 'INSTRUCTOR') return <NotFound />;
 
   const onSubmit = handleSubmit((values) => {
     setFormError(undefined);

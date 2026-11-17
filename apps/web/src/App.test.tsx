@@ -136,6 +136,18 @@ describe('sign up', () => {
     expect(posts('/auth/signup')).toHaveLength(0);
   });
 
+  it('announces a field error as an alert, and ties it to its field (UX Brief §12)', async () => {
+    const user = userEvent.setup();
+    renderAt('/signup');
+
+    await user.click(await screen.findByRole('button', { name: 'Create account' }));
+
+    const alert = (await screen.findAllByRole('alert')).find((node) => node.textContent?.includes('Required'));
+    expect(alert).toBeTruthy();
+    const field = screen.getByLabelText('First name');
+    expect(field.getAttribute('aria-describedby')).toContain(alert!.id);
+  });
+
   it('sends the role, the accepted Terms and their version, then lands on the dashboard', async () => {
     const user = userEvent.setup();
     renderAt('/signup');

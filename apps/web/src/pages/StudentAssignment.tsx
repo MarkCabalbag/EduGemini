@@ -6,7 +6,6 @@ import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { StatusChip } from '../components/ui/StatusChip';
 import { useAssignment } from '../hooks/use-assignments';
-import { useMe } from '../hooks/use-auth';
 import { useClass } from '../hooks/use-classes';
 import { useMySubmission } from '../hooks/use-submission';
 import { ApiRequestError } from '../lib/api';
@@ -92,11 +91,8 @@ function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
 /** The assignment page for a student. A draft, an archived assignment, a pending, declined or removed student and a stranger all see the same "not found" (API Spec A3, API-7). */
 export function StudentAssignment() {
   const assignmentId = useParams<'assignmentId'>().assignmentId!; // the route has :assignmentId
-  const me = useMe().data;
   const assignment = useAssignment(assignmentId);
 
-  // The API refuses everyone else too; this just keeps an instructor from getting a student's page (API Spec A3).
-  if (me?.role !== 'STUDENT') return <NotFound />;
   if (assignment.isPending) return <PageLoading />;
   if (assignment.isError) {
     const error = assignment.error;

@@ -236,12 +236,19 @@ describe('the assignment wizard', () => {
     expect(callsTo('POST', '/classes')).toHaveLength(0);
   });
 
-  it('is not for a student', async () => {
+  it('is not for a student, who gets the no-access page', async () => {
     me = signedInAs('STUDENT');
     renderAt(`/classes/${CLASS_ID}/assignments/new`);
 
-    expect(await screen.findByText(/couldn.t find that page/i)).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: /you don.t have access to this page/i })).toBeTruthy();
     expect(screen.queryByLabelText('Title')).toBeNull();
+  });
+
+  it('keeps a student out of the edit address too', async () => {
+    me = signedInAs('STUDENT');
+    renderAt(`/assignments/${crypto.randomUUID()}/edit`);
+
+    expect(await screen.findByRole('heading', { name: /you don.t have access to this page/i })).toBeTruthy();
   });
 
   it('saves the criteria, and asks for them first', async () => {
@@ -670,12 +677,12 @@ describe('the assignment page, as a student', () => {
     expect(await screen.findByRole('heading', { name: /couldn.t find that page/i })).toBeTruthy();
   });
 
-  it('is not a page for an instructor, who has the tracker and the wizard for an assignment', async () => {
+  it('is not a page for an instructor, who has the tracker and the wizard for an assignment and gets the no-access page', async () => {
     me = signedInAs('INSTRUCTOR');
     const assignment = published();
     renderAt(`/assignments/${assignment.id}`);
 
-    expect(await screen.findByRole('heading', { name: /couldn.t find that page/i })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: /you don.t have access to this page/i })).toBeTruthy();
     expect(screen.queryByText('Thesis is clear (10 points).')).toBeNull();
   });
 

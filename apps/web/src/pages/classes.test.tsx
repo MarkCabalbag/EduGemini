@@ -592,11 +592,11 @@ describe('create class', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Too many attempts');
   });
 
-  it('is not found for a student, who has no form and sends nothing', async () => {
+  it('shows a student the no-access page, with no form and nothing sent', async () => {
     me = signedInAs('STUDENT');
     renderAt('/classes/new');
 
-    expect(await screen.findByRole('heading', { name: /couldn.t find that page/i })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: /you don.t have access to this page/i })).toBeTruthy();
     expect(screen.queryByLabelText('Class name')).toBeNull();
   });
 });

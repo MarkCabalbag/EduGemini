@@ -18,6 +18,16 @@ describe('errorText', () => {
     expect(errorText('FILE_LIMIT')).toBe('Something went wrong.'); // a limit it does not know by name
   });
 
+  it('has the key and upload messages from API Spec A4, each saying what to do next', () => {
+    expect(errorText('KEY_MISSING')).toBe('Connect your Gemini key first.');
+    expect(errorText('KEY_INVALID')).toBe("This key isn't valid. Check it and try again.");
+    expect(errorText('KEY_API_DISABLED')).toBe("The Gemini API isn't enabled for this key.");
+    expect(errorText('KEY_QUOTA')).toBe('This key has reached its daily limit.');
+    expect(errorText('PROVIDER_UNAVAILABLE')).toBe("We couldn't reach Google right now. Try again in a few minutes.");
+    expect(errorText('UPLOAD_NOT_OPEN')).toBe('Start a new upload to replace files.');
+    expect(errorText('LOCKED_APPROVED')).toBe('This submission is locked after approval.');
+  });
+
   it('has the locked scoring format message from API Spec A4', () => {
     expect(errorText('FORMAT_LOCKED')).toBe("Scoring can't change after submissions exist.");
   });

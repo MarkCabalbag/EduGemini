@@ -217,11 +217,11 @@ describe('who sees Settings > AI', () => {
     expect(link.getAttribute('href')).toBe('/settings/ai');
   });
 
-  it('gives a student the not-found page, with no Settings link and no request for the key', async () => {
+  it('gives a student the no-access page, with no Settings link and no request for the key', async () => {
     me = student;
     renderAt('/settings/ai');
 
-    expect(await screen.findByText(/couldn.t find that page/i)).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: /you don.t have access to this page/i })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Settings' })).toBeNull();
     expect(calls.some((c) => c.path === '/me/key')).toBe(false);
   });

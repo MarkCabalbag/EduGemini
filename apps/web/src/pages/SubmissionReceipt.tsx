@@ -24,7 +24,8 @@ export function SubmissionReceipt({ submission }: { submission: StudentSubmissio
   return (
     <section className="space-y-3">
       <h2 className="text-title font-semibold">Your submission</h2>
-      <div className="flex flex-wrap items-center gap-2">
+      {/* A live region, so a screen reader hears the state change from Grading to the result (UX Brief §12). */}
+      <div role="status" className="flex flex-wrap items-center gap-2">
         <StatusChip tone={tone}>{STATE_TEXT[state]}</StatusChip>
         {isLate && <StatusChip tone="info">Late</StatusChip>}
       </div>

@@ -4,6 +4,13 @@ import { ApiRequestError } from './api';
 // One lookup from an error code to what the user reads (UX Brief §11.2, API Spec A4). Components never show `message`.
 const TEXT: Partial<Record<ErrorCode | 'NETWORK', string>> = {
   UPLOAD_INCOMPLETE: "Some files haven't finished uploading.",
+  UPLOAD_NOT_OPEN: 'Start a new upload to replace files.',
+  LOCKED_APPROVED: 'This submission is locked after approval.',
+  KEY_MISSING: 'Connect your Gemini key first.',
+  KEY_INVALID: "This key isn't valid. Check it and try again.",
+  KEY_API_DISABLED: "The Gemini API isn't enabled for this key.",
+  KEY_QUOTA: 'This key has reached its daily limit.',
+  PROVIDER_UNAVAILABLE: "We couldn't reach Google right now. Try again in a few minutes.",
   ATTEMPTS_EXHAUSTED: "You've used all your resubmissions. Your instructor can give you more.",
   LATE_CLOSED: 'Late submissions are closed for this assignment.',
   FORMAT_LOCKED: "Scoring can't change after submissions exist.",

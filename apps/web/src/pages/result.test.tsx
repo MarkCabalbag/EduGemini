@@ -111,6 +111,16 @@ describe('the student result', () => {
     expect(screen.queryByText(/Grading in progress/)).toBeNull();
   });
 
+  it('keeps the state chip in a live region, so a screen reader hears Grading change to the result (UX Brief §12)', async () => {
+    openPage();
+    const grading = await screen.findByText('Grading in progress, usually about a minute');
+    const region = grading.closest('[role="status"]'); // the same element stays on the page, so the change is announced
+    expect(region).toBeTruthy();
+
+    mine = submission({ state: 'AI_GENERATED', grade: aiGrade });
+    await waitFor(() => expect(region!.textContent).toContain('AI-generated'));
+  });
+
   it('writes the score in the assignment format: a percentage, and a letter assignment without a letter yet', async () => {
     mine = submission({ state: 'AI_GENERATED', grade: { ...aiGrade, scoringFormat: 'PERCENTAGE', score: 84, maxScore: 100 } });
     openPage();

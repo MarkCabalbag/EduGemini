@@ -1,5 +1,5 @@
 import { Route, Routes } from 'react-router';
-import { PublicOnly, RequireAuth } from './components/RouteGuards';
+import { PublicOnly, RequireAuth, RequireRole } from './components/RouteGuards';
 import { Layout } from './components/Layout';
 import { useMe } from './hooks/use-auth';
 import { ClassOverview } from './pages/ClassOverview';
@@ -38,13 +38,17 @@ export function App() {
         <Route path="/privacy" element={<Privacy />} />
         <Route element={<RequireAuth />}>
           <Route path="/classes" element={<Dashboard />} />
-          <Route path="/classes/new" element={<CreateClass />} />
           <Route path="/classes/:classId" element={<ClassPage />} />
-          <Route path="/classes/:classId/assignments/new" element={<NewAssignment />} />
-          <Route path="/assignments/:assignmentId" element={<StudentAssignment />} />
-          <Route path="/assignments/:assignmentId/edit" element={<EditAssignment />} />
           <Route path="/notifications" element={<Notifications />} />
-          <Route path="/settings/ai" element={<SettingsAi />} />
+          <Route element={<RequireRole role="INSTRUCTOR" />}>
+            <Route path="/classes/new" element={<CreateClass />} />
+            <Route path="/classes/:classId/assignments/new" element={<NewAssignment />} />
+            <Route path="/assignments/:assignmentId/edit" element={<EditAssignment />} />
+            <Route path="/settings/ai" element={<SettingsAi />} />
+          </Route>
+          <Route element={<RequireRole role="STUDENT" />}>
+            <Route path="/assignments/:assignmentId" element={<StudentAssignment />} />
+          </Route>
         </Route>
         <Route path="*" element={<NotFound />} />
       </Route>
