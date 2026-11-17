@@ -33,7 +33,7 @@ testRouter.get('/boom', () => {
 });
 
 function build(checkDb: () => Promise<void> = async () => {}) {
-  return createApp({ env: { APP_URL }, logger: silent, db: unusedDb, checkDb, routers: [testRouter] });
+  return createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: silent, db: unusedDb, checkDb, routers: [testRouter] });
 }
 
 describe('GET /healthz', () => {

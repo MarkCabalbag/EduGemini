@@ -11,13 +11,27 @@ type Props = {
   onConfirm: () => void;
   /** The request is running: the dialog cannot be closed, and the confirm button shows a spinner. */
   pending?: boolean;
+  /** The confirm button waits until this is true, for a dialog that asks for something first, such as a typed name. */
+  confirmDisabled?: boolean;
+  /** More content between the description and the buttons. */
+  children?: ReactNode;
 };
 
 /**
  * Asks before a destructive action (UX Brief §10.2). Focus is trapped and returns to the button that opened it, and
  * Escape closes it, except while the request runs. Cancel has the focus first, never the destructive button.
  */
-export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, onConfirm, pending = false }: Props) {
+export function ConfirmDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  confirmLabel,
+  onConfirm,
+  pending = false,
+  confirmDisabled = false,
+  children,
+}: Props) {
   const cancel = useRef<HTMLButtonElement>(null);
   // Radix only returns focus to its own trigger. This dialog is opened from a button in a list, so it remembers that button.
   const opener = useRef<HTMLElement | null>(null);
@@ -46,11 +60,12 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
         >
           <Dialog.Title className="text-title font-semibold">{title}</Dialog.Title>
           <Dialog.Description>{description}</Dialog.Description>
+          {children}
           <div className="flex flex-wrap justify-end gap-2">
             <Button ref={cancel} variant="secondary" disabled={pending} onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button variant="danger" loading={pending} onClick={onConfirm}>
+            <Button variant="danger" loading={pending} disabled={confirmDisabled} onClick={onConfirm}>
               {confirmLabel}
             </Button>
           </div>

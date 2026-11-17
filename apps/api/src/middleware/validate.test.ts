@@ -10,7 +10,7 @@ import { validate, validated } from './validate';
 const APP_URL = 'http://localhost:5173';
 
 function appWith(router: Router) {
-  return createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db: unusedDb, checkDb: async () => {}, routers: [router] });
+  return createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db: unusedDb, checkDb: async () => {}, routers: [router] });
 }
 
 describe('validate: query parameters (API Spec A2)', () => {

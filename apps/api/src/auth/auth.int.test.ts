@@ -18,7 +18,7 @@ const email = (name: string) => `${name}-${RUN}@example.test`;
 
 // A fresh app per test: the in-memory rate limits start empty each time.
 const build = () =>
-  createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
+  createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
 
 const signUpBody = (name: string, overrides: object = {}) => ({
   email: email(name),

@@ -14,6 +14,7 @@ import { classMeta } from '../lib/class-meta';
 import { errorTextOf } from '../lib/error-text';
 import { Assignments } from './Assignments';
 import { ClassCodeCard } from './ClassCodeCard';
+import { DeleteClass } from './DeleteClass';
 import { EditClassDetails } from './EditClassDetails';
 import { NotFound } from './NotFound';
 import { People } from './People';
@@ -56,6 +57,7 @@ function ArchiveCard({ cls }: { cls: ClassSummary }) {
         </>
       )}
       {archive.isError && <Alert>{errorTextOf(archive.error)}</Alert>}
+      <DeleteClass cls={cls} />
       {asking && (
         <ConfirmDialog
           open

@@ -22,7 +22,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'edugemini-dev-files-'));
   storage = createLocalStorage({ dir, appUrl: APP_URL, secret: SECRET });
   app = createApp({
-    env: { APP_URL },
+    env: { APP_URL, STORAGE_BUCKET: 'test-bucket' },
     logger: createLogger('silent', 'test'),
     db: unusedDb,
     checkDb: async () => {},

@@ -26,7 +26,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const db = createTestDb();
 
 // A fresh app per test: the in-memory rate limits start empty each time.
-const build = () => createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
+const build = () => createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
 type TestApp = ReturnType<typeof build>;
 
 /** A user with a live session, made straight in the database so no password has to be hashed. */

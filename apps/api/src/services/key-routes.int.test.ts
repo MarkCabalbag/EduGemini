@@ -18,7 +18,7 @@ const db = createTestDb();
 
 // A fresh app per request: the in-memory rate limits start empty each time.
 const build = () =>
-  createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db, checkDb: async () => {}, routers: [keyRouter({ db, env: ENV })] });
+  createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db, checkDb: async () => {}, routers: [keyRouter({ db, env: ENV })] });
 
 /** A user with a live session, made straight in the database so no password has to be hashed. */
 async function signedInUser(name: string, role: Role) {

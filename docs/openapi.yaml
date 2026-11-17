@@ -2179,7 +2179,7 @@ components:
         assignments: { type: integer, minimum: 0 }
         submissions: { type: integer, minimum: 0 }
         files: { type: integer, minimum: 0 }
-        gradebookCsvPath: { type: string }
+        gradebookCsvPath: { type: string, description: "Left out until the gradebook download exists (TRK-04)." }
 
     JoinRequest:
       type: object

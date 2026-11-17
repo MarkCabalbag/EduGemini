@@ -700,8 +700,8 @@ Each endpoint has the same fields:
 - **FR:** FR-CLS-11, D12.
 - **Request:** `{ confirmation }`. The value must equal the class name exactly (case-sensitive, trimmed).
 - **Response:** `204`.
-- **Errors:** `CONFIRMATION_MISMATCH`.
-- **Effects:** deletes the class and everything in it in one transaction, and writes the storage outbox (Backend Schema §10.2). Approved students get `CLASS_DELETED`. The response does not wait for storage cleanup.
+- **Errors:** `CONFIRMATION_MISMATCH`. An archived class can be deleted, so there is no `CLASS_ARCHIVED`.
+- **Effects:** deletes the class and everything in it in one transaction, and writes the storage outbox (Backend Schema §10.2). Approved students get `CLASS_DELETED`, which opens their class list (`/classes`), because the class is gone. The response does not wait for storage cleanup.
 - **Concurrency:** the class row is locked. A grading job for a deleted submission finds nothing and ends without a write.
 - **Test:** `class.spec` (typed confirmation, cascade).
 
@@ -738,7 +738,7 @@ Each endpoint has the same fields:
 `GET /api/classes/{classId}/deletion-impact`
 - **Access:** owning instructor; the Super Admin uses ADM-08 (metadata).
 - **FR:** FR-CLS-11.
-- **Response:** `200` `{ students, approvedStudents, pendingStudents, assignments, submissions, files, gradebookCsvPath }`. `gradebookCsvPath` points to TRK-04 so the instructor can download before deleting.
+- **Response:** `200` `{ students, approvedStudents, pendingStudents, assignments, submissions, files, gradebookCsvPath }`. `students` counts every enrollment, whatever its state. `gradebookCsvPath` points to TRK-04 so the instructor can download before deleting; it is left out until that download exists.
 - **Effects:** none. The counts are recomputed when the delete is confirmed.
 - **Test:** `class.spec`.
 

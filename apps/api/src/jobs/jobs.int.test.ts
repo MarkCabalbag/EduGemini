@@ -252,7 +252,7 @@ describe('the worker (startJobs)', () => {
       cookie = `${SESSION_COOKIE}=${await createSession(db, studentId)}`;
       // The app's finalize sends its grading job to the same worker, as `main.ts` wires it.
       app = createApp({
-        env: { APP_URL },
+        env: { APP_URL, STORAGE_BUCKET: 'test-bucket' },
         logger,
         db,
         checkDb: async () => {},

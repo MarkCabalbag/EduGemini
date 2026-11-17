@@ -54,7 +54,7 @@ afterEach(() => {
 // A fresh app per test: the in-memory rate limits start empty each time.
 const build = () =>
   createApp({
-    env: { APP_URL },
+    env: { APP_URL, STORAGE_BUCKET: 'test-bucket' },
     logger: createLogger('silent', 'test'),
     db,
     checkDb: async () => {},

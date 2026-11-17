@@ -1,12 +1,23 @@
 import { randomInt } from 'node:crypto';
 import type { Class, Prisma, PrismaClient } from '@prisma/client';
-import type { ClassPage, ClassSummary, CreateClass, EnrollmentCounts, EnrollmentStatus, ListClassesQuery, UpdateClass } from '@edugemini/shared';
+import type {
+  ClassDeletionImpact,
+  ClassPage,
+  ClassSummary,
+  CreateClass,
+  EnrollmentCounts,
+  EnrollmentStatus,
+  ListClassesQuery,
+  UpdateClass,
+} from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import { decodeCursor, pageOf } from '../lib/cursor';
 import { lockClass } from '../lib/lock';
 import { isUniqueViolation } from '../lib/prisma-errors';
 import { authorize, decide, type Actor } from '../policy/policy';
+import { notify } from './notification-service';
 import { enrollmentCounts } from './people-service';
+import { queueDeletions } from './submission-service';
 
 // 32 characters: letters without I and O, digits 2 to 9 (Backend Schema §4.7). No look-alikes (PRD FR-CLS-02).
 const JOIN_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -224,5 +235,66 @@ export async function disableCode(db: PrismaClient, actor: Actor, classId: strin
   if (row.archivedAt) throw new AppError('CLASS_ARCHIVED'); // read-only (FR-CLS-06)
 
   return toClassSummary(await db.class.update({ where: { id: classId }, data: { joinCodeActive: false } }), appUrl);
+}
+
+/** The class, if the caller may delete it. Someone else's class looks the same as a missing one (API Spec A3). */
+async function ownClassToDelete(db: PrismaClient, actor: Actor, classId: string) {
+  const row = await db.class.findUnique({ where: { id: classId } });
+  if (!row) throw new AppError('NOT_FOUND');
+  authorize(actor, 'class.delete', { classInstructorId: row.instructorId });
+  return row;
+}
+
+/** What deleting the class would remove (API Spec CLS-11). Counted again when the delete is confirmed, so this is only a preview. */
+export async function deletionImpact(db: PrismaClient, actor: Actor, classId: string): Promise<ClassDeletionImpact> {
+  await ownClassToDelete(db, actor, classId);
+
+  const [enrollments, assignments, submissions, submissionFiles, referenceFiles, announcementFiles] = await Promise.all([
+    db.enrollment.groupBy({ by: ['status'], where: { classId }, _count: { _all: true } }),
+    db.assignment.count({ where: { classId } }),
+    db.submission.count({ where: { assignment: { classId } } }),
+    db.submissionFile.count({ where: { version: { submission: { assignment: { classId } } } } }),
+    db.referenceFile.count({ where: { assignment: { classId } } }),
+    db.announcementFile.count({ where: { announcement: { classId } } }),
+  ]);
+  const students = (status?: EnrollmentStatus) =>
+    enrollments.filter((group) => !status || group.status === status).reduce((sum, group) => sum + group._count._all, 0);
+
+  return {
+    students: students(),
+    approvedStudents: students('ACTIVE'),
+    pendingStudents: students('PENDING'),
+    assignments,
+    submissions,
+    files: submissionFiles + referenceFiles + announcementFiles,
+  };
+}
+
+/**
+ * Delete the class and everything in it, in one transaction on the locked class row (API Spec CLS-07, Backend Schema §10.2).
+ * The stored objects go to the storage outbox first; the `storage.cleanup` job deletes them after the commit. The approved
+ * students are told. The confirmation is the class name, compared against the name read under the lock.
+ */
+export async function deleteClass(db: PrismaClient, bucket: string, actor: Actor, classId: string, confirmation: string): Promise<void> {
+  await ownClassToDelete(db, actor, classId);
+
+  await db.$transaction(async (tx) => {
+    await lockClass(tx, classId);
+    // Read again under the lock: a request that waited behind another delete finds the class gone.
+    const row = await tx.class.findUnique({ where: { id: classId } });
+    if (!row) throw new AppError('NOT_FOUND');
+    if (confirmation.trim() !== row.name) throw new AppError('CONFIRMATION_MISMATCH');
+
+    const [submissionFiles, referenceFiles, announcementFiles, approved] = await Promise.all([
+      tx.submissionFile.findMany({ where: { version: { submission: { assignment: { classId } } } }, select: { storagePath: true } }),
+      tx.referenceFile.findMany({ where: { assignment: { classId } }, select: { storagePath: true } }),
+      tx.announcementFile.findMany({ where: { announcement: { classId } }, select: { storagePath: true } }),
+      tx.enrollment.findMany({ where: { classId, status: 'ACTIVE' }, select: { studentId: true } }),
+    ]);
+    await queueDeletions(tx, bucket, [...submissionFiles, ...referenceFiles, ...announcementFiles]);
+    await tx.class.delete({ where: { id: classId } }); // the rest goes with it (foreign-key cascades)
+    // The class is gone, so the notification opens the student's class list. Titles and links are final with NTF-05.
+    await notify(tx, 'CLASS_DELETED', approved.map((enrollment) => enrollment.studentId), { link: '/classes', className: row.name });
+  });
 }
 

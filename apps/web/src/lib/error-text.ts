@@ -25,6 +25,7 @@ const TEXT: Partial<Record<ErrorCode | 'NETWORK', string>> = {
   JOIN_BLOCKED: "You can't join this class right now. Contact the instructor.",
   INSTRUCTOR_CANNOT_JOIN: "Instructor accounts can't join classes.",
   CLASS_ARCHIVED: 'This class is archived and read-only.',
+  CONFIRMATION_MISMATCH: 'Type the exact name to confirm.',
   CONFLICT: 'That changed in the meantime. The list has been updated.',
   VALIDATION: 'Check the highlighted fields and try again.',
   INTERNAL: 'Something went wrong on our side.',

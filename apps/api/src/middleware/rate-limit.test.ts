@@ -10,7 +10,7 @@ import { limit, limiters, RULES } from './rate-limit';
 const APP_URL = 'http://localhost:5173';
 
 function appWith(...routers: Router[]) {
-  return createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db: unusedDb, checkDb: async () => {}, routers });
+  return createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db: unusedDb, checkDb: async () => {}, routers });
 }
 
 const post = (app: ReturnType<typeof appWith>, path: string, body: object = {}) =>

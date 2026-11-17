@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  ClassDeletionImpact,
   ClassPage,
   ClassStatus,
   ClassSummary,
@@ -70,6 +71,24 @@ export function useArchiveClass(classId: string) {
   return useMutation({
     mutationFn: (archive: boolean) => api<ClassSummary>(`/classes/${classId}/${archive ? 'archive' : 'restore'}`, { method: 'POST' }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: classKeys.all }),
+  });
+}
+
+/** What deleting the class removes, for the confirmation dialog (API Spec CLS-11). Asked for only while the dialog is open, and never cached: the counts are read fresh each time. */
+export function useDeletionImpact(classId: string) {
+  return useQuery({
+    queryKey: [...classKeys.one(classId), 'deletion-impact'],
+    queryFn: () => api<ClassDeletionImpact>(`/classes/${classId}/deletion-impact`),
+    gcTime: 0,
+  });
+}
+
+/** Delete the class and everything in it (API Spec CLS-07). The lists of classes are read again; the class page itself is left alone, because the page leaves it. */
+export function useDeleteClass(classId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (confirmation: string) => api(`/classes/${classId}`, { method: 'DELETE', body: { confirmation } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: classKeys.lists() }),
   });
 }
 
