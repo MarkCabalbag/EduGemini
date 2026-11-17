@@ -1,11 +1,11 @@
-import type { PrismaClient } from '@prisma/client';
 import { PgBoss, type Queue } from 'pg-boss';
-import type { Logger } from '../lib/logger';
-import type { StorageAdapter } from '../lib/storage';
+import type { GradingDeps } from '../services/grading-service';
+import { GRADE_SUBMISSION, GRADING_CONCURRENCY, gradeSubmissionHandler } from './grade-submission.job';
 import { runStagedCleanup, STAGED_CLEANUP } from './staged-cleanup.job';
 import { runStorageCleanup, STORAGE_CLEANUP } from './storage-cleanup.job';
 
-export type JobDeps = { db: PrismaClient; storage: StorageAdapter; bucket: string; logger: Logger };
+// What the jobs need: the database, storage, the logger, and what grading uses (Gemini, the pacer, the key settings).
+export type JobDeps = GradingDeps;
 
 // Every queue of TRD §10.1, with its settings. A queue gets a worker when its job file is added to `jobs` below; until then it
 // only exists, so the ticket that starts sending to it has nothing to set up.
@@ -53,5 +53,8 @@ export async function startJobs(connectionString: string, deps: JobDeps): Promis
     await boss.schedule(queue, cron);
     await boss.send(queue);
   }
+
+  // Grading has no schedule and does not run at start: finalize sends one job per submission (AI-08). At most 3 run at once.
+  await boss.work(GRADE_SUBMISSION, { localConcurrency: GRADING_CONCURRENCY }, gradeSubmissionHandler(boss, deps));
   return boss;
 }

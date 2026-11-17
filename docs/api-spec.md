@@ -1549,7 +1549,7 @@ Provider facts marked "confirmed" were checked against the sources listed at the
   - **Files API:** third-party write-ups say uploaded files are kept for 48 hours on Google's side (verify). This is the reason the design sends files inline.
   - **Blocked-response shape:** the search did not confirm `promptFeedback.blockReason` on the official errors page (verify at S3).
 - **Data sent:** the assignment title and instructions, the criteria text, reference files (when attached), the student's files in order, and scoring details. **Never sent:** student names or emails, other students' work, the instructor comment (PRD §9.1; TRD §10.4).
-- **Test substitute:** `GEMINI_MODE=fake` with scenario tags (TRD §16.2a). The fake validates requests against `GradeOutput` as well, so a schema change breaks the tests.
+- **Test substitute:** `GEMINI_MODE=fake` with scenario tags (TRD §16.2a). The adapter, fake or live, returns the model's JSON text and the grading job parses it, so the fake's malformed and out-of-range scenarios go through the real parser and a schema change breaks the tests.
 - **Failure behavior:** an outage or quota problem moves submissions to Needs manual review with the cause shown to the instructor. Students see "Submitted, awaiting instructor review" (FR-AI-04, FR-KEY-05). No retry storms: the per-key limiter and the retry caps apply.
 - **Monitoring:** every call writes a `grading_attempts` row (Backend Schema §4.17). The admin health endpoint (ADM-09) reports success rate, manual-review rate by cause, and key or quota error rate.
 - **Spike:** S3 (model, limits, error shapes, inline size), S4 (large payloads and memory).

@@ -1,16 +1,19 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createFakeGemini } from '@edugemini/ai';
 import { TERMS_VERSION } from '@edugemini/shared';
 import { createLocalStorage } from '../lib/local-storage';
 import { createLogger } from '../lib/logger';
 import type { StorageAdapter } from '../lib/storage';
 import { newJoinCode } from '../services/class-service';
+import { saveKey } from '../services/key-service';
 import { createTestDb, testDatabaseUrl } from '../test/test-db';
+import { sendGradeJob } from './grade-submission.job';
 import { startJobs } from './index';
 import { runStorageCleanup, STORAGE_CLEANUP } from './storage-cleanup.job';
 import { STAGED_CLEANUP } from './staged-cleanup.job';
@@ -132,6 +135,12 @@ describe('the worker (startJobs)', () => {
   let boss: PgBoss;
   const pending = `${RUN}/pending-at-start.pdf`;
   let staleVersionId: string;
+  let instructorId: string;
+  let studentId: string;
+  let classId: string;
+  // The pacer is ours, so a test can make the instructor wait for a token.
+  const pacer = { take: vi.fn((_instructorId: string) => 0) };
+  const ENV = { ENCRYPTION_KEY: randomBytes(32).toString('base64'), ENCRYPTION_KEY_VERSION: 1 };
 
   beforeAll(async () => {
     // Work waiting before the worker starts: an object in the outbox, and an upload opened 25 hours ago.
@@ -146,10 +155,14 @@ describe('the worker (startJobs)', () => {
     const submission = await db.submission.create({ data: { assignmentId: assignment.id, studentId: student.id } });
     const stale = await db.submissionVersion.create({ data: { submissionId: submission.id, versionNo: 1, createdAt: new Date(Date.now() - 25 * 3_600_000) } });
     staleVersionId = stale.id;
+    instructorId = instructor.id;
+    studentId = student.id;
+    classId = cls.id;
+    await saveKey(db, ENV, { id: instructor.id, role: 'INSTRUCTOR' }, `AIza${randomBytes(18).toString('hex')}`, new Date());
 
     // This connects as the test project's owner. In production the worker connects as `app_runtime`, which cannot log in on
     // the test project, so the grants in Backend Schema §11.1 are not exercised here (progress tracker, Up next).
-    boss = await startJobs(testDatabaseUrl(), { db, storage, bucket: BUCKET, logger });
+    boss = await startJobs(testDatabaseUrl(), { db, storage, bucket: BUCKET, gemini: createFakeGemini(), pacer, env: ENV, logger });
   });
 
   afterAll(async () => {
@@ -190,5 +203,38 @@ describe('the worker (startJobs)', () => {
 
     await vi.waitFor(async () => expect((await row(path)).completedAt).not.toBeNull(), { timeout: 20_000, interval: 250 });
     expect(await storage.exists(BUCKET, path)).toBe(false);
+  });
+
+  /** A queued submission with a stored version and no files, for an assignment of its own. */
+  async function queuedSubmission() {
+    const assignment = await db.assignment.create({
+      data: { classId, title: 'Grading job test', criteriaText: 'Clear thesis.', dueAt: new Date(Date.now() + 86_400_000), timezone: 'UTC', scoringFormat: 'POINTS', maxScore: 100, status: 'PUBLISHED', publishedAt: new Date() },
+    });
+    const submission = await db.submission.create({ data: { assignmentId: assignment.id, studentId } });
+    const version = await db.submissionVersion.create({ data: { submissionId: submission.id, versionNo: 1, status: 'STORED', storedAt: new Date() } });
+    await db.submission.update({ where: { id: submission.id }, data: { state: 'QUEUED', currentVersionId: version.id } });
+    return { submissionId: submission.id, versionId: version.id, mode: 'first' as const };
+  }
+  const stateOf = async (submissionId: string) => (await db.submission.findUniqueOrThrow({ where: { id: submissionId } })).state;
+
+  it('runs a grading job that is sent to its queue', async () => {
+    const job = await queuedSubmission();
+
+    await sendGradeJob(boss, job);
+
+    await vi.waitFor(async () => expect(await stateOf(job.submissionId)).toBe('AI_GENERATED'), { timeout: 20_000, interval: 250 });
+    expect(await db.gradeResult.count({ where: { submissionId: job.submissionId, status: 'ACTIVE' } })).toBe(1);
+  });
+
+  it('sends the job again to start later when the instructor has no token, and then grades it', async () => {
+    const job = await queuedSubmission();
+    pacer.take.mockClear();
+    pacer.take.mockReturnValueOnce(1); // wait one second, then go
+
+    await sendGradeJob(boss, job);
+
+    await vi.waitFor(async () => expect(await stateOf(job.submissionId)).toBe('AI_GENERATED'), { timeout: 30_000, interval: 250 });
+    expect(pacer.take).toHaveBeenCalledTimes(2);
+    expect(pacer.take).toHaveBeenCalledWith(instructorId);
   });
 });

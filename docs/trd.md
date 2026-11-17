@@ -84,7 +84,7 @@ Vercel ── static React build (apps/web)
 
 Rules that follow from this shape:
 - **One API instance.** Rate-limit counters and the per-instructor grading limiter live in process memory. This is correct only for one instance. Scaling out requires moving them to Postgres (recorded as a constraint, Section 17.3).
-- **The worker is inside the API process.** It starts after the HTTP server, and both shut down together. Jobs are stored in Postgres, so a restart resumes them.
+- **The worker is inside the API process.** It starts before the HTTP server is built but is not waited for, because finalize sends grading jobs through it and a request that arrives during start-up waits for it. Both shut down together. Jobs are stored in Postgres, so a restart resumes them.
 - **Same origin.** The browser calls `/api/...` on the Vercel domain. Cookies are first-party and the API needs no CORS configuration. If spike S1 fails, the fallback is to have Express serve the built web app (one Render service, same origin, no Vercel).
 
 ---
@@ -321,7 +321,7 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 
 | Queue | Payload | Behavior |
 |---|---|---|
-| `grade.submission` | `{ submissionId, versionId, mode: "first" \| "resubmit" \| "regrade_criteria" \| "rerun" \| "regrade_approved" }` | One grading attempt chain (Section 10.3). Queue policy `singleton` and singleton key `grade:<submissionId>`, so only one job runs per submission. Retries as in Section 10.7 |
+| `grade.submission` | `{ submissionId, versionId, mode: "first" \| "resubmit" \| "regrade_criteria" \| "rerun" \| "regrade_approved" }` | One grading attempt chain (Section 10.3). Queue policy `singleton` and singleton key `grade:<submissionId>`, so only one job runs per submission. The policy does not stop two jobs from waiting (pg-boss does not dedupe queued sends), so the stale check in Section 10.3 is what makes the second one harmless. Retries as in Section 10.7 |
 | `regrade.assignment` | `{ assignmentId, criteriaVersion }` | Debounced fan-out to `grade.submission` for unapproved submissions (Section 10.5) |
 | `send.email` | `{ notificationId, to, template, data }` | Email with retries (`retryLimit: 5`) |
 | `digest.flush` | none | Hourly digests (Section 13) |
@@ -329,7 +329,7 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 
 ### 10.2 Key pacing
 - An in-process limiter keeps one token bucket per instructor. Its rate starts at a conservative default (5 requests per minute) and is set per model from the spike results (Section 11).
-- If a job's bucket is empty, it is re-enqueued with `startAfter` set to the next token time. Students see "Grading in progress" (PRD Section 9.5).
+- If a job's bucket is empty, it is re-enqueued with `startAfter` (in seconds) set to the wait for the next token, and the job that found it empty finishes normally. Students see "Grading in progress" (PRD Section 9.5).
 - A global concurrency cap of 3 applies to all Gemini calls.
 - Because the worker is one process (Section 3), an in-memory limiter is correct.
 

@@ -1,10 +1,13 @@
 import { PrismaClient } from '@prisma/client';
 import { createApp } from './app';
 import { warmUpPasswordHashing } from './auth/password';
+import { createGemini } from './lib/create-gemini';
 import { createStorage } from './lib/create-storage';
 import { getEnv } from './lib/env';
+import { createGradingSender } from './jobs/grade-submission.job';
 import { startJobs } from './jobs';
 import { createLogger } from './lib/logger';
+import { createPacer } from './lib/pacing';
 import { devFilesRouter } from './routes/dev-files';
 import { keyRouter } from './routes/key';
 import { uploadsRouter } from './routes/uploads';
@@ -13,6 +16,22 @@ const env = getEnv();
 const logger = createLogger(env.LOG_LEVEL, env.NODE_ENV);
 const prisma = new PrismaClient({ datasourceUrl: env.DATABASE_URL });
 const storage = createStorage(env);
+
+// The worker runs in this process (TRD §3). It starts first, without being awaited, because finalize sends grading jobs through
+// it: a finalize that arrives while it is still starting waits for it. Without the pg-boss schema (`pnpm db:boss:init`) it fails
+// to start, and so does the API: a missing worker should not go unnoticed.
+const bossReady = startJobs(env.PGBOSS_URL, {
+  db: prisma,
+  storage,
+  bucket: env.STORAGE_BUCKET,
+  gemini: createGemini(env),
+  pacer: createPacer(),
+  env,
+  logger,
+}).catch((error: unknown) => {
+  logger.error({ event: 'jobs.start_failed', err: error });
+  process.exit(1);
+});
 
 const app = createApp({
   env,
@@ -24,7 +43,7 @@ const app = createApp({
   },
   routers: [
     keyRouter({ db: prisma, env }),
-    uploadsRouter({ db: prisma, storage, bucket: env.STORAGE_BUCKET }),
+    uploadsRouter({ db: prisma, storage, bucket: env.STORAGE_BUCKET, enqueueGrading: createGradingSender(bossReady, logger) }),
     // Opens the links the local storage signs. Not registered with Supabase storage (env.ts refuses local in production).
     ...(env.STORAGE_DRIVER === 'local' ? [devFilesRouter({ dir: env.STORAGE_LOCAL_DIR, secret: env.SESSION_SECRET })] : []),
   ],
@@ -34,12 +53,7 @@ warmUpPasswordHashing().catch((error: unknown) => logger.error({ event: 'passwor
 
 const server = app.listen(env.PORT, () => logger.info({ event: 'server.listening', port: env.PORT }));
 
-// The worker runs in this process, after the HTTP server starts (TRD §3). Without the pg-boss schema (`pnpm db:boss:init`)
-// it fails to start, and so does the API: a missing worker should not go unnoticed.
-const boss = await startJobs(env.PGBOSS_URL, { db: prisma, storage, bucket: env.STORAGE_BUCKET, logger }).catch((error: unknown) => {
-  logger.error({ event: 'jobs.start_failed', err: error });
-  process.exit(1);
-});
+const boss = await bossReady;
 
 function shutdown(signal: string) {
   logger.info({ event: 'server.shutdown', signal });

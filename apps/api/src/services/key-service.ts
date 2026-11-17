@@ -77,3 +77,19 @@ export async function loadApiKey(db: PrismaClient, env: KeyEnv, instructorId: st
   });
   return row && decryptKey(row, secretOf(env));
 }
+
+/** Why grading cannot use the instructor's key, as the cause of manual review (TRD §10.3 step 2). */
+export type KeyProblem = 'KEY_MISSING' | 'KEY_INVALID' | 'KEY_QUOTA';
+
+/**
+ * The instructor's key for the grading job, or the reason there is none to use. A key whose status is `NEEDS_ATTENTION` or
+ * `QUOTA_REACHED` is not decrypted: grading does not call Gemini with it. Same rules as `loadApiKey` for the plaintext.
+ */
+export async function loadKeyForGrading(db: PrismaClient, env: KeyEnv, instructorId: string): Promise<{ apiKey: string } | { problem: KeyProblem }> {
+  const row = await db.instructorKey.findUnique({ where: { instructorId }, select: { status: true } });
+  if (!row) return { problem: 'KEY_MISSING' };
+  if (row.status === 'NEEDS_ATTENTION') return { problem: 'KEY_INVALID' };
+  if (row.status === 'QUOTA_REACHED') return { problem: 'KEY_QUOTA' };
+  const apiKey = await loadApiKey(db, env, instructorId);
+  return apiKey ? { apiKey } : { problem: 'KEY_MISSING' }; // removed since the status was read
+}

@@ -404,7 +404,7 @@ Instructor actions, written for audit and for the edit-tracking metrics (FR-REV-
 
 ### 4.17 `grading_attempts`
 
-One row per Gemini call. Source of the platform health metrics. Contains no content.
+One row per Gemini call, and one `STALE_DISCARDED` row for a job dropped because its version was no longer current, which made no call. Source of the platform health metrics. Contains no content.
 
 | Column | Type | Purpose |
 |---|---|---|

@@ -19,6 +19,7 @@ import {
   sniffFileType,
   type DisplayState,
   type FileView,
+  type GradeJob,
   type StudentSubmission,
   type VersionView,
 } from '@edugemini/shared';
@@ -28,11 +29,12 @@ import { countPdfPages } from '../lib/pdf-pages';
 import { measure, type StorageAdapter } from '../lib/storage';
 import { authorize, type Actor } from '../policy/policy';
 import { enrollmentOf } from './assignment-service';
+import type { EnqueueGrading } from './grading-service';
 
 /**
  * A student's submission, the three steps of API Spec A7: open a version, send its files, finalize. Finalize makes the
- * submission and queues it, but nothing grades yet (the grading job comes with AI-08), and the lock after approval (SUB-08) comes
- * with its ticket. Open and finalize both refuse late work when it is closed (SUB-06).
+ * submission, queues it and starts the grading job (AI-08), and the lock after approval (SUB-08) comes with its ticket. Open and
+ * finalize both refuse late work when it is closed (SUB-06).
  */
 
 const toVersionView = (row: SubmissionVersion): VersionView => ({
@@ -325,7 +327,8 @@ export async function getMySubmission(db: PrismaClient, actor: Actor, assignment
  * Finalize an upload (API Spec SUB-05): the open version becomes the submission's current one and the submission is queued
  * for grading. Everything runs in one transaction on the locked submission row, so two taps, or a finalize racing another
  * write, run one after the other. The listed files are the final set (a stored file that is not listed is dropped), and a
- * resubmission uses one attempt and removes the previous version's files. Nothing enqueues grading yet (AI-08).
+ * resubmission uses one attempt and removes the previous version's files. The grading job is sent after the transaction has
+ * committed, so the worker never looks for a version that does not exist yet. A repeat finalize sends nothing (AI-08).
  */
 export async function finalizeVersion(
   db: PrismaClient,
@@ -333,6 +336,7 @@ export async function finalizeVersion(
   actor: Actor,
   versionId: string,
   expectedFileIds: string[],
+  enqueueGrading: EnqueueGrading,
 ): Promise<StudentSubmission> {
   const found = await db.submissionVersion.findUnique({
     where: { id: versionId },
@@ -341,7 +345,7 @@ export async function finalizeVersion(
   if (!found || found.submission.studentId !== actor.id) throw new AppError('NOT_FOUND');
   authorize(actor, 'submission.upload', { enrollment: await enrollmentOf(db, actor, found.submission.assignment.classId) });
 
-  return db.$transaction(async (tx) => {
+  const { view, job } = await db.$transaction(async (tx): Promise<{ view: StudentSubmission; job: GradeJob | null }> => {
     await lockSubmission(tx, found.submissionId);
     const submission = await tx.submission.findUniqueOrThrow({ where: { id: found.submissionId } });
     const version = await tx.submissionVersion.findUniqueOrThrow({ where: { id: versionId }, include: { files: true } });
@@ -351,7 +355,7 @@ export async function finalizeVersion(
     });
 
     // A second finalize of the version that is already stored gives the same answer and changes nothing.
-    if (version.status === 'STORED') return studentSubmissionOf(tx, actor.id, assignment);
+    if (version.status === 'STORED') return { view: await studentSubmissionOf(tx, actor.id, assignment), job: null };
     if (version.status !== 'UPLOADING') throw new AppError('UPLOAD_NOT_OPEN');
     if (assignment.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
     if (isClosed(assignment, submission.lateAllowed)) throw new AppError('LATE_CLOSED');
@@ -391,12 +395,17 @@ export async function finalizeVersion(
       data: {
         state: 'QUEUED',
         manualReviewCause: null, // a resubmission after manual review starts again (the cause belongs to that state only)
+        activeGradeId: previousId ? null : undefined, // the old grade belongs to the old version (TRD §5.4); the grading job supersedes it
         currentVersionId: version.id,
         latestSubmittedAt: now,
         firstSubmittedAt: submission.firstSubmittedAt ?? now,
         resubmissionsUsed: previousId ? { increment: 1 } : undefined,
       },
     });
-    return studentSubmissionOf(tx, actor.id, assignment);
+    const job: GradeJob = { submissionId: submission.id, versionId: version.id, mode: previousId ? 'resubmit' : 'first' };
+    return { view: await studentSubmissionOf(tx, actor.id, assignment), job };
   });
+
+  if (job) await enqueueGrading(job);
+  return view;
 }
