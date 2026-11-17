@@ -1536,6 +1536,7 @@ Provider facts marked "confirmed" were checked against the sources listed at the
   | `400 INVALID_ARGUMENT` | Malformed request (our bug, or an unsupported file) | No | `NEEDS_MANUAL_REVIEW`, `AI_FAILED`, logged as `error_class: MALFORMED` |
   | `401` or `403` (invalid key) | `KEY_INVALID` | No | Key status `NEEDS_ATTENTION`; `KEY_INVALID` |
   | `403` (API not enabled for the project) | `KEY_API_DISABLED` | No | Key status `NEEDS_ATTENTION` |
+  | A file the provider cannot read (the signal is unknown until spike S3; **verify**) | `FILE_QUALITY` | No | `NEEDS_MANUAL_REVIEW`, `FILE_QUALITY`; attempt outcome `FILE_ERROR` |
   | `429 RESOURCE_EXHAUSTED`, daily quota | `KEY_QUOTA` | No | Key status `QUOTA_REACHED`; `KEY_QUOTA` |
   | `429 RESOURCE_EXHAUSTED`, per-minute quota | Transient | Yes, honoring `Retry-After` | Retry; then `AI_FAILED` if exhausted |
   | `500`, `503`, network error, timeout | Transient | Yes | Retry; then `AI_FAILED` |

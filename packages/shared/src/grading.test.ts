@@ -11,6 +11,13 @@ describe('GradeJobSchema (TRD §10.1)', () => {
     expect(GradeModeSchema.safeParse('regrade').success).toBe(false);
   });
 
+  it('carries the tries already used when it is sent again, and refuses a negative or fractional count', () => {
+    expect(GradeJobSchema.parse({ submissionId: ID, versionId: ID, mode: 'first', tries: 2 }).tries).toBe(2);
+    expect(GradeJobSchema.parse({ submissionId: ID, versionId: ID, mode: 'first' }).tries).toBeUndefined();
+    expect(GradeJobSchema.safeParse({ submissionId: ID, versionId: ID, mode: 'first', tries: -1 }).success).toBe(false);
+    expect(GradeJobSchema.safeParse({ submissionId: ID, versionId: ID, mode: 'first', tries: 1.5 }).success).toBe(false);
+  });
+
   it('needs both ids', () => {
     expect(GradeJobSchema.safeParse({ versionId: ID, mode: 'first' }).success).toBe(false);
     expect(GradeJobSchema.safeParse({ submissionId: ID, versionId: 'nope', mode: 'first' }).success).toBe(false);

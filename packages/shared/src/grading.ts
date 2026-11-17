@@ -4,11 +4,15 @@ import { z } from 'zod';
 export const GradeModeSchema = z.enum(['first', 'resubmit', 'regrade_criteria', 'rerun', 'regrade_approved']);
 export type GradeMode = z.infer<typeof GradeModeSchema>;
 
-/** The payload of a `grade.submission` job (TRD §10.1). */
+/**
+ * The payload of a `grade.submission` job (TRD §10.1). `tries` is how many tries of this grading have already failed. Only a job
+ * sent again because the instructor had no pacing token carries it, since a new job starts counting its own retries at zero.
+ */
 export const GradeJobSchema = z.object({
   submissionId: z.uuid(),
   versionId: z.uuid(),
   mode: GradeModeSchema,
+  tries: z.number().int().min(0).optional(),
 });
 export type GradeJob = z.infer<typeof GradeJobSchema>;
 

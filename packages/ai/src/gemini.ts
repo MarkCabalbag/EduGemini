@@ -15,10 +15,10 @@ export type GradeInput = {
 };
 
 /**
- * Why a Gemini call failed, in the classes the pipeline acts on (TRD §10.7). Transient errors are retried; the other three
- * are about the instructor's key and are not.
+ * Why a Gemini call failed, in the classes the pipeline acts on (TRD §10.7). Transient errors are retried. The three about the
+ * instructor's key, and `FILE_QUALITY` (a file the provider cannot read), are not: the work goes to manual review at once.
  */
-export type GeminiErrorKind = 'TRANSIENT' | 'KEY_INVALID' | 'KEY_API_DISABLED' | 'QUOTA';
+export type GeminiErrorKind = 'TRANSIENT' | 'KEY_INVALID' | 'KEY_API_DISABLED' | 'QUOTA' | 'FILE_QUALITY';
 
 export class GeminiError extends Error {
   constructor(

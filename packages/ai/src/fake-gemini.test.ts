@@ -50,6 +50,10 @@ describe('the fake Gemini (TRD §16.2a)', () => {
     await expect(ask(['x__scenario-quota-daily__.pdf'])).rejects.toMatchObject({ kind: 'QUOTA' });
   });
 
+  it('cannot read the file for file-quality', async () => {
+    await expect(ask(['x__scenario-file-quality__.pdf'])).rejects.toMatchObject({ kind: 'FILE_QUALITY' });
+  });
+
   it('answers above the maximum for score-above-max, and not as JSON for malformed-json', async () => {
     const above = JSON.parse(await ask(['x__scenario-score-above-max__.pdf'], 20)) as { score: number };
     const malformed = await ask(['x__scenario-malformed-json__.pdf']);

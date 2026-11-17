@@ -321,7 +321,7 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 
 | Queue | Payload | Behavior |
 |---|---|---|
-| `grade.submission` | `{ submissionId, versionId, mode: "first" \| "resubmit" \| "regrade_criteria" \| "rerun" \| "regrade_approved" }` | One grading attempt chain (Section 10.3). Queue policy `singleton` and singleton key `grade:<submissionId>`, so only one job runs per submission. The policy does not stop two jobs from waiting (pg-boss does not dedupe queued sends), so the stale check in Section 10.3 is what makes the second one harmless. Retries as in Section 10.7 |
+| `grade.submission` | `{ submissionId, versionId, mode: "first" \| "resubmit" \| "regrade_criteria" \| "rerun" \| "regrade_approved", tries?: number }` (`tries` is only on a job sent again for a pacing token, Section 10.2: how many tries have already failed) | One grading attempt chain (Section 10.3). Queue policy `singleton` and singleton key `grade:<submissionId>`, so only one job runs per submission. The policy does not stop two jobs from waiting (pg-boss does not dedupe queued sends), so the stale check in Section 10.3 is what makes the second one harmless. Retries as in Section 10.7 |
 | `regrade.assignment` | `{ assignmentId, criteriaVersion }` | Debounced fan-out to `grade.submission` for unapproved submissions (Section 10.5) |
 | `send.email` | `{ notificationId, to, template, data }` | Email with retries (`retryLimit: 5`) |
 | `digest.flush` | none | Hourly digests (Section 13) |
@@ -329,12 +329,12 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 
 ### 10.2 Key pacing
 - An in-process limiter keeps one token bucket per instructor. Its rate starts at a conservative default (5 requests per minute) and is set per model from the spike results (Section 11).
-- If a job's bucket is empty, it is re-enqueued with `startAfter` (in seconds) set to the wait for the next token, and the job that found it empty finishes normally. Students see "Grading in progress" (PRD Section 9.5).
+- If a job's bucket is empty, it is re-enqueued with `startAfter` (in seconds) set to the wait for the next token, and the job that found it empty finishes normally. The new job counts its retries from zero, so the re-enqueued payload carries `tries`, the number of tries that already failed (Section 10.7). Students see "Grading in progress" (PRD Section 9.5).
 - A global concurrency cap of 3 applies to all Gemini calls.
 - Because the worker is one process (Section 3), an in-memory limiter is correct.
 
 ### 10.3 Pipeline for `grade.submission`
-1. Load the submission. If `versionId` is not the current version, finish as **stale** and record `STALE_DISCARDED` (FR-AI-06).
+1. Load the submission. If `versionId` is not the current version, finish as **stale** and record `STALE_DISCARDED` (FR-AI-06). If the submission is not `QUEUED` or `GRADING`, it already has its result or an instructor's decision (a duplicate job): finish quietly and change nothing. Step 6 and every move to manual review check the same two things, so a late failure never undoes a result.
 2. Load the instructor's key. If it is missing, set `NEEDS_MANUAL_REVIEW` with cause `KEY_MISSING`. If its status is `NEEDS_ATTENTION` or `QUOTA_REACHED`, use the matching cause. Do not call Gemini. Notify the instructor once per transition (debounced per instructor for 1 hour). Stop without retrying.
 3. Acquire a pacing token (Section 10.2).
 4. Build the request (Section 10.4) and call Gemini with a 60-second timeout.
@@ -376,6 +376,8 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 | **Quota** | daily limit reached (classification in TQ3) | No | Cause `KEY_QUOTA`; key status `QUOTA_REACHED`; instructor notified immediately |
 | **File quality** | unreadable file reached grading (should be caught at upload) | No | Cause `FILE_QUALITY`; student sees "awaiting instructor review"; instructor sees the reason |
 | **Stale** | version changed during the call | No | Discarded; no state change |
+
+A job has three tries in all (`GRADING_TRIES`; the queue's `retryLimit` is two). The try number is the job's retry count plus the `tries` its payload carries (Section 10.2). A key, quota or file-quality failure returns normally, so pg-boss does not retry it. Any failure on the last try, including one before Gemini is called such as a storage error, ends in `NEEDS_MANUAL_REVIEW` with cause `AI_FAILED`, and the job finishes normally. The key status (`NEEDS_ATTENTION`, `QUOTA_REACHED`) and the instructor's notice are written by the key tickets (KEY-05, KEY-07), not by the grading job.
 
 ### 10.8 Manual actions
 - **Re-run AI (FR-REV-06, FR-KEY-05):** one `grade.submission` job with `mode = rerun`. It does not consume attempts. Bulk re-run enqueues one job per item and the limiter spaces them.
@@ -628,6 +630,7 @@ Tags: `@smoke` (fast core paths, under 5 minutes per project), `@auth`, `@upload
 | `timeout-always` | Every call times out | Needs manual review, cause AI failed |
 | `key-invalid` | Key rejected | Needs manual review, cause key invalid; banner; no retry |
 | `quota-daily` | Daily quota error | Needs manual review, cause quota; banner |
+| `file-quality` | The provider cannot read a file | Needs manual review, cause file quality; no retry |
 | `score-above-max` | Score greater than max | Treated as invalid output; retried; then manual review |
 | `malformed-json` | Non-JSON text | Transient error; retried |
 
