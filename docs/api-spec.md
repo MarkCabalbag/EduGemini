@@ -1077,7 +1077,7 @@ Upload runs in three steps (A7): open a version, send each file, finalize. Only 
 - **FR:** FR-SUB-03.
 - **Response:** `204`.
 - **Errors:** `UPLOAD_NOT_OPEN` (409) for a stored version.
-- **Effects:** deletes the open version and its files; objects go to the outbox. A submission with no stored version returns to `NOT_SUBMITTED`.
+- **Effects:** deletes the open version and its files; objects go to the outbox. A submission with no stored version returns to `NOT_SUBMITTED`. It runs on the locked submission row, so a cancel and a finalize at the same moment run one after the other, and a version that is stored or replaced is never deleted. Cancelling a resubmission leaves the current version, its files, its grade and the attempts used alone. A cancel sent again finds no version and answers `NOT_FOUND`.
 - **Test:** `upload.spec`.
 
 #### FILE-01 · Get a file link
@@ -1516,11 +1516,11 @@ Provider facts marked "confirmed" were checked against the sources listed at the
 - **Purpose:** grades a submission against the criteria (FR-AI-01), and validates an instructor's key (FR-KEY-02).
 - **Calls:**
   - `models.list` (a model-list call) to validate a key (KEY-02, KEY-04). It consumes no generation quota (TRD §11.5; **verify**).
-  - `generateContent` for grading, with `systemInstruction` (prompt version `grade-v1`, defined in the AI Guardrails document), user content parts, `generationConfig` with `responseMimeType: application/json`, `responseSchema: GradeOutput`, and `temperature: 0.2`.
-- **Auth and secrets:** the instructor's own key, sent in the `x-goog-api-key` header. The key is decrypted in memory for one call and never logged, returned, or cached. The redaction list in TRD §14 covers it.
-- **Model:** from `GEMINI_MODEL` (TRD §11.1). Not fixed in this document; the candidate is Gemini 2.5 Flash, to be confirmed at spike S3.
+  - `interactions.create` through the `@google/genai` SDK for grading, with `system_instruction` (prompt version `grade-v1`), `input` content blocks, `response_format: { type: 'text', mime_type: 'application/json', schema: GradeOutput }` (lowercase JSON Schema), `store: false`, `automatic_continuation: false`, and SDK retries off (`maxRetries: 0`, the grading job retries). The answer is `output_text`.
+- **Auth and secrets:** the instructor's own key, given to a new SDK client for each call. The client uses API version `v1beta`, because the `document` input type is not in `v1` (Gemini answers 400). The key is decrypted in memory for one call and never logged, returned, or cached. The redaction list in TRD §14 covers it.
+- **Model:** from `GEMINI_MODEL` (TRD §11.1). Default `gemini-2.5-flash`.
 - **Request contract:**
-  - Parts are text blocks, each wrapped in a random boundary token (TRD §10.4), and inline files as `inlineData: { mimeType, data }` (base64).
+  - Text blocks are `{ type: 'text' }`, each wrapped in a random boundary token (TRD §10.4); a PDF is `{ type: 'document', mime_type, data }` and an image `{ type: 'image', mime_type, data }`, base64 inline.
   - Files are sent inline, not through the Files API (TRD §10.4 and §11.3).
   - The total raw file size per call is capped at 15 MiB (TRD §11.3).
 - **Response contract:** the JSON text is in `candidates[0].content.parts[0].text`, matching `GradeOutput`:
@@ -1545,14 +1545,14 @@ Provider facts marked "confirmed" were checked against the sources listed at the
   | Invalid JSON, score out of range, empty feedback | Transient (TRD §10.6) | Yes | Retry; then `AI_FAILED` |
   | Prompt blocked by the provider's safety filters (`promptFeedback.blockReason`) | `BLOCKED` | No | `NEEDS_MANUAL_REVIEW`, `AI_FAILED`, logged as `error_class: BLOCKED` |
 
-  Distinguishing daily from per-minute quota is open question TQ3 (TRD §17.5). Until spike S3 confirms the error details, the fallback is: a 429 whose retry delay is over 60 seconds is treated as daily.
+  Distinguishing daily from per-minute quota is open question TQ3 (TRD §17.5). As built (portfolio scope, 2026-11-19): a 429 whose body names a per-day quota is daily, any other 429 is per-minute. A 400 that says the key is not valid is `KEY_INVALID`. The SDK's error carries the HTTP `status`. The live adapter is `packages/ai/src/live-gemini.ts` and holds the `grade-v1` prompt text, since the AI Guardrails document is cut.
 - **Limits (verify at spike S3):**
   - Requests per minute, requests per day, and tokens per minute depend on the model and the free tier, and change over time. Recorded in TRD §11.2 at S3.
   - **Inline payload size:** sources disagree. A Google announcement reports the inline payload limit raised from 20 MB to 100 MB, measured in base64 (verify on ai.google.dev). A Firebase AI Logic page still states 20 MB. The product budget of 15 MiB raw (about 20 MB base64) fits either figure, so the design does not change until S3 settles it.
   - **Files API:** third-party write-ups say uploaded files are kept for 48 hours on Google's side (verify). This is the reason the design sends files inline.
   - **Blocked-response shape:** the search did not confirm `promptFeedback.blockReason` on the official errors page (verify at S3).
 - **Data sent:** the assignment title and instructions, the criteria text, reference files (when attached), the student's files in order, and scoring details. **Never sent:** student names or emails, other students' work, the instructor comment (PRD §9.1; TRD §10.4).
-- **Test substitute:** `GEMINI_MODE=fake` with scenario tags (TRD §16.2a). The adapter, fake or live, returns the model's JSON text and the grading job parses it, so the fake's malformed and out-of-range scenarios go through the real parser and a schema change breaks the tests.
+- **Test substitute:** the fake adapter with scenario tags, used by tests only (TRD §16.2a). The adapter, fake or live, returns the model's JSON text and the grading job parses it, so the fake's malformed and out-of-range scenarios go through the real parser and a schema change breaks the tests.
 - **Failure behavior:** an outage or quota problem moves submissions to Needs manual review with the cause shown to the instructor. Students see "Submitted, awaiting instructor review" (FR-AI-04, FR-KEY-05). No retry storms: the per-key limiter and the retry caps apply.
 - **Monitoring:** every call writes a `grading_attempts` row (Backend Schema §4.17). The admin health endpoint (ADM-09) reports success rate, manual-review rate by cause, and key or quota error rate.
 - **Spike:** S3 (model, limits, error shapes, inline size), S4 (large payloads and memory).

@@ -582,7 +582,7 @@ Layout notes:
 - The result block appears below the instructions once a submission exists; before submission, the upload control replaces it.
 - The disclosure line is always visible on the result block, not behind a tooltip.
 - Instructor-approved: the result is read-only, with a lock icon and "Locked by your instructor."
-- Late work closed (past due, late not accepted, and the instructor has not allowed this student): a student who has not submitted sees the "Closed" chip and "Late submissions are closed for this assignment." in place of the upload control. A student who already submitted still sees their receipt.
+- Late work closed (past due, late not accepted, and the instructor has not allowed this student): a student who has not submitted sees the "Closed" chip and "Late submissions are closed for this assignment." in place of the upload control. A student who already submitted still sees their receipt, with the same sentence in place of the Resubmit button.
 
 **Upload (wireframe, phone; App Flow 6, step 4)**
 
@@ -620,6 +620,8 @@ Layout notes:
 **Result, after grading (student)**
 - Chip, score, feedback, the disclosure line, attempts left, and the resubmit control. The result block under the chip has a "Score" heading and a "Feedback" heading (an approved grade with an instructor comment adds an "Instructor comment" heading) *(new wording)*. The page asks for the result every 5 seconds while it is Grading, so it appears without a refresh.
 - At 0 attempts left, the resubmit control is replaced by "You've used all your resubmissions. Your instructor can give you more." (App Flow 6, step 7).
+- The resubmit control is a "Resubmit (N left)" button under the receipt ("Resubmit" when unlimited), also while the first submission is still being graded, since the latest version wins. It opens the upload control with the heading "Your new files" and a Cancel button next to Submit files; the receipt of the earlier submission stays above it until the new one is submitted. Cancel throws the new upload away and puts the button back; it is disabled while a file is still being sent. Submitting shows the new receipt and the button with one attempt fewer. An approved submission and an archived class show no button. When late work is closed, a student who has submitted sees "Late submissions are closed for this assignment." in its place, without the "Closed" chip *(new wording: "Your new files", "Resubmit (N left)", "Cancel")*.
+- The attempts count ("3 resubmissions left", "1 resubmission left", "0 resubmissions left", "Unlimited resubmissions") is one line under the late-policy line at the top of the page, in an active class, also before the first submission.
 - Score shown in the assignment's format: "42 / 50", "84%", or "B+ (87)". A letter assignment shows "87 / 100" until the letter scale exists (AI-05).
 
 **Class page, student (layout notes; App Flow 6, step 2)**
