@@ -15,7 +15,10 @@ describe('error catalog', () => {
   });
 
   it('matches the ErrorCode enum in openapi.yaml', () => {
-    const block = docs('openapi.yaml').split(/^ {4}ErrorCode:\n/m)[1]?.split(/^ {4}Error:\n/m)[0] ?? '';
+    const block =
+      docs('openapi.yaml')
+        .split(/^ {4}ErrorCode:\n/m)[1]
+        ?.split(/^ {4}Error:\n/m)[0] ?? '';
     const codes = [...block.matchAll(/^ {8}- ([A-Z_]+)$/gm)].map((m) => m[1]);
     expect([...codes].sort()).toEqual([...ErrorCodeSchema.options].sort());
   });

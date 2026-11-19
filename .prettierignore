@@ -1,0 +1,11 @@
+# Generated or not ours to format
+pnpm-lock.yaml
+**/dist
+**/coverage
+apps/e2e/reports
+apps/api/prisma/migrations
+graphify-out
+.impeccable
+.claude
+# Long-form documents keep their hand-made layout
+docs

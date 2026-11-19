@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -8,11 +9,11 @@ const PROCESS_ENV = {
   message: 'Read configuration through the env module (code-standards §10).',
 };
 const RAW_SQL = {
-  selector: "Identifier[name=/^[$](query|execute)Raw(Unsafe)?$/]",
+  selector: 'Identifier[name=/^[$](query|execute)Raw(Unsafe)?$/]',
   message: 'Raw SQL is allowed only in the row-lock helper (code-standards §7).',
 };
 const LITERAL_COLOR = {
-  selector: "Literal[value=/(#[0-9a-fA-F]{3,8}|(rgb|hsl)a?[(])/]",
+  selector: 'Literal[value=/(#[0-9a-fA-F]{3,8}|(rgb|hsl)a?[(])/]',
   message: 'Use design tokens, not literal colors (UX Brief §5, §15).',
 };
 
@@ -50,17 +51,29 @@ export default tseslint.config(
     },
   },
   { files: ['apps/web/src/lib/api.ts', 'apps/web/src/test/fake-xhr.ts'], rules: { 'no-restricted-globals': 'off' } }, // the test stand-in for api.ts's file transport hands requests to the stubbed fetch
+  // The Vite config reads API_PROXY_TARGET, set by the end-to-end run (apps/e2e/playwright.config.ts).
+  { files: ['apps/web/vite.config.ts'], rules: { 'no-restricted-syntax': ['error', RAW_SQL, LITERAL_COLOR] } },
+  // Playwright fixtures that use no other fixture must still destructure their first argument: `async ({}, use) =>`.
+  { files: ['apps/e2e/fixtures/**/*.ts'], rules: { 'no-empty-pattern': 'off' } },
   { files: ['apps/web/public/**/*.js'], languageOptions: { globals: { ...globals.browser } } },
   // Admin area: only the adminQueries repository, no content models (TRD §7.3).
   {
     files: ['apps/api/src/admin/**/*.ts'],
     ignores: ['apps/api/src/admin/admin-queries.ts'],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['@prisma/client', '**/services/**', '**/jobs/**', '**/lib/db*'], message: 'Admin code may import only adminQueries (TRD §7.3).' },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@prisma/client', '**/services/**', '**/jobs/**', '**/lib/db*'],
+              message: 'Admin code may import only adminQueries (TRD §7.3).',
+            },
+          ],
+        },
+      ],
     },
   },
+  // Last, so formatting is Prettier's job alone (https://prettier.io/docs/install).
+  prettier,
 );

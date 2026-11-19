@@ -42,7 +42,14 @@ export const FinalizeSchema = z.object({ expectedFileIds: z.array(safeText(64).m
 export type Finalize = z.infer<typeof FinalizeSchema>;
 
 /** What a student sees of their submission (API Spec A5). Causes and internal states never appear here. */
-export const DisplayStateSchema = z.enum(['NOT_SUBMITTED', 'UPLOADING', 'GRADING', 'AWAITING_REVIEW', 'AI_GENERATED', 'INSTRUCTOR_APPROVED']);
+export const DisplayStateSchema = z.enum([
+  'NOT_SUBMITTED',
+  'UPLOADING',
+  'GRADING',
+  'AWAITING_REVIEW',
+  'AI_GENERATED',
+  'INSTRUCTOR_APPROVED',
+]);
 export type DisplayState = z.infer<typeof DisplayStateSchema>;
 
 /**

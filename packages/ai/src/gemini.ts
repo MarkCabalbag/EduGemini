@@ -12,6 +12,8 @@ export type GradeFile = {
 export type GradeInput = {
   assignment: { title: string; instructions: string | null; criteriaText: string; scoringFormat: ScoringFormat; maxScore: number };
   studentFiles: GradeFile[];
+  /** The instructor's reference files (ASG-07), sent before the student's files and labeled as reference material. */
+  referenceFiles?: GradeFile[];
 };
 
 /**
@@ -30,7 +32,7 @@ export class GeminiError extends Error {
   }
 }
 
-/** The one place the app talks to Gemini. `GEMINI_MODE` picks the fake or the live one (TRD §11, API Spec C.1). */
+/** The one place the app talks to Gemini. The app uses the live adapter; tests use the fake (TRD §11, §16.2a, API Spec C.1). */
 export type GeminiAdapter = {
   /** The model that answers, stored with every result (PRD §9.6). */
   readonly model: string;
