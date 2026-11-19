@@ -37,9 +37,7 @@ export function StudentAssignments({ classId }: { classId: string }) {
           ))}
         </ul>
       )}
-      {assignments.isFetchNextPageError && (
-        <Alert>{errorTextOf(assignments.error)}</Alert>
-      )}
+      {assignments.isFetchNextPageError && <Alert>{errorTextOf(assignments.error)}</Alert>}
       {assignments.hasNextPage && (
         <Button variant="secondary" loading={assignments.isFetchingNextPage} onClick={() => void assignments.fetchNextPage()}>
           Show more assignments

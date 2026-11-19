@@ -52,7 +52,16 @@ const assignment: AssignmentDetail = {
 };
 
 const FEEDBACK = 'Clear thesis.\nThe second paragraph needs a source.';
-const aiGrade: GradeView = { source: 'AI', score: 42, maxScore: 50, scoringFormat: 'POINTS', letter: null, percentage: 84, feedback: FEEDBACK, chip: 'status-ai' };
+const aiGrade: GradeView = {
+  source: 'AI',
+  score: 42,
+  maxScore: 50,
+  scoringFormat: 'POINTS',
+  letter: null,
+  percentage: 84,
+  feedback: FEEDBACK,
+  chip: 'status-ai',
+};
 
 const submission = (overrides: Partial<StudentSubmission> = {}): StudentSubmission => ({
   state: 'GRADING',
@@ -108,7 +117,11 @@ describe('the student result', () => {
     expect(await screen.findByText('AI-generated')).toBeTruthy();
     expect(screen.getByText('42 / 50')).toBeTruthy();
     expect(screen.getByText(/The second paragraph needs a source\./)).toBeTruthy();
-    expect(screen.getByText('Scores and feedback are AI-generated and reviewed by your instructor. Questions about grades go to your instructor.')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Scores and feedback are AI-generated and reviewed by your instructor. Questions about grades go to your instructor.',
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText(/Grading in progress/)).toBeNull();
   });
 
@@ -128,13 +141,20 @@ describe('the student result', () => {
     expect(await screen.findByText('84%')).toBeTruthy();
     cleanup();
 
-    mine = submission({ state: 'AI_GENERATED', grade: { ...aiGrade, scoringFormat: 'LETTER_NUMERIC', score: 87, maxScore: 100, percentage: 87 } });
+    mine = submission({
+      state: 'AI_GENERATED',
+      grade: { ...aiGrade, scoringFormat: 'LETTER_NUMERIC', score: 87, maxScore: 100, percentage: 87 },
+    });
     openPage();
     expect(await screen.findByText('87 / 100')).toBeTruthy();
   });
 
   it('shows the instructor-approved chip and the instructor comment', async () => {
-    mine = submission({ state: 'INSTRUCTOR_APPROVED', grade: { ...aiGrade, source: 'INSTRUCTOR', chip: 'status-approved' }, instructorComment: 'See me after class.' });
+    mine = submission({
+      state: 'INSTRUCTOR_APPROVED',
+      grade: { ...aiGrade, source: 'INSTRUCTOR', chip: 'status-approved' },
+      instructorComment: 'See me after class.',
+    });
     openPage();
 
     expect(await screen.findByText('Instructor-approved')).toBeTruthy();
@@ -195,7 +215,17 @@ describe('waiting for the result', () => {
         createdAt: '2026-11-16T01:00:00.000Z',
         storedAt: null,
         files: [
-          { id: crypto.randomUUID(), clientFileId: 'earlier-file-1', ordinal: 1, displayName: 'essay.pdf', mimeType: 'application/pdf', sizeBytes: 2048, pageCount: null, status: 'STORED', failureCode: null },
+          {
+            id: crypto.randomUUID(),
+            clientFileId: 'earlier-file-1',
+            ordinal: 1,
+            displayName: 'essay.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 2048,
+            pageCount: null,
+            status: 'STORED',
+            failureCode: null,
+          },
         ],
       },
     });

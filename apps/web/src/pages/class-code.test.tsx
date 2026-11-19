@@ -44,7 +44,8 @@ beforeEach(() => {
   cls = aClass();
   // Like the API: regenerate makes a new code and switches it on; disable switches it off and keeps the code.
   changeResult = (action) => {
-    if (action === 'regenerate') Object.assign(cls, { joinCode: NEW_CODE, joinLink: `http://localhost:5173/join/${NEW_CODE}`, joinCodeActive: true });
+    if (action === 'regenerate')
+      Object.assign(cls, { joinCode: NEW_CODE, joinLink: `http://localhost:5173/join/${NEW_CODE}`, joinCodeActive: true });
     else cls.joinCodeActive = false;
     return Response.json(cls);
   };

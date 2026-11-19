@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { useForm } from 'react-hook-form';
 import type { ScoringFormat } from '@edugemini/shared';
 import { SelectField } from '../../components/ui/SelectField';
@@ -30,6 +31,7 @@ export function DueScoringStep({ assignment, onSaved, onBack, submitLabel }: Ste
   const { save, saving, formError } = useStepSave(assignment.id, setError, ['timezone', 'scoringFormat', 'maxScore'], onSaved);
   const { errors } = formState;
   const points = watch('scoringFormat') === 'POINTS';
+  const zoneNote = useId();
 
   return (
     <StepForm
@@ -46,45 +48,50 @@ export function DueScoringStep({ assignment, onSaved, onBack, submitLabel }: Ste
       onBack={onBack}
       submitLabel={submitLabel}
     >
-      <TextField
-        label="Due date and time"
-        type="datetime-local"
-        {...register('dueLocal', { required: 'Enter a due date and time' })}
-        error={errors.dueLocal?.message}
-      />
-      <SelectField
-        label="Time zone"
-        {...register('timezone')}
-        error={errors.timezone?.message}
-        helper="The due date and time above are on the clock of this time zone. Students see them in their own."
-      >
-        {timeZoneOptions(assignment.timezone).map((zone) => (
-          <option key={zone} value={zone}>
-            {zone}
-          </option>
-        ))}
-      </SelectField>
-      <SelectField label="Scoring format" {...register('scoringFormat')} error={errors.scoringFormat?.message}>
-        {FORMATS.map(({ value, label }) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </SelectField>
-      {points ? (
-        <TextField
-          label="Max score"
-          type="number"
-          step="any"
-          inputMode="decimal"
-          {...register('maxScore', {
-            validate: (value) => (Number(value) >= 0.01 && Number(value) <= 1000) || 'Use a number from 0.01 to 1000',
-          })}
-          error={errors.maxScore?.message}
-        />
-      ) : (
-        <p>Scored out of 100.</p>
-      )}
+      {/* The due date and its zone side by side, with the note about the zone running under both. */}
+      <div>
+        <div className="grid gap-x-3 gap-y-[18px] sm:grid-cols-2">
+          <TextField
+            label="Due date and time"
+            type="datetime-local"
+            {...register('dueLocal', { required: 'Enter a due date and time' })}
+            error={errors.dueLocal?.message}
+          />
+          <SelectField label="Time zone" {...register('timezone')} error={errors.timezone?.message} describedBy={zoneNote}>
+            {timeZoneOptions(assignment.timezone).map((zone) => (
+              <option key={zone} value={zone}>
+                {zone}
+              </option>
+            ))}
+          </SelectField>
+        </div>
+        <p id={zoneNote} className="mt-[18px] pb-[18px] text-[0.875rem] leading-9 text-muted">
+          The due date and time above are on the clock of this time zone. Students see them in their own.
+        </p>
+      </div>
+      <div className="grid gap-x-3 gap-y-[18px] sm:grid-cols-[2fr_1fr]">
+        <SelectField label="Scoring format" {...register('scoringFormat')} error={errors.scoringFormat?.message}>
+          {FORMATS.map(({ value, label }) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </SelectField>
+        {points ? (
+          <TextField
+            label="Max score"
+            type="number"
+            step="any"
+            inputMode="decimal"
+            {...register('maxScore', {
+              validate: (value) => (Number(value) >= 0.01 && Number(value) <= 1000) || 'Use a number from 0.01 to 1000',
+            })}
+            error={errors.maxScore?.message}
+          />
+        ) : (
+          <p>Scored out of 100.</p>
+        )}
+      </div>
     </StepForm>
   );
 }

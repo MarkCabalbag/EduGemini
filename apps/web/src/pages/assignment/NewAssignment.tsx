@@ -34,12 +34,14 @@ export function NewAssignment() {
 
   return (
     <WizardFrame classId={classId} title="New assignment" step={1}>
-      <form onSubmit={onSubmit} noValidate className="space-y-4">
+      <form onSubmit={onSubmit} noValidate className="space-y-[18px]">
         {formError && <Alert>{formError}</Alert>}
         <BasicsFields register={register} errors={formState.errors} />
-        <Button type="submit" loading={create.isPending}>
-          Continue
-        </Button>
+        <div className="pt-[18px]">
+          <Button type="submit" loading={create.isPending}>
+            Continue
+          </Button>
+        </div>
       </form>
     </WizardFrame>
   );

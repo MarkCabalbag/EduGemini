@@ -11,10 +11,11 @@ import { useAssignment, useOpenReferenceFile } from '../hooks/use-assignments';
 import { useClass } from '../hooks/use-classes';
 import { useMySubmission } from '../hooks/use-submission';
 import { ApiRequestError } from '../lib/api';
-import { scoringText } from '../lib/assignment-meta';
+import { attemptsLeftText, scoringText } from '../lib/assignment-meta';
 import { errorText, errorTextOf } from '../lib/error-text';
 import { browserTimeZone, formatDue } from '../lib/zoned-time';
 import { NotFound } from './NotFound';
+import { Resubmit } from './Resubmit';
 import { SubmissionReceipt } from './SubmissionReceipt';
 import { UploadFiles } from './UploadFiles';
 
@@ -40,9 +41,13 @@ function ReferenceFileList({ files }: { files: AssignmentDetail['referenceFiles'
         {files.map((file) => (
           <li key={file.id} className="flex flex-wrap items-center gap-3">
             <span>{file.label}</span>
-            <Button type="button" variant="secondary" loading={open.isPending && open.variables === file.id} onClick={() => open.mutate(file.id)}>
-              Open{' '}
-              <span className="sr-only">{file.label}</span>
+            <Button
+              type="button"
+              variant="secondary"
+              loading={open.isPending && open.variables === file.id}
+              onClick={() => open.mutate(file.id)}
+            >
+              Open <span className="sr-only">{file.label}</span>
             </Button>
           </li>
         ))}
@@ -55,15 +60,24 @@ function ReferenceFileList({ files }: { files: AssignmentDetail['referenceFiles'
 /**
  * The student's part of the page: the upload control (with the files of an upload still open) until they have submitted, then the receipt. When the due date has
  * passed and late work is closed, a student who has not submitted sees that instead of the upload control. A submitted student
- * sees the receipt, with the result once it is ready (the page asks again every 5 seconds until then). The resubmit control
- * comes with its ticket.
+ * sees the receipt, with the result once it is ready (the page asks again every 5 seconds until then), and below it the
+ * Resubmit control (`Resubmit.tsx`).
  */
 function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; canUpload: boolean }) {
   const mine = useMySubmission(assignmentId);
   if (mine.isPending) return <PageLoading />;
   if (mine.isError) return <ErrorState error={mine.error} onRetry={() => void mine.refetch()} />;
   const { state, closed } = mine.data;
-  if (state !== 'NOT_SUBMITTED' && state !== 'UPLOADING') return <SubmissionReceipt submission={mine.data} />;
+  if (state !== 'NOT_SUBMITTED' && state !== 'UPLOADING') {
+    // An approved submission is read-only (App Flow §6 step 9); the message and the reopening come with SUB-08 and REV-06.
+    const canResubmit = canUpload && state !== 'INSTRUCTOR_APPROVED';
+    return (
+      <div className="space-y-6">
+        <SubmissionReceipt submission={mine.data} />
+        {canResubmit && <Resubmit assignmentId={assignmentId} submission={mine.data} />}
+      </div>
+    );
+  }
   if (!canUpload) return null;
   // The upload control reads the open upload's files once, when it appears. An answer cached from an earlier visit may not
   // list files stored since, so it waits for the fresh one.
@@ -87,6 +101,8 @@ function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; can
 function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
   // The class gives the name for the way back, and says whether it is archived (read-only). The page works without it.
   const cls = useClass(assignment.classId);
+  // The same answer the submission area reads, so the count is on top of the page without a second request.
+  const mine = useMySubmission(assignment.id);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -103,6 +119,10 @@ function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
         <p className="text-muted">
           {assignment.acceptLate ? 'Late submissions are accepted and marked Late.' : 'Late submissions are not accepted.'}
         </p>
+        {/* An archived class takes no submissions and an approved one is read-only, so there is nothing to count (UX Brief, AttemptsCounter). */}
+        {mine.data && cls.data?.status === 'ACTIVE' && mine.data.state !== 'INSTRUCTOR_APPROVED' && (
+          <p className="text-muted">{attemptsLeftText(mine.data.attemptsLeft)}</p>
+        )}
       </div>
       {assignment.instructions && <Section title="Instructions">{assignment.instructions}</Section>}
       <Section title="Criteria">{assignment.criteriaText}</Section>

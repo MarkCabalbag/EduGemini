@@ -38,8 +38,8 @@ function JoinApproval({ cls, pending }: { cls: ClassSummary; pending: number }) 
   const archived = cls.status === 'ARCHIVED';
 
   return (
-    <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
-      <h2 className="text-title font-semibold">Join approval</h2>
+    <section className="space-y-[18px]">
+      <h2 className="text-title leading-9 font-bold">Join approval</h2>
       <Checkbox
         label="Require approval to join"
         helper="Turning this on doesn't change students who are already approved."
@@ -49,9 +49,10 @@ function JoinApproval({ cls, pending }: { cls: ClassSummary; pending: number }) 
       />
       {settings.isError && <Alert>{errorTextOf(settings.error)}</Alert>}
       {!requireApproval && pending > 0 && !archived && (
-        <div className="space-y-4">
+        <div className="space-y-[18px]">
           <Alert variant="info">
-            {pending === 1 ? '1 student is' : `${pending} students are`} still waiting for approval. Turning approval off does not approve them.
+            {pending === 1 ? '1 student is' : `${pending} students are`} still waiting for approval. Turning approval off does not approve
+            them.
           </Alert>
           <Button loading={approveAll.isPending} onClick={() => approveAll.mutate()}>
             Approve all pending
@@ -79,17 +80,17 @@ function PeopleList({ cls, status }: { cls: ClassSummary; status: EnrollmentStat
   if (people.isError && !people.data) return <ErrorState error={people.error} onRetry={() => void people.refetch()} />;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-[18px]">
       {decision.isError && <Alert>{errorTextOf(decision.error)}</Alert>}
       {rows.length === 0 && <p className="text-muted">{list.empty}</p>}
-      <ul className="divide-y divide-border">
+      <ul>
         {rows.map((row) => (
-          <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+          <li key={row.id} className="sheet-row">
             <div className="min-w-0">
-              <p className="font-semibold">{row.student.displayName}</p>
-              <p className="break-all text-muted">{row.student.email}</p>
+              <p className="truncate font-bold">{row.student.displayName}</p>
+              <p className="truncate text-[0.9375rem] text-muted">{row.student.email}</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               {actions.map(({ action, label }) => (
                 <Button
                   key={action}
@@ -137,23 +138,29 @@ export function People({ cls }: { cls: ClassSummary }) {
   const nobody = counts.approved + counts.pending + counts.declined + counts.removed === 0;
 
   return (
-    <div className="space-y-6">
-      <JoinApproval cls={cls} pending={counts.pending} />
+    // Two columns on wide screens: the students on the left, join approval beside them.
+    <div className="grid gap-x-[72px] gap-y-[72px] lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="lg:order-2">
+        <JoinApproval cls={cls} pending={counts.pending} />
+      </div>
       {nobody && cls.status === 'ACTIVE' && cls.joinCodeActive !== false && cls.joinCode && cls.joinLink ? (
-        <EmptyState
-          icon={Users}
-          action={
-            <div className="w-full space-y-4">
-              <CopyField label="Class code" value={cls.joinCode} />
-              <CopyField label="Join link" value={cls.joinLink} />
-            </div>
-          }
-        >
-          No students yet. Share the class code or join link to let students in.
-        </EmptyState>
+        <div className="lg:order-1">
+          <EmptyState
+            icon={Users}
+            action={
+              <div className="w-full space-y-4">
+                <CopyField label="Class code" value={cls.joinCode} />
+                <CopyField label="Join link" value={cls.joinLink} />
+              </div>
+            }
+          >
+            No students yet. Share the class code or join link to let students in.
+          </EmptyState>
+        </div>
       ) : (
-        <section className="space-y-4">
-          <div role="group" aria-label="Students by status" className="flex flex-wrap gap-2">
+        <section className="lg:order-1">
+          <h2 className="text-title leading-9 font-bold">Students</h2>
+          <div role="group" aria-label="Students by status" className="mb-[18px] flex flex-wrap gap-3">
             {ORDER.map((s) => (
               <Button key={s} variant={s === status ? 'primary' : 'secondary'} aria-pressed={s === status} onClick={() => setPicked(s)}>
                 {LISTS[s].label} ({counts[LISTS[s].count]})

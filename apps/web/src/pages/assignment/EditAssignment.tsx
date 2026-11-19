@@ -2,7 +2,9 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { PageLoading } from '../../components/ui/Skeleton';
 import { useAssignment } from '../../hooks/use-assignments';
+import { usePaperPage } from '../../hooks/use-paper-page';
 import { ApiRequestError } from '../../lib/api';
+import { PAPER_HEADING } from '../../lib/paper';
 import { NotFound } from '../NotFound';
 import { BasicsStep } from './BasicsStep';
 import { CriteriaStep } from './CriteriaStep';
@@ -20,6 +22,7 @@ const stepFrom = (value: string | null) => {
 
 /** A draft, one step at a time (App Flow §5.1), each step saving the draft before it moves on; or a published assignment, on one page. */
 export function EditAssignment() {
+  usePaperPage();
   const assignmentId = useParams<'assignmentId'>().assignmentId!; // the route has :assignmentId
   const step = stepFrom(useSearchParams()[0].get('step'));
   const navigate = useNavigate();
@@ -28,7 +31,8 @@ export function EditAssignment() {
   if (assignment.isPending) return <PageLoading />;
   if (assignment.isError) {
     // Someone else's assignment, a student, one that does not exist and an address that is not an id all look the same (API Spec A3).
-    const notFound = assignment.error instanceof ApiRequestError && (assignment.error.code === 'NOT_FOUND' || assignment.error.code === 'VALIDATION');
+    const notFound =
+      assignment.error instanceof ApiRequestError && (assignment.error.code === 'NOT_FOUND' || assignment.error.code === 'VALIDATION');
     return notFound ? <NotFound /> : <ErrorState error={assignment.error} onRetry={() => void assignment.refetch()} />;
   }
 
@@ -36,11 +40,11 @@ export function EditAssignment() {
   if (status === 'PUBLISHED') return <PublishedEdit assignment={assignment.data} />;
   if (status !== 'DRAFT') {
     return (
-      <div className="max-w-2xl space-y-4">
+      <div className="pl-6 leading-9 sm:pl-12">
         <title>{`${title} · EduGemini`}</title>
-        <h1 className="text-display font-semibold">{title}</h1>
+        <h1 className={PAPER_HEADING}>{title}</h1>
         <p>This assignment is archived and cannot be edited.</p>
-        <Link to={`/classes/${classId}?tab=assignments`} className="font-semibold text-primary underline">
+        <Link to={`/classes/${classId}?tab=assignments`} className="font-semibold text-primary underline underline-offset-4">
           Back to assignments
         </Link>
       </div>

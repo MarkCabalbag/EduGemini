@@ -113,7 +113,14 @@ beforeEach(() => {
         const sent = (body as FormData).get('file') as File;
         const ordinal = [1, 2, 3].find((n) => !target.referenceFiles.some((f) => f.ordinal === n));
         if (!ordinal) return failure(422, 'FILE_LIMIT', undefined, { limit: 'reference-count' });
-        const created = { id: crypto.randomUUID(), ordinal, label: `Reference file ${ordinal}`, mimeType: sent.type, sizeBytes: sent.size, visibleToStudents: false };
+        const created = {
+          id: crypto.randomUUID(),
+          ordinal,
+          label: `Reference file ${ordinal}`,
+          mimeType: sent.type,
+          sizeBytes: sent.size,
+          visibleToStudents: false,
+        };
         target.referenceFiles.push(created);
         return Response.json(created, { status: 201 });
       }
@@ -122,7 +129,8 @@ beforeEach(() => {
         const holder = assignments.find((a) => a.referenceFiles.some((f) => f.id === fileRoute[1]));
         const file = holder?.referenceFiles.find((f) => f.id === fileRoute[1]);
         if (!holder || !file) return failure(404, 'NOT_FOUND');
-        if (method === 'GET' && fileRoute[2]) return Response.json({ url: `https://files.example/${file.id}`, expiresAt: '2026-12-01T00:05:00.000Z' });
+        if (method === 'GET' && fileRoute[2])
+          return Response.json({ url: `https://files.example/${file.id}`, expiresAt: '2026-12-01T00:05:00.000Z' });
         if (method === 'PATCH') {
           file.visibleToStudents = (body as { visibleToStudents: boolean }).visibleToStudents;
           return Response.json(file);
@@ -198,13 +206,17 @@ describe('the Assignments tab', () => {
     expect(draft.textContent).toContain('Due Dec 1, 2026');
     expect(draft.textContent).toContain('(Asia/Manila)');
     expect(draft.textContent).toContain('50 points · Unlimited resubmissions');
-    expect(within(draft).getByRole('link', { name: 'Resume Lab report' }).getAttribute('href')).toBe(`/assignments/${assignments[0]?.id}/edit`);
+    expect(within(draft).getByRole('link', { name: 'Resume Lab report' }).getAttribute('href')).toBe(
+      `/assignments/${assignments[0]?.id}/edit`,
+    );
 
     const published = screen.getByText('Essay 2').closest('li')!;
     expect(published.textContent).toContain('Percentage · No resubmissions');
     expect(within(published).queryByText('Draft')).toBeNull();
     expect(within(published).queryByRole('link', { name: /Resume/ })).toBeNull();
-    expect(within(published).getByRole('link', { name: 'Edit Essay 2' }).getAttribute('href')).toBe(`/assignments/${assignments[1]?.id}/edit`);
+    expect(within(published).getByRole('link', { name: 'Edit Essay 2' }).getAttribute('href')).toBe(
+      `/assignments/${assignments[1]?.id}/edit`,
+    );
 
     const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(headings).toEqual(['Drafts', 'Published']);
@@ -234,7 +246,11 @@ describe('the Assignments tab', () => {
     open();
 
     const nav = await screen.findByRole('navigation', { name: 'Class sections' });
-    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Overview', 'Assignments', 'People']);
+    expect(
+      within(nav)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['Overview', 'Assignments', 'People']);
     expect(within(nav).getByRole('link', { name: 'Assignments' }).getAttribute('aria-current')).toBe('page');
   });
 });
@@ -592,10 +608,7 @@ describe('the class page, as a student', () => {
 
   it('shows more assignments on request, following the cursor', async () => {
     pageSize = 1;
-    assignments = [
-      anAssignment({ title: 'First one', status: 'PUBLISHED' }),
-      anAssignment({ title: 'Second one', status: 'PUBLISHED' }),
-    ];
+    assignments = [anAssignment({ title: 'First one', status: 'PUBLISHED' }), anAssignment({ title: 'Second one', status: 'PUBLISHED' })];
     const user = userEvent.setup();
     renderAt(`/classes/${CLASS_ID}`);
 
@@ -665,7 +678,9 @@ describe('the assignment page, as a student', () => {
     expect(screen.getByText(/^Due /).textContent).toContain(`(${browserTimeZone()})`); // the student's own zone, not Kiritimati
     expect(screen.getByText('Scoring: 50 points')).toBeTruthy();
     expect(screen.getByText('Late submissions are accepted and marked Late.')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Instructions' }).nextElementSibling?.textContent).toBe('Write 500 words.\nCite two sources.');
+    expect(screen.getByRole('heading', { name: 'Instructions' }).nextElementSibling?.textContent).toBe(
+      'Write 500 words.\nCite two sources.',
+    );
     expect(screen.getByRole('heading', { name: 'Criteria' }).nextElementSibling?.textContent).toBe('Thesis is clear (10 points).');
   });
 
@@ -674,7 +689,9 @@ describe('the assignment page, as a student', () => {
     renderAt(`/assignments/${assignment.id}`);
 
     expect(
-      await screen.findByText('Scores and feedback are AI-generated and reviewed by your instructor. Questions about grades go to your instructor.'),
+      await screen.findByText(
+        'Scores and feedback are AI-generated and reviewed by your instructor. Questions about grades go to your instructor.',
+      ),
     ).toBeTruthy();
   });
 
@@ -785,7 +802,9 @@ describe('reference files', () => {
     expect(box.checked).toBe(false);
     await user.click(box);
 
-    await vi.waitFor(() => expect((screen.getByRole('checkbox', { name: 'Visible to students, Reference file 1' }) as HTMLInputElement).checked).toBe(true));
+    await vi.waitFor(() =>
+      expect((screen.getByRole('checkbox', { name: 'Visible to students, Reference file 1' }) as HTMLInputElement).checked).toBe(true),
+    );
     expect(callsTo('PATCH', `/reference-files/${draft.referenceFiles[0]?.id}`)[0]?.body).toEqual({ visibleToStudents: true });
   });
 

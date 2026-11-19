@@ -11,8 +11,8 @@ import type { StepProps } from './StepForm';
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div>
-      <dt className="font-semibold">{label}</dt>
+    <div className="grid sm:grid-cols-[12.5rem_minmax(0,1fr)]">
+      <dt className="font-bold text-primary">{label}</dt>
       <dd className="whitespace-pre-line">{children}</dd>
     </div>
   );
@@ -43,9 +43,14 @@ export function ReviewStep({ assignment, onBack }: Pick<StepProps, 'assignment' 
   };
 
   return (
-    <div className="space-y-4">
-      {error && <Alert>{error}</Alert>}
-      <dl className="space-y-3 rounded-lg border border-border bg-surface p-4">
+    <div>
+      {error && (
+        <div className="mb-[18px]">
+          <Alert>{error}</Alert>
+        </div>
+      )}
+      {/* Label and value written on the lines, no box. */}
+      <dl>
         <Row label="Title">{assignment.title}</Row>
         <Row label="Instructions">{assignment.instructions ?? 'None'}</Row>
         <Row label="Grading criteria">{assignment.criteriaText || 'Not added yet. Add grading criteria before publishing.'}</Row>
@@ -54,8 +59,8 @@ export function ReviewStep({ assignment, onBack }: Pick<StepProps, 'assignment' 
         <Row label="Resubmissions">{resubmissionText(assignment)}</Row>
         <Row label="Late submissions">{assignment.acceptLate ? 'Accepted, marked Late' : 'Not accepted'}</Row>
       </dl>
-      <p className="text-small text-muted">Your draft is saved. Publishing makes it visible to approved students.</p>
-      <div className="flex flex-wrap items-center gap-4">
+      <p className="text-[0.875rem] leading-9 text-muted">Your draft is saved. Publishing makes it visible to approved students.</p>
+      <div className="flex flex-wrap items-stretch gap-x-3 gap-y-[18px] pt-[18px]">
         {onBack && (
           <Button type="button" variant="secondary" onClick={onBack}>
             Back

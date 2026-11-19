@@ -33,8 +33,8 @@ function DeleteDialog({ cls, onClose }: { cls: ClassSummary; onClose: () => void
     >
       {impact.data && (
         <p>
-          This deletes {count(impact.data.students, 'student', 'students')}, {count(impact.data.assignments, 'assignment', 'assignments')} and{' '}
-          {count(impact.data.submissions, 'submission', 'submissions')}, with all their files.
+          This deletes {count(impact.data.students, 'student', 'students')}, {count(impact.data.assignments, 'assignment', 'assignments')}{' '}
+          and {count(impact.data.submissions, 'submission', 'submissions')}, with all their files.
         </p>
       )}
       {impact.isPending && <p className="text-muted">Counting what will be deleted…</p>}
@@ -63,9 +63,12 @@ export function DeleteClass({ cls }: { cls: ClassSummary }) {
   const [asking, setAsking] = useState(false);
 
   return (
-    <div className="space-y-2 border-t border-border pt-4">
+    // The right column of the danger zone: one blank row level with its heading on wide screens, then the warning and the
+    // red-outlined button.
+    <div>
+      <div aria-hidden className="hidden h-9 lg:block" />
       <p>Deleting removes the class, its students' work and all its files for good.</p>
-      <Button variant="secondary" onClick={() => setAsking(true)}>
+      <Button variant="secondary" className="danger-outline mt-[18px]" onClick={() => setAsking(true)}>
         Delete class
       </Button>
       {asking && <DeleteDialog cls={cls} onClose={() => setAsking(false)} />}

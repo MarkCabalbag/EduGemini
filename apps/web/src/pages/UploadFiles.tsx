@@ -70,19 +70,25 @@ function submitHelp({ stored, waiting, stuck }: { stored: number; waiting: numbe
  * The student's upload control (App Flow §6 step 4, UX Brief Upload). Each file is checked when it is chosen, then sent on
  * its own, and Submit sends the stored ones as the submission. A student who comes back to an upload that is still open
  * sees the files already stored in it, and can remove them. Thumbnails and reordering come with the tickets for them.
+ * A resubmission passes `onClose`: the control then says "new files" and has Cancel, and `onClose` is called when the upload
+ * ends, submitted or cancelled. Cancel waits for files still on their way, so one cannot arrive after the upload is gone.
  */
-export function UploadFiles({ assignmentId, draft }: { assignmentId: string; draft: DraftVersion | null }) {
-  const { items, addFiles, retry, remove, submit, submitting, submitError, counts } = useUpload(assignmentId, draft);
+export function UploadFiles({ assignmentId, draft, onClose }: { assignmentId: string; draft: DraftVersion | null; onClose?: () => void }) {
+  const { items, addFiles, retry, remove, submit, submitting, submitError, cancel, cancelling, cancelError, counts } = useUpload(
+    assignmentId,
+    draft,
+    onClose,
+  );
   const inputId = useId();
   const helpId = useId();
   const canSubmit = counts.stored > 0 && counts.waiting === 0 && counts.stuck === 0;
 
   return (
     <section className="space-y-3">
-      <h2 className="text-title font-semibold">Your files</h2>
+      <h2 className="text-title font-semibold">{onClose ? 'Your new files' : 'Your files'}</h2>
       <p className="text-small text-muted">
-        PDF, JPG or PNG. Up to {LIMITS.filesPerSubmission} files, {LIMITS.maxFileBytes / MiB} MB each, {LIMITS.maxSubmissionBytes / MiB} MB in
-        total. PDFs up to {LIMITS.maxPdfPages} pages.
+        PDF, JPG or PNG. Up to {LIMITS.filesPerSubmission} files, {LIMITS.maxFileBytes / MiB} MB each, {LIMITS.maxSubmissionBytes / MiB} MB
+        in total. PDFs up to {LIMITS.maxPdfPages} pages.
       </p>
       <input
         id={inputId}
@@ -96,7 +102,10 @@ export function UploadFiles({ assignmentId, draft }: { assignmentId: string; dra
           void addFiles(chosen);
         }}
       />
-      <label htmlFor={inputId} className={`${buttonClass('secondary')} cursor-pointer peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2`}>
+      <label
+        htmlFor={inputId}
+        className={`${buttonClass('secondary')} cursor-pointer peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2`}
+      >
         <Plus aria-hidden size={20} />
         Add photos or PDF
       </label>
@@ -126,13 +135,20 @@ export function UploadFiles({ assignmentId, draft }: { assignmentId: string; dra
         <p id={helpId} className="text-small text-muted">
           {submitHelp(counts)}
         </p>
-        <Button onClick={() => void submit()} disabled={!canSubmit} loading={submitting} aria-describedby={helpId}>
-          Submit files
-        </Button>
-        {submitError && (
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => void submit()} disabled={!canSubmit} loading={submitting} aria-describedby={helpId}>
+            Submit files
+          </Button>
+          {onClose && (
+            <Button variant="secondary" onClick={() => void cancel()} disabled={counts.waiting > 0 || submitting} loading={cancelling}>
+              Cancel
+            </Button>
+          )}
+        </div>
+        {(submitError ?? cancelError) && (
           <p role="alert" className="inline-flex items-center gap-1 text-error-fg">
             <AlertCircle aria-hidden size={16} />
-            {submitError}
+            {submitError ?? cancelError}
           </p>
         )}
       </div>

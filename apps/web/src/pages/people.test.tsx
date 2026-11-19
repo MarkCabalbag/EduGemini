@@ -128,7 +128,7 @@ describe('class page sections', () => {
     const user = userEvent.setup();
     renderAt(`/classes/${CLASS_ID}`);
 
-    expect((await screen.findByLabelText('Class code') as HTMLInputElement).value).toBe('K7M2PQ9X');
+    expect(((await screen.findByLabelText('Class code')) as HTMLInputElement).value).toBe('K7M2PQ9X');
     expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBe('page');
     expect(screen.queryByLabelText('Require approval to join')).toBeNull();
 
@@ -405,7 +405,7 @@ describe('people: join approval', () => {
   it('shows the switch as it is, with the note that students already in are not changed', async () => {
     openPeople();
 
-    expect((await screen.findByLabelText(switchLabel) as HTMLInputElement).checked).toBe(true);
+    expect(((await screen.findByLabelText(switchLabel)) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText("Turning this on doesn't change students who are already approved.")).toBeTruthy();
   });
 
@@ -479,7 +479,7 @@ describe('people: an archived class', () => {
     const user = userEvent.setup();
     openPeople();
 
-    expect((await screen.findByLabelText(switchLabel) as HTMLInputElement).disabled).toBe(true);
+    expect(((await screen.findByLabelText(switchLabel)) as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByRole('button', { name: 'Approve all pending' })).toBeNull();
 
     const lists = [

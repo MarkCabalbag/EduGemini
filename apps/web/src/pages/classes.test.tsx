@@ -271,7 +271,8 @@ describe('instructor dashboard', () => {
 });
 
 describe('student joins a class', () => {
-  const joinedAs = (status: 'ACTIVE' | 'PENDING' | 'DECLINED') => Response.json({ classId: crypto.randomUUID(), className: 'Biology 101', status });
+  const joinedAs = (status: 'ACTIVE' | 'PENDING' | 'DECLINED') =>
+    Response.json({ classId: crypto.randomUUID(), className: 'Biology 101', status });
 
   beforeEach(() => {
     me = signedInAs('STUDENT');
@@ -758,7 +759,9 @@ describe('class page', () => {
       await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
 
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-      expect(editCalls(cls)).toMatchObject([{ body: { name: 'Physics 2', description: 'Forces', section: '', subject: 'Science', room: '12' } }]);
+      expect(editCalls(cls)).toMatchObject([
+        { body: { name: 'Physics 2', description: 'Forces', section: '', subject: 'Science', room: '12' } },
+      ]);
       expect(screen.getByRole('heading', { name: 'Physics 2' })).toBeTruthy();
       expect(screen.getByText('Science · Room 12')).toBeTruthy(); // the section is gone
       expect((screen.getByLabelText('Class code') as HTMLInputElement).value).toBe('K7M2PQ9X');

@@ -7,11 +7,12 @@ import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
-import { StatusChip } from '../components/ui/StatusChip';
 import { useArchiveClass, useClass } from '../hooks/use-classes';
+import { usePaperPage } from '../hooks/use-paper-page';
 import { ApiRequestError } from '../lib/api';
 import { classMeta } from '../lib/class-meta';
 import { errorTextOf } from '../lib/error-text';
+import { PAPER_HEADING } from '../lib/paper';
 import { Assignments } from './Assignments';
 import { ClassCodeCard } from './ClassCodeCard';
 import { DeleteClass } from './DeleteClass';
@@ -19,11 +20,13 @@ import { EditClassDetails } from './EditClassDetails';
 import { NotFound } from './NotFound';
 import { People } from './People';
 
-/** The sections of the class page, one at a time, chosen by `?tab=` (TRD §15.1). More arrive with their tickets. */
+/**
+ * The sections of the class page, one at a time, chosen by `?tab=` (TRD §15.1): words on one ruled line, the current one
+ * with an ink bar lying on that line (index.css, .class-tabs).
+ */
 function SectionLink({ to, current, children }: { to: string; current: boolean; children: string }) {
-  const style = current ? 'border-primary text-primary' : 'border-transparent text-muted';
   return (
-    <Link to={to} aria-current={current ? 'page' : undefined} className={`inline-flex min-h-11 items-center border-b-2 px-3 font-semibold ${style}`}>
+    <Link to={to} aria-current={current ? 'page' : undefined} className="class-tab">
       {children}
     </Link>
   );
@@ -39,24 +42,38 @@ function ArchiveCard({ cls }: { cls: ClassSummary }) {
   const archived = cls.status === 'ARCHIVED';
 
   return (
-    <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
-      <h2 className="text-title font-semibold">{archived ? 'Archived class' : 'Danger zone'}</h2>
-      {archived ? (
-        <>
-          <p>This class is archived and read-only. Students can still open it and see their work.</p>
-          <Button loading={archive.isPending} onClick={() => archive.mutate(false)}>
-            Restore class
-          </Button>
-        </>
-      ) : (
-        <>
-          <p>Archiving makes the class read-only and stops its class code from working. You can restore it at any time.</p>
-          <Button variant="secondary" onClick={() => setAsking(true)}>
-            Archive class
-          </Button>
-        </>
-      )}
-      {archive.isError && <Alert>{errorTextOf(archive.error)}</Alert>}
+    // Spans the page under a red line, on the same two columns as above: archive or restore on the left, delete on the right.
+    // An archived class shows nothing above this section, so it starts one row of air below the tabs.
+    <section
+      className={`danger-zone ${archived ? 'is-archived mt-9' : ''} grid gap-x-[72px] gap-y-[72px] lg:grid-cols-[minmax(0,1fr)_20rem]`}
+    >
+      <div>
+        <h2 className="text-title leading-9 font-bold">{archived ? 'Archived class' : 'Danger zone'}</h2>
+        {archived ? (
+          <>
+            <p>This class is archived and read-only. Students can still open it and see their work.</p>
+            <div className="mt-[18px]">
+              <Button loading={archive.isPending} onClick={() => archive.mutate(false)}>
+                Restore class
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p>Archiving makes the class read-only and stops its class code from working. You can restore it at any time.</p>
+            <div className="mt-[18px]">
+              <Button variant="secondary" onClick={() => setAsking(true)}>
+                Archive class
+              </Button>
+            </div>
+          </>
+        )}
+        {archive.isError && (
+          <div className="mt-[18px]">
+            <Alert>{errorTextOf(archive.error)}</Alert>
+          </div>
+        )}
+      </div>
       <DeleteClass cls={cls} />
       {asking && (
         <ConfirmDialog
@@ -76,6 +93,7 @@ function ArchiveCard({ cls }: { cls: ClassSummary }) {
 
 /** One class, as its instructor sees it: the details, the code and link to share, and its people (App Flow §4). */
 export function ClassOverview() {
+  usePaperPage();
   const classId = useParams<'classId'>().classId!; // the route has :classId
   const cls = useClass(classId);
   const tab = useSearchParams()[0].get('tab');
@@ -95,19 +113,22 @@ export function ClassOverview() {
   const meta = classMeta(cls.data);
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <Link to="/classes" className="inline-flex items-center gap-1 font-semibold text-primary underline">
+    // One grid on the paper: every block is a whole number of 36 px rows, so all text sits on the ruled lines.
+    <div className="pl-6 leading-9 sm:pl-12">
+      <Link to="/classes" className="flex h-9 w-max items-center gap-1.5 font-semibold text-primary underline underline-offset-4">
         <ArrowLeft aria-hidden size={16} />
         My classes
       </Link>
-      <div className="space-y-2">
+      <div>
         <title>{`${name} · EduGemini`}</title>
-        <h1 className="text-display font-semibold">{name}</h1>
-        {archived && <StatusChip tone="info">Archived</StatusChip>}
+        <div className="flex flex-wrap items-baseline gap-x-4">
+          <h1 className={PAPER_HEADING}>{name}</h1>
+          {archived && <span className="-rotate-[4deg] font-hand text-[1.625rem] leading-9 text-[var(--margin-red)]">Archived</span>}
+        </div>
         {meta && <p className="text-muted">{meta}</p>}
-        {description && <p className="whitespace-pre-line">{description}</p>}
+        {description && <p className="max-w-[72ch] whitespace-pre-line">{description}</p>}
       </div>
-      <nav aria-label="Class sections" className="flex border-b border-border">
+      <nav aria-label="Class sections" className="class-tabs mt-9">
         <SectionLink to={`/classes/${classId}`} current={onOverview}>
           Overview
         </SectionLink>
@@ -118,13 +139,23 @@ export function ClassOverview() {
           People
         </SectionLink>
       </nav>
-      {onAssignments && <Assignments cls={cls.data} />}
-      {onPeople && <People cls={cls.data} />}
-      {/* An archived class's code does not work, and the class is read-only, so the code card is not shown. */}
-      {onOverview && !archived && <ClassCodeCard cls={cls.data} />}
-      {/* An archived class is read-only, so its details cannot be edited until it is restored. */}
-      {onOverview && !archived && <EditClassDetails cls={cls.data} />}
-      {onOverview && <ArchiveCard cls={cls.data} />}
+      {/* Padding, not margin: a section's own top margin (the archived one) must add to this gap, not collapse into it. */}
+      <div className="pt-9">
+        {onAssignments && <Assignments cls={cls.data} />}
+        {onPeople && <People cls={cls.data} />}
+        {onOverview && (
+          <>
+            {/* An archived class's code does not work and its details cannot be edited, so neither is shown until it is restored. */}
+            {!archived && (
+              <div className="mb-[72px] grid gap-x-[72px] gap-y-[72px] lg:grid-cols-[minmax(0,1fr)_20rem]">
+                <ClassCodeCard cls={cls.data} />
+                <EditClassDetails cls={cls.data} />
+              </div>
+            )}
+            <ArchiveCard cls={cls.data} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

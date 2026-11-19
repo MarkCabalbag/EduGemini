@@ -6,7 +6,6 @@ import { Button, buttonClass } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
-import { StatusChip } from '../components/ui/StatusChip';
 import { useAssignments } from '../hooks/use-assignments';
 import { resubmissionText, scoringText } from '../lib/assignment-meta';
 import { errorTextOf } from '../lib/error-text';
@@ -41,19 +40,36 @@ function NewAssignmentLink({ classId }: { classId: string }) {
   );
 }
 
-/** A draft has Resume, a published assignment has Edit. The row itself is not a link yet: it opens the tracker, which comes with its own ticket. */
+/** The three facts of a row, in fixed columns so they line up down the list (index.css, .fact-cols). */
+const SEP = <span className="sr-only"> · </span>;
+
+/**
+ * One assignment as a row of the table, two lines of the sheet: the title (with "Draft" in pencil for a draft), then the due
+ * date, scoring and resubmissions in aligned columns; the action beside both. A draft has Resume, a published assignment has
+ * Edit. The row itself is not a link yet: it opens the tracker, which comes with its own ticket.
+ */
 function AssignmentRow({ assignment, canEdit }: { assignment: AssignmentSummary; canEdit: boolean }) {
   const draft = assignment.status === 'DRAFT';
   return (
-    <li className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4">
-      <div className="space-y-1">
-        <p className="font-semibold">{assignment.title}</p>
-        <p className="text-small text-muted">
-          Due {formatDue(assignment.dueAt, assignment.timezone)} · {scoringText(assignment)} · {resubmissionText(assignment)}
+    <li className="sheet-row">
+      <div className="min-w-0">
+        <p className="flex h-9 items-baseline gap-3 font-bold">
+          <span className="truncate">{assignment.title}</span>
+          {draft && <span className="font-hand text-[1.375rem] font-normal text-[var(--pencil,var(--text-muted))]">Draft</span>}
+        </p>
+        <p className="fact-cols text-[0.9375rem] text-muted">
+          <span>
+            Due {formatDue(assignment.dueAt, assignment.timezone)}
+            {SEP}
+          </span>
+          <span>
+            {scoringText(assignment)}
+            {SEP}
+          </span>
+          <span>{resubmissionText(assignment)}</span>
         </p>
       </div>
       <div className="flex items-center gap-3">
-        {draft && <StatusChip tone="pending">Draft</StatusChip>}
         {canEdit && (
           <Link
             to={`/assignments/${assignment.id}/edit`}
@@ -73,9 +89,14 @@ function Group({ heading, query, canEdit }: { heading: string; query: ReturnType
   const rows = query.data?.pages.flatMap((page) => page.items) ?? [];
   if (rows.length === 0) return null;
   return (
-    <section className="space-y-3">
-      <h3 className="text-title font-semibold">{heading}</h3>
-      <ul className="space-y-3">
+    <section className="assignment-group">
+      <h3 className="leading-9 font-bold">{heading}</h3>
+      <p aria-hidden className="fact-cols col-heads">
+        <span>Due</span>
+        <span>Scoring</span>
+        <span>Resubmissions</span>
+      </p>
+      <ul>
         {rows.map((assignment) => (
           <AssignmentRow key={assignment.id} assignment={assignment} canEdit={canEdit} />
         ))}
@@ -100,9 +121,9 @@ export function Assignments({ cls }: { cls: ClassSummary }) {
   const isEmpty = [drafts, published].every((query) => query.isSuccess && query.data.pages.every((page) => page.items.length === 0));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="text-title font-semibold">Assignments</h2>
+    <div className="space-y-[18px]">
+      <div className="flex min-h-[54px] flex-wrap items-start justify-between gap-4">
+        <h2 className="text-title leading-9 font-bold">Assignments</h2>
         {!archived && !isEmpty && <NewAssignmentLink classId={cls.id} />}
       </div>
       <PublishedNotice />
