@@ -1,5 +1,5 @@
 /** A loading placeholder. Pulses only when the user allows motion. */
-export function Skeleton({ className = '' }: { className?: string }) {
+function Skeleton({ className = '' }: { className?: string }) {
   return <div aria-hidden className={`animate-pulse rounded-md bg-border ${className}`} />;
 }
 

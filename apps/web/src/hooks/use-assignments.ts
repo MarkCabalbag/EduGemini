@@ -11,7 +11,7 @@ import type {
 } from '@edugemini/shared';
 import { api } from '../lib/api';
 
-export const assignmentKeys = {
+const assignmentKeys = {
   all: ['assignments'] as const,
   lists: () => [...assignmentKeys.all, 'list'] as const,
   list: (classId: string, status: AssignmentStatus) => [...assignmentKeys.lists(), classId, status] as const,

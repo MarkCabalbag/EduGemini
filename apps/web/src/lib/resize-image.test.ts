@@ -24,7 +24,10 @@ describe('resizeImage', () => {
   let context: object | null;
 
   const decodes = (width: number, height: number) =>
-    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width, height, close })));
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(async () => ({ width, height, close })),
+    );
 
   beforeEach(() => {
     drawn.length = 0;
@@ -66,7 +69,10 @@ describe('resizeImage', () => {
   });
 
   it('sends the original when the browser cannot read the image', async () => {
-    vi.stubGlobal('createImageBitmap', vi.fn(async () => Promise.reject(new Error('cannot decode'))));
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(async () => Promise.reject(new Error('cannot decode'))),
+    );
     expect(await resizeImage(photo)).toBe(photo);
   });
 

@@ -1,5 +1,9 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/inter';
+/* The Marked Script world (sign-in page): Atkinson Hyperlegible for text, Caveat Brush for the teacher's handwriting. */
+@import '@fontsource/atkinson-hyperlegible/400.css';
+@import '@fontsource/atkinson-hyperlegible/700.css';
+@import '@fontsource/caveat-brush/400.css';
 
 /* Dark mode is a class on <html>, set by public/theme-init.js (TRD §15.6). */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -89,6 +93,8 @@
   --shadow-raised: var(--shadow-raised);
   --shadow-overlay: var(--shadow-overlay);
   --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* The teacher's handwriting in the Marked Script world (sign-in page). */
+  --font-hand: 'Caveat Brush', cursive;
 
   /* Type scale: UX Brief §4.1 */
   --text-display: 1.75rem;
@@ -124,6 +130,737 @@ body {
   outline: none;
 }
 
+/*
+ * The Marked Script: the visual world of the sign-in page (.impeccable/surfaces/src-pages-signin-tsx.md), the first page in it.
+ * Exercise paper, ballpoint blue for every control, the teacher's red only for the marking. The page puts `paper-page` on
+ * <body>, so the header joins the sheet too, and the shared TextField, Button and Alert take the new ink from the
+ * re-pointed tokens without a second set of components.
+ *
+ * Everything sits on a 36 px writing rhythm. The rules are phased so a row starts where the content starts: the header is
+ * 72 px tall and <main> pads 32 px, so the content starts at 104 px = 2 rows + 32 px. Each rule sits 30 px into its row, just
+ * under the baseline of 36 px-high text, so the words are written on the lines.
+ */
+.paper-page {
+  --row: 36px;
+  --margin-x: max(24px, calc(50% - 560px + 16px));
+  --paper: #ffffff;
+  --rule: #c9d8ef;
+  --margin-red: #d8342b;
+  --surface: #ffffff;
+  --text: #1a1a1a;
+  --text-muted: #3b4660;
+  --input-border: #1d3fa0;
+  --primary: #1d3fa0;
+  --primary-hover: #16307d;
+  --primary-fg: #ffffff;
+  --focus-ring: #1d3fa0;
+  /* Every error on the sheet is in the teacher's red, in both themes: field text, field outline and the alert. */
+  --status-error-bg: #fee2e2;
+  --status-error-fg: var(--margin-red);
+  --danger: var(--margin-red);
+  --danger-fg: #ffffff;
+  --status-info-bg: #e0f2fe;
+  --status-info-fg: #075985;
+  /* The sheet is white paper in both themes (owner's call, 2026-11-19): these values win over .dark on <html>. */
+  color-scheme: light;
+  caret-color: var(--primary);
+  /* A face made for legibility, for students reading on phones; the handwriting is --font-hand. */
+  font-family: 'Atkinson Hyperlegible', system-ui, sans-serif;
+  /* The sheet scrolls with the writing (it is the body's own background), so rules and margin travel with the words. */
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(
+      to right,
+      transparent var(--margin-x),
+      var(--margin-red) var(--margin-x),
+      var(--margin-red) calc(var(--margin-x) + 2px),
+      transparent calc(var(--margin-x) + 2px)
+    ),
+    repeating-linear-gradient(to bottom, transparent 0 29px, var(--rule) 29px 30px, transparent 30px var(--row));
+  background-position:
+    0 0,
+    0 32px;
+}
+
+.paper-page ::selection {
+  background: var(--rule);
+  color: var(--text);
+}
+
+/* The header is a strip of the same paper, opaque so the sheet scrolls under it, with one rule below; indented past the margin. */
+.paper-page header {
+  background: var(--paper);
+  border-color: var(--rule);
+}
+
+.paper-page header > div {
+  padding-inline-start: 2.5rem;
+}
+
+@media (min-width: 40rem) {
+  .paper-page header > div {
+    padding-inline-start: 4rem;
+  }
+}
+
+.paper-page header > div > a:first-child {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+/* Fields are a printed form on the rhythm: a 36 px label line, a 54 px box with a 2 px ink outline, cut square. */
+.paper-page main label {
+  margin-bottom: 0;
+  line-height: var(--row);
+}
+
+/* Everything on the sheet is cut square, including link-buttons and boxes that carry the app's rounded corners elsewhere. */
+.paper-page .rounded-md,
+.paper-page .rounded-lg {
+  border-radius: 2px;
+}
+
+/* A secondary button on the sheet is written in the ink: blue words, a 2 px blue outline, a faint blue wash on hover. */
+.paper-page :is(button, a, label).border-input-border.bg-surface {
+  border-width: 2px;
+  color: var(--primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .paper-page :is(button, a, label).border-input-border.bg-surface:hover {
+    background-color: rgb(201 216 239 / 0.35);
+  }
+}
+
+/* A checkbox row takes one 36 px line of the sheet but keeps a 44 px target (4 px above and below, taken back by the
+   margin), and its helper writes on full lines too. */
+.paper-page main label:has(> input[type='checkbox']) {
+  min-height: 44px;
+  margin-block: -4px;
+  padding-block: 4px;
+}
+
+.paper-page main label:has(> input[type='checkbox']) + p {
+  font-size: 0.875rem;
+  line-height: 36px;
+}
+
+/* A checkbox (top-aligned in its row, unlike the centred radios) sits level with its label's 36 px line. */
+.paper-page main label > input[type='checkbox'] {
+  margin-top: 8px;
+}
+
+.paper-page main input:not([type='radio'], [type='checkbox'], [type='hidden'], [type='file'], .sr-only) {
+  height: calc(var(--row) * 1.5);
+  border-width: 2px;
+  border-radius: 2px;
+}
+
+.paper-page main button {
+  height: calc(var(--row) * 1.5);
+  border-radius: 2px;
+}
+
+/* Forms on the sheet. A drop-down is a 54 px box like the inputs, with its own ink arrow; a text area is a whole number of
+   rows plus half (7 px of air above and below its lines, 2 px borders), so a field is 36 + 198 + helper, always on rows. */
+.paper-page main select {
+  height: calc(var(--row) * 1.5);
+  border-width: 2px;
+  border-radius: 2px;
+  padding-inline: 12px 40px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%231d3fa0' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+
+.paper-page main textarea {
+  display: block; /* an inline text area leaves a few pixels of descender gap under it, which would push the rows off the lines */
+  border-width: 2px;
+  border-radius: 2px;
+  padding: 7px 12px;
+  line-height: var(--row);
+}
+
+/*
+ * A helper or an error under a field writes on a full line of the sheet. The box above it (54 px, or a text area) ends half a
+ * row down, so the first note under a box starts 18 px lower, on the next row; and the last note of a field is followed by
+ * 18 px of padding, so the field ends on a row and the 18 px gap to the next one lands on a half row again, as it does for
+ * a field with no note. (Padding, not margin: a margin would collapse into the gap.)
+ */
+.paper-page main [id$='-helper'],
+.paper-page main [id$='-error'] {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: var(--row);
+}
+
+.paper-page main :is(input, select, textarea, .field-wrap) + :is([id$='-helper'], [id$='-error']) {
+  margin-top: 18px;
+}
+
+.paper-page main :is([id$='-helper'], [id$='-error']):last-child {
+  padding-bottom: 18px;
+}
+
+.paper-page main [id$='-error'] {
+  align-items: center;
+}
+
+.paper-page main [id$='-error'] > svg {
+  margin-top: 0;
+}
+
+/* A button that sits inside a line of text (Open, Remove) is 44 px tall; "Add a reference file" is a label made to look
+   like a 54 px button. */
+.paper-page main .btn-compact {
+  height: 44px;
+}
+
+.paper-page main label.file-button {
+  height: calc(var(--row) * 1.5);
+  margin: 0;
+}
+
+/* The steps of a form (Stepper.tsx): one row each, a red tick for a finished step, the current number circled by hand in the
+   teacher's red, the rest in pencil. On phones they are a row of numbers. */
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 36px;
+  color: var(--pencil, var(--text-muted));
+}
+
+.step-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 28px;
+  font-family: var(--font-hand);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+@media (min-width: 64rem) {
+  .step {
+    gap: 12px;
+  }
+}
+
+.step.is-done {
+  color: var(--text);
+}
+
+.step.is-done .step-n {
+  color: var(--margin-red, var(--primary));
+}
+
+.step.is-current {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.step.is-current .step-n {
+  color: var(--margin-red, var(--primary));
+  border: 2px solid var(--margin-red, var(--primary));
+  border-radius: 50% 46% 52% 44%;
+  transform: rotate(-6deg);
+}
+
+/* A sign-in problem is the teacher's correction: red ink and a red outline on the paper, not a tinted app box. */
+.paper-page main div[role='alert'] {
+  padding: 7px 12px;
+  border: 2px solid var(--margin-red);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--margin-red);
+  line-height: var(--row);
+}
+
+/*
+ * The header's words (Layout.tsx), in every theme: plain nouns that never wrap. The current page keeps a 2 px ink bar 4 px
+ * under its word; another word darkens and draws a 1 px line left to right on hover (fine pointers only).
+ */
+.nav-word {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--text-muted);
+  transition: color 150ms;
+}
+
+.nav-word::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 6px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-word[aria-current='page'] {
+  color: var(--primary);
+}
+
+.nav-word[aria-current='page']::after {
+  height: 2px;
+  transform: scaleX(1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nav-word:not([aria-current='page']):hover {
+    color: var(--primary);
+  }
+
+  .nav-word:not([aria-current='page']):hover::after {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+}
+
+/* A row of the phone menu: 56 px tall, one rule under it; the current page is underlined in ink. */
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding-inline: 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.paper-page .menu-row {
+  border-color: var(--rule);
+}
+
+.menu-row[aria-current='page'] {
+  color: var(--primary);
+  text-decoration: underline 2px;
+  text-underline-offset: 6px;
+}
+
+/* The unread count, circled by hand in the teacher's red (indigo on pages not yet on the paper). */
+.unread-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding-inline: 4px;
+  border: 2px solid var(--margin-red, var(--primary));
+  border-radius: 50% 46% 52% 44%;
+  color: var(--margin-red, var(--primary));
+  font-family: var(--font-hand);
+  font-size: 1.125rem;
+  line-height: 1;
+  transform: rotate(-6deg);
+}
+
+/*
+ * The notifications sheet under "Notifications" in the header (NotificationsMenu.tsx): a small sheet from the same pad,
+ * ruled every 36 px with its own red margin, a 1 px ink edge and no shadow. It drops 6 px and fades in over 200 ms.
+ * On pages not yet on the paper the same sheet uses the app's border and accent instead.
+ */
+.notif-sheet {
+  position: absolute;
+  top: calc(100% + 20px);
+  left: -24px;
+  z-index: 20;
+  width: 26.25rem;
+  line-height: 36px;
+  border: 1px solid var(--primary);
+  background-color: var(--paper, var(--surface));
+  background-image:
+    linear-gradient(
+      to right,
+      transparent 32px,
+      var(--margin-red, var(--border)) 32px,
+      var(--margin-red, var(--border)) 34px,
+      transparent 34px
+    ),
+    repeating-linear-gradient(to bottom, transparent 0 29px, var(--rule, var(--border)) 29px 30px, transparent 30px 36px);
+  animation: sheet-drop 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* A bridge over the 20 px gap, so the pointer can travel from the word into the sheet without leaving the item. */
+.notif-sheet::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: -22px;
+  height: 22px;
+}
+
+@keyframes sheet-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.notif-sheet-head,
+.notif-sheet-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72px;
+  padding: 0 20px 0 52px;
+}
+
+.notif-sheet-pad {
+  padding-inline: 52px 20px;
+}
+
+.notif-sheet-link {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.notif-sheet-link:disabled {
+  opacity: 0.6;
+}
+
+/* One item: the dot in the margin, the title and its class on two lines of the sheet, the time on the right. */
+.sheet-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  column-gap: 18px;
+  align-items: start;
+  min-height: 72px;
+  padding: 0 20px 0 10px;
+  transition: background-color 150ms;
+}
+
+.sheet-dot {
+  width: 10px;
+  height: 10px;
+  margin: 13px 0 0 6px;
+  border-radius: 50%;
+}
+
+.sheet-dot.is-unread {
+  background: var(--margin-red, var(--primary));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sheet-item:hover {
+    background-color: rgb(201 216 239 / 0.35);
+  }
+}
+
+/*
+ * A notification on the Notifications page (NotificationItem.tsx): written on the sheet, no box. The unread dot sits in the
+ * page's margin, just left of the red line: the text starts 48 px right of the line from 640 px (24 px on phones).
+ */
+.notif-row {
+  transition: background-color 150ms;
+}
+
+.notif-row-dot {
+  position: absolute;
+  top: 13px;
+  left: -34px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+@media (min-width: 40rem) {
+  .notif-row-dot {
+    left: -66px;
+  }
+}
+
+.notif-row-dot.is-unread {
+  background: var(--margin-red, var(--primary));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .notif-row:hover {
+    background-color: rgb(201 216 239 / 0.35);
+  }
+}
+
+/* Numbered steps with each number circled by hand in the teacher's red, like the unread count (the Settings page). */
+.hand-steps {
+  counter-reset: step;
+}
+
+.hand-steps > li {
+  position: relative;
+  padding-left: 48px;
+  counter-increment: step;
+}
+
+.hand-steps > li::before {
+  content: counter(step);
+  position: absolute;
+  top: 4px;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: 2px solid var(--margin-red, var(--primary));
+  border-radius: 50% 46% 52% 44%;
+  color: var(--margin-red, var(--primary));
+  font-family: var(--font-hand);
+  font-size: 1.25rem;
+  line-height: 1;
+  transform: rotate(-6deg);
+}
+
+/* A confirm dialog on a paper page is a small sheet of the same pad: ruled, a red margin, a 1 px ink edge, square. */
+.paper-page [role='dialog'] {
+  border: 1px solid var(--primary);
+  border-radius: 2px;
+  padding: 18px 28px 36px 64px;
+  line-height: 36px;
+  box-shadow: none;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(to right, transparent 40px, var(--margin-red) 40px, var(--margin-red) 42px, transparent 42px),
+    repeating-linear-gradient(to bottom, transparent 0 29px, var(--rule) 29px 30px, transparent 30px var(--row));
+}
+
+/*
+ * The class page (ClassOverview.tsx and its tabs). Every block is a whole number of 36 px rows so the text sits on the
+ * sheet's lines; layout lives in the components, these are the parts Tailwind cannot say alone.
+ */
+
+/* Section tabs: one row tall. The full-width ink line and the current tab's bar lie on the sheet's own ruled line; each
+   word still has a 44 px tall target (4 px above and below, taken back by the margin). */
+.class-tabs {
+  position: relative;
+  display: flex;
+  gap: 32px;
+  height: 36px;
+}
+
+.class-tabs::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 29px;
+  height: 1px;
+  background: var(--primary);
+}
+
+.class-tab {
+  position: relative;
+  display: block;
+  margin-block: -4px;
+  padding-block: 4px;
+  font-weight: 700;
+  color: var(--text-muted);
+  transition: color 150ms;
+}
+
+.class-tab[aria-current='page'] {
+  color: var(--primary);
+}
+
+.class-tab[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 32px;
+  z-index: 1;
+  height: 3px;
+  background: var(--primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .class-tab:hover {
+    color: var(--primary);
+  }
+}
+
+/* The class code, one character per box like a candidate number on an exam paper, as wide as the join link's box. */
+.code-boxes {
+  display: grid;
+  height: 54px;
+  user-select: all;
+}
+
+.code-boxes > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -2px;
+  border: 2px solid var(--primary);
+  background: var(--paper, var(--surface));
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: clamp(1.25rem, 4vw, 1.875rem);
+  font-weight: 700;
+}
+
+.code-boxes > span:first-child {
+  margin-left: 0;
+}
+
+/* On the sheet a copy field is three rows: the label line, the 54 px box, and its "Copied" note in the 18 px under it. Both
+   fields of the Class code section share one column width, so their Copy buttons stand in one line. */
+.paper-page main .copy-row {
+  gap: 12px;
+}
+
+.paper-page main .copy-row button {
+  height: 54px;
+}
+
+.paper-page main .copy-status {
+  min-height: 18px;
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 18px;
+}
+
+.paper-page main .copy-field > label:not(.sr-only) {
+  display: block;
+  margin: 0;
+  line-height: 36px;
+}
+
+@media (min-width: 64rem) {
+  .share-fields .copy-row {
+    max-width: calc(32.5rem + 12px + 5.5rem);
+  }
+}
+
+/* A row of a list on the sheet (assignments, students): two lines, the action beside both. */
+.sheet-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 24px;
+  min-height: 72px;
+}
+
+/* An assignment's facts in fixed columns, so the due dates, scorings and resubmissions line up down the list. */
+.fact-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 64rem) {
+  .fact-cols {
+    grid-template-columns: 15rem 11rem minmax(0, 1fr);
+  }
+}
+
+.fact-cols.col-heads {
+  display: none;
+}
+
+@media (min-width: 64rem) {
+  .fact-cols.col-heads {
+    display: grid;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--pencil, var(--text-muted));
+  }
+}
+
+.assignment-group + .assignment-group {
+  margin-top: 36px;
+}
+
+/* The danger zone spans the page under a red line laid on a ruled line. */
+.danger-zone {
+  position: relative;
+  padding-top: 36px;
+}
+
+.danger-zone::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: -7px;
+  height: 2px;
+  background: var(--danger);
+}
+
+/* Red only for the real danger zone; an archived class's restore section keeps the ink. */
+.danger-zone:not(.is-archived) h2 {
+  color: var(--danger);
+}
+
+.paper-page .danger-outline.border-input-border {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* An info notice on the sheet is written in the ink: a 2 px blue outline on the paper, on the 36 px line. */
+.paper-page main div[role='status'].rounded-md {
+  padding: 7px 12px;
+  border: 2px solid var(--primary);
+  background: var(--paper);
+  color: var(--primary);
+  line-height: 36px;
+}
+
+/* A linked card on the paper (the classes page): it lifts 2 px and its outline darkens under a fine pointer. */
+.paper-card {
+  display: block;
+  position: relative;
+  height: 100%;
+  padding: 16px 18px;
+  border: 2px solid var(--primary);
+  border-radius: 2px;
+  background: var(--paper);
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms,
+    box-shadow 180ms;
+}
+
+.paper-card.still {
+  border-color: #9aa6bf;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  a.paper-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--primary-hover);
+    box-shadow: 0 8px 24px rgb(29 63 160 / 0.1);
+  }
+}
+
+/* The teacher's pen draws the circle and the tick once (in TeacherMark, SignIn.tsx). The resting state is drawn, so reduced motion shows it complete. */
+.pen-stroke {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: pen-draw 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.pen-stroke.later {
+  animation-delay: 450ms;
+}
+
+@keyframes pen-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -131,4 +868,527 @@ body {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/*
+ * The front page (/): the page is an exam script being marked. It follows the sheet's 36 px rhythm exactly: every block is a
+ * whole number of rows, so no heading or paragraph drifts off its rule. The red margin line is the timeline: each stage's
+ * number is circled on it (the left offsets below centre the circle on the line at each width). Handwriting is only for what
+ * a teacher writes: the pen underlines, the marks, the status words.
+ */
+.lp {
+  --lp-red: var(--margin-red);
+  line-height: var(--row);
+}
+.lp :where(h1, h2, h3, p, ul) {
+  margin: 0;
+}
+.lp :where(ul) {
+  list-style: none;
+  padding: 0;
+}
+.lp-muted {
+  color: var(--text-muted);
+}
+.lp-red {
+  color: var(--lp-red);
+}
+.lp-pencil {
+  color: var(--pencil, var(--text-muted));
+}
+.lp h1,
+.lp h2 {
+  font-weight: 700;
+  line-height: 72px;
+}
+.lp-final {
+  display: inline;
+  padding: 0 4px 2px;
+  font-family: var(--font-hand);
+  font-weight: 400;
+  font-size: 1.55em;
+  letter-spacing: 0;
+  line-height: 0;
+  color: var(--lp-red);
+  white-space: nowrap;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 12' preserveAspectRatio='none'%3E%3Cpath d='M3 8 C40 2 82 11 122 5 S196 9 237 4' fill='none' stroke='%23d8342b' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E")
+    0 100% / 100% 14px no-repeat;
+}
+.lp-final-sm {
+  font-size: 1.4em;
+  background-size: 100% 12px;
+}
+.lp-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 12px;
+  margin-top: 36px;
+  padding-bottom: 18px;
+}
+.lp-btn {
+  height: calc(var(--row) * 1.5);
+  border-width: 2px;
+  border-radius: 2px;
+  padding-inline: 20px;
+}
+.lp-fake-btn {
+  display: inline-flex;
+  height: 44px;
+  align-items: center;
+  align-self: start;
+  border: 2px solid var(--primary);
+  border-radius: 2px;
+  padding-inline: 16px;
+  font-weight: 700;
+  color: var(--primary);
+}
+.lp-fake-primary {
+  height: calc(var(--row) * 1.5);
+  background: var(--primary);
+  color: #fff;
+  padding-inline: 20px;
+}
+
+.lp-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+  gap: 0 56px;
+  align-items: start;
+  margin-top: 36px;
+}
+.lp-hero h1 {
+  font-size: 58px;
+  letter-spacing: -0.02em;
+}
+.lp-ticks {
+  margin-top: 36px;
+}
+.lp-ticks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 18px;
+}
+.lp-ticks svg {
+  flex: none;
+  color: var(--lp-red);
+  margin-top: 7px;
+}
+.lp-script {
+  display: block;
+  width: 100%;
+  height: auto;
+  transform: rotate(-1.6deg);
+  transform-origin: 40% 50%;
+  font-family: 'Atkinson Hyperlegible', system-ui, sans-serif;
+}
+.lp-note {
+  animation: lp-fade 600ms ease-out 2s both;
+}
+@keyframes lp-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-note {
+    animation: none;
+  }
+}
+
+.lp-section {
+  margin-top: 108px;
+}
+.lp-section > h2 {
+  font-size: 40px;
+  letter-spacing: -0.015em;
+}
+.lp-section > p {
+  max-width: 56ch;
+  font-size: 18px;
+}
+.lp-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+  gap: 0 72px;
+  margin-top: 72px;
+  align-items: start;
+}
+.lp-stage h3 {
+  font-size: 24px;
+  font-weight: 700;
+}
+.lp-stage p {
+  max-width: 38ch;
+}
+.lp-n {
+  position: absolute;
+  left: -62px;
+  top: 4px;
+  display: inline-flex;
+  width: 30px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--lp-red);
+  border-radius: 50% 46% 52% 44%;
+  background: var(--paper);
+  color: var(--lp-red);
+  font-family: var(--font-hand);
+  font-size: 20px;
+  line-height: 1;
+  transform: rotate(-6deg);
+}
+.lp-art {
+  display: flex;
+  flex-direction: column;
+}
+.lp-art > p {
+  max-width: none;
+}
+.lp-lbl {
+  display: block;
+  font-weight: 700;
+}
+.lp-box {
+  height: 144px;
+  border: 2px solid var(--primary);
+  border-radius: 2px;
+  padding: 16px 12px;
+}
+.lp-art:has(.lp-box) {
+  padding-bottom: 18px;
+}
+.lp-code {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.lp-code-boxes {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  height: calc(var(--row) * 1.5);
+}
+.lp-code-boxes span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -2px;
+  border: 2px solid var(--primary);
+  color: var(--primary);
+  font:
+    700 28px/1 ui-monospace,
+    Consolas,
+    monospace;
+}
+.lp-code-boxes span:first-child {
+  margin-left: 0;
+}
+.lp-chip {
+  display: flex;
+  width: max-content;
+  height: var(--row);
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-hand);
+  font-size: 26px;
+}
+.lp-chip.lp-pencil {
+  font-size: 24px;
+}
+.lp-score {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 72px;
+}
+.lp-small {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.lp-who {
+  margin-top: 36px;
+  box-shadow: inset 0 2px 0 var(--primary);
+}
+.lp-who > div {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 0 72px;
+  align-items: start;
+  padding-top: 36px;
+}
+.lp-who h3 {
+  font-size: 20px;
+  font-weight: 700;
+}
+.lp-who p {
+  max-width: 58ch;
+}
+.lp-under {
+  padding-bottom: 5px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 12' preserveAspectRatio='none'%3E%3Cpath d='M3 8 C40 2 82 11 122 5 S196 9 237 4' fill='none' stroke='%23d8342b' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E")
+    0 100% / 100% 12px no-repeat;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.lp-close {
+  margin-top: 108px;
+}
+.lp-close h2 {
+  max-width: 18ch;
+  font-size: 52px;
+  letter-spacing: -0.02em;
+}
+
+.lp-foot {
+  margin-top: 108px;
+  border-top: 2px solid var(--primary);
+  padding-top: 34px;
+}
+.lp-foot-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px 160px 160px;
+  gap: 0 56px;
+}
+.lp-logo {
+  display: flex;
+  width: max-content;
+  height: var(--row);
+  align-items: center;
+  gap: 10px;
+  color: var(--primary);
+  font-size: 20px;
+  font-weight: 700;
+}
+.lp-mark {
+  position: relative;
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+}
+.lp-mark svg {
+  position: absolute;
+  inset: 0;
+}
+.lp-foot-cols p {
+  max-width: 30ch;
+}
+.lp-foot h3 {
+  font-size: 16px;
+  font-weight: 700;
+}
+.lp-foot li a {
+  display: inline-block;
+  color: var(--primary);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.lp-disc {
+  margin-top: 36px;
+}
+.lp-legal {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lp-foot li a:hover {
+    opacity: 0.8;
+  }
+}
+
+@media (max-width: 1135px) {
+  .lp-n {
+    left: -54px;
+  }
+}
+@media (max-width: 1024px) {
+  .lp-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 72px 0;
+  }
+  .lp-script {
+    max-width: 440px;
+    margin-bottom: 20px;
+  }
+  .lp-stage {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 36px 0;
+  }
+  .lp-who > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .lp-foot-cols {
+    grid-template-columns: minmax(0, 1fr) 150px 150px;
+    gap: 36px;
+  }
+  .lp-foot-cols > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 639px) {
+  .lp-hero h1 {
+    font-size: 32px;
+    line-height: 36px;
+  }
+  /* The script scales with the screen, so the room it takes is rounded up to whole rows. */
+  .lp-script {
+    margin-bottom: 0;
+    height: auto;
+    box-sizing: content-box;
+    padding-bottom: calc(round(up, (100vw - 56px) * 1.1818, 36px) - (100vw - 56px) * 1.1818);
+  }
+  .lp-section {
+    margin-top: 72px;
+  }
+  .lp-section > h2 {
+    font-size: 32px;
+    line-height: 36px;
+  }
+  .lp-close {
+    margin-top: 72px;
+  }
+  .lp-close h2 {
+    font-size: 32px;
+    line-height: 36px;
+  }
+  .lp-foot {
+    margin-top: 72px;
+  }
+  .lp-n {
+    left: -30px;
+  }
+  .lp-stage h3 {
+    padding-left: 18px;
+  }
+  .lp-box {
+    height: 180px;
+  }
+  .lp-foot-cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* Terms and Privacy: the same sheet as the front page, one clause per circled number on the red margin line. */
+.lp-doc {
+  max-width: 47.5rem;
+  margin-top: 36px;
+}
+.lp-doc h1 {
+  font-size: 40px;
+  letter-spacing: -0.015em;
+}
+.lp-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0 14px;
+}
+.lp-version p {
+  color: var(--text-muted);
+}
+.lp-stamp {
+  display: inline-flex;
+  box-sizing: border-box;
+  height: var(--row);
+  align-items: center;
+  border: 2px solid var(--lp-red);
+  border-radius: 3px;
+  padding: 0 12px;
+  color: var(--lp-red);
+  font-family: var(--font-hand);
+  font-size: 22px;
+  line-height: 1;
+  transform: rotate(-3deg);
+}
+.lp-short {
+  margin-top: 36px;
+}
+.lp-short h2 {
+  font-family: var(--font-hand);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: var(--row);
+  color: var(--lp-red);
+}
+.lp-short li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 18px;
+}
+.lp-short svg {
+  flex: none;
+  color: var(--lp-red);
+  margin-top: 7px;
+}
+.lp-clause {
+  position: relative;
+  margin-top: 36px;
+}
+.lp-clause h2 {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: var(--row);
+}
+.lp-clause p {
+  max-width: 62ch;
+}
+.lp-other {
+  margin-top: 72px;
+  box-shadow: inset 0 2px 0 var(--primary);
+  padding-top: var(--row);
+}
+.lp-other a {
+  color: var(--primary);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.lp-doc + .lp-foot {
+  margin-top: 72px;
+}
+.lp-foot-3 {
+  grid-template-columns: minmax(0, 1fr) 160px 160px;
+}
+@media (max-width: 1024px) {
+  .lp-foot-3 {
+    grid-template-columns: minmax(0, 1fr) 150px 150px;
+  }
+}
+@media (max-width: 639px) {
+  .lp-doc h1 {
+    font-size: 32px;
+    line-height: 36px;
+  }
+  .lp-clause h2 {
+    padding-left: 18px;
+  }
+  .lp-doc + .lp-foot {
+    margin-top: 72px;
+  }
+  .lp-foot-3 {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* The Show / Hide button inside a password field: plain ink text at the right edge, as tall as the field. */
+.field-reveal {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  padding-inline: 14px;
+  color: var(--primary);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.paper-page main button.field-reveal {
+  height: 100%;
 }

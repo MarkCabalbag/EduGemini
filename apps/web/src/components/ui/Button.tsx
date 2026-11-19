@@ -11,8 +11,7 @@ const STYLES: Record<Variant, string> = {
 
 /** Class names for a button. Also used by links that look like buttons. */
 export function buttonClass(variant: Variant = 'primary') {
-  const base =
-    'inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 font-semibold disabled:opacity-60';
+  const base = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 font-semibold disabled:opacity-60';
   return `${base} ${STYLES[variant]}`;
 }
 

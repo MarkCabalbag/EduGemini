@@ -26,7 +26,12 @@ type Options = {
 type Answer = { status: number; data: unknown };
 
 /** A file goes by XMLHttpRequest, because fetch cannot say how much of an upload has been sent. */
-function sendFile(url: string, method: string, file: { blob: Blob; name: string }, onProgress?: (percent: number) => void): Promise<Answer> {
+function sendFile(
+  url: string,
+  method: string,
+  file: { blob: Blob; name: string },
+  onProgress?: (percent: number) => void,
+): Promise<Answer> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open(method, url);

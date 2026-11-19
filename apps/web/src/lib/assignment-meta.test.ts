@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GradeView } from '@edugemini/shared';
-import { gradeScoreText, resubmissionText, scoringText } from './assignment-meta';
+import { attemptsLeftText, gradeScoreText, resubmissionText, scoringText } from './assignment-meta';
 
 describe('scoringText', () => {
   it('names the format, and the maximum only for points', () => {
@@ -11,7 +11,16 @@ describe('scoringText', () => {
 });
 
 describe('gradeScoreText', () => {
-  const grade: GradeView = { source: 'AI', score: 42, maxScore: 50, scoringFormat: 'POINTS', letter: null, percentage: 84, feedback: 'Good.', chip: 'status-ai' };
+  const grade: GradeView = {
+    source: 'AI',
+    score: 42,
+    maxScore: 50,
+    scoringFormat: 'POINTS',
+    letter: null,
+    percentage: 84,
+    feedback: 'Good.',
+    chip: 'status-ai',
+  };
 
   it('writes points as score / max and a percentage as a whole percent', () => {
     expect(gradeScoreText(grade)).toBe('42 / 50');
@@ -22,6 +31,17 @@ describe('gradeScoreText', () => {
     const letterGrade: GradeView = { ...grade, scoringFormat: 'LETTER_NUMERIC', score: 87, maxScore: 100, percentage: 87 };
     expect(gradeScoreText({ ...letterGrade, letter: 'B+' })).toBe('B+ (87)');
     expect(gradeScoreText(letterGrade)).toBe('87 / 100');
+  });
+});
+
+describe('attemptsLeftText', () => {
+  it.each([
+    [null, 'Unlimited resubmissions'],
+    [0, '0 resubmissions left'],
+    [1, '1 resubmission left'],
+    [3, '3 resubmissions left'],
+  ])('says %s as "%s"', (attemptsLeft, expected) => {
+    expect(attemptsLeftText(attemptsLeft)).toBe(expected);
   });
 });
 

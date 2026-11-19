@@ -111,9 +111,24 @@ describe('signed out', () => {
     expect(screen.queryByRole('heading', { name: /Welcome/ })).toBeNull();
   });
 
+  it('lets a person show and hide the password they typed', async () => {
+    const user = userEvent.setup();
+    renderAt('/signin');
+
+    const field = await screen.findByLabelText('Password');
+    await user.type(field, 'secret-pass-123');
+    expect(field.getAttribute('type')).toBe('password');
+
+    await user.click(screen.getByRole('button', { name: 'Show password' }));
+    expect(field.getAttribute('type')).toBe('text');
+
+    await user.click(screen.getByRole('button', { name: 'Hide password' }));
+    expect(field.getAttribute('type')).toBe('password');
+  });
+
   it('shows the landing page with sign up and sign in', async () => {
     renderAt('/');
-    expect(await screen.findByRole('link', { name: 'Sign up' })).toBeTruthy();
+    expect((await screen.findAllByRole('link', { name: 'Sign up' })).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: 'Sign in' }).length).toBeGreaterThan(0);
   });
 

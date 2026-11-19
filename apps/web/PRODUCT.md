@@ -16,7 +16,7 @@ web
 
 ## Product Purpose
 
-Instructors create classes and assignments with free-text grading criteria, students upload files, and Gemini gives a first-pass score and feedback that the instructor reviews and approves. Value line: *first-pass grading in minutes, with the instructor always in control.* Goals and success measures: [PRD §3.2](../../docs/prd.md) and [§14](../../docs/prd.md).
+Instructors create classes and assignments with free-text grading criteria, students upload files, and Gemini gives a first-pass score and feedback that the instructor reviews and approves. Value line: _first-pass grading in minutes, with the instructor always in control._ Goals and success measures: [PRD §3.2](../../docs/prd.md) and [§14](../../docs/prd.md).
 
 ## Positioning
 

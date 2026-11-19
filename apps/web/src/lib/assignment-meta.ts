@@ -13,6 +13,12 @@ export function gradeScoreText({ scoringFormat, score, maxScore, letter, percent
   return `${score} / ${maxScore}`;
 }
 
+/** Resubmissions a student has left, in words; null is Unlimited (PRD FR-SUB-09). */
+export function attemptsLeftText(attemptsLeft: number | null): string {
+  if (attemptsLeft === null) return 'Unlimited resubmissions';
+  return `${attemptsLeft} ${attemptsLeft === 1 ? 'resubmission' : 'resubmissions'} left`;
+}
+
 /** The resubmission limit in words; null is Unlimited (PRD FR-ASG-10). */
 export function resubmissionText({ maxResubmissions }: Pick<AssignmentSummary, 'maxResubmissions'>): string {
   if (maxResubmissions === null) return 'Unlimited resubmissions';

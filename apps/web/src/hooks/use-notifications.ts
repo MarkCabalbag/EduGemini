@@ -3,7 +3,7 @@ import type { NotificationPage, ReadAllResult, UnreadCount } from '@edugemini/sh
 import { api } from '../lib/api';
 import { POLL_MS } from '../lib/polling';
 
-export const notificationKeys = {
+const notificationKeys = {
   all: ['notifications'] as const,
   list: () => [...notificationKeys.all, 'list'] as const,
   unreadCount: () => [...notificationKeys.all, 'unread-count'] as const,
@@ -23,7 +23,8 @@ export function useNotifications() {
   return useInfiniteQuery({
     queryKey: notificationKeys.list(),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => api<NotificationPage>(pageParam ? `/notifications?cursor=${encodeURIComponent(pageParam)}` : '/notifications'),
+    queryFn: ({ pageParam }) =>
+      api<NotificationPage>(pageParam ? `/notifications?cursor=${encodeURIComponent(pageParam)}` : '/notifications'),
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 }

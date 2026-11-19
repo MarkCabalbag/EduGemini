@@ -46,15 +46,27 @@ const storedBefore = (draft: DraftVersion | null): UploadItem[] =>
  * The files of one upload (API Spec A7). The upload is opened when the first file is sent, or is the one the page found
  * already open, and files go one at a time, so a phone is never holding several photos in flight. Choosing files submits
  * nothing: `submit` finalizes the upload with the files that were stored, and the answer is the receipt, which replaces
- * this control on the page.
+ * this control on the page. For a resubmission the page passes `onClose`, which is called when the upload ends, submitted or
+ * cancelled (API Spec SUB-06), so the page can put its Resubmit button back.
  */
-export function useUpload(assignmentId: string, draft: DraftVersion | null) {
+export function useUpload(assignmentId: string, draft: DraftVersion | null, onClose?: () => void) {
   const queryClient = useQueryClient();
   const [items, setItems] = useState<UploadItem[]>(() => storedBefore(draft));
   const open = useMutation({ mutationFn: () => api<VersionView>(`/assignments/${assignmentId}/versions`, { method: 'POST' }) });
   const send = useMutation({
-    mutationFn: ({ versionId, id, blob, name, onProgress }: { versionId: string; id: string; blob: Blob; name: string; onProgress: (percent: number) => void }) =>
-      api<FileView>(`/versions/${versionId}/files/${id}`, { method: 'PUT', file: { blob, name }, onProgress }),
+    mutationFn: ({
+      versionId,
+      id,
+      blob,
+      name,
+      onProgress,
+    }: {
+      versionId: string;
+      id: string;
+      blob: Blob;
+      name: string;
+      onProgress: (percent: number) => void;
+    }) => api<FileView>(`/versions/${versionId}/files/${id}`, { method: 'PUT', file: { blob, name }, onProgress }),
   });
   const take = useMutation({
     mutationFn: ({ versionId, id }: { versionId: string; id: string }) => api(`/versions/${versionId}/files/${id}`, { method: 'DELETE' }),
@@ -62,7 +74,23 @@ export function useUpload(assignmentId: string, draft: DraftVersion | null) {
   const finalize = useMutation({
     mutationFn: ({ versionId, ids }: { versionId: string; ids: string[] }) =>
       api<StudentSubmission>(`/versions/${versionId}/finalize`, { method: 'POST', body: { expectedFileIds: ids } }),
-    onSuccess: (submission) => queryClient.setQueryData(submissionKeys.mine(assignmentId), submission),
+    onSuccess: (submission) => {
+      queryClient.setQueryData(submissionKeys.mine(assignmentId), submission);
+      onClose?.();
+    },
+  });
+  const cancelOpen = useMutation({
+    mutationFn: (versionId: string) => api(`/versions/${versionId}`, { method: 'DELETE' }),
+    onSuccess: async () => {
+      // The upload is gone, so the page must not find it again in the answer it already has. A refresh that is already on its
+      // way (the page asks every 5 seconds while a grade is pending) would bring the old answer back, so it is stopped first.
+      await queryClient.cancelQueries({ queryKey: submissionKeys.mine(assignmentId) });
+      queryClient.setQueryData(
+        submissionKeys.mine(assignmentId),
+        (mine: StudentSubmission | undefined) => mine && { ...mine, draftVersion: null },
+      );
+      onClose?.();
+    },
   });
   const versionId = useRef<Promise<string> | undefined>(draft ? Promise.resolve(draft.id) : undefined);
   const lastInLine = useRef<Promise<void>>(Promise.resolve());
@@ -89,7 +117,13 @@ export function useUpload(assignmentId: string, draft: DraftVersion | null) {
       const version = await openUpload();
       const blob = item.isImage ? await resizeImage(item.file) : item.file;
       if (blob.size > LIMITS.maxFileBytes) return change(item.id, { state: 'rejected', message: errorText('FILE_TOO_LARGE') });
-      await send.mutateAsync({ versionId: version, id: item.id, blob, name: item.name, onProgress: (percent) => change(item.id, { percent }) });
+      await send.mutateAsync({
+        versionId: version,
+        id: item.id,
+        blob,
+        name: item.name,
+        onProgress: (percent) => change(item.id, { percent }),
+      });
       change(item.id, { state: 'stored', message: undefined });
     } catch (error) {
       change(item.id, failureOf(error));
@@ -141,6 +175,12 @@ export function useUpload(assignmentId: string, draft: DraftVersion | null) {
     await finalize.mutateAsync({ versionId, ids: stored.map((item) => item.id) }).catch(() => undefined); // the error is `submitError`
   }
 
+  /** Throw the upload away. Nothing is on the server until the first file is sent, so then there is nothing to delete. */
+  async function cancel() {
+    if (!versionId.current) return onClose?.();
+    await cancelOpen.mutateAsync(await versionId.current).catch(() => undefined); // the error is `cancelError`
+  }
+
   return {
     items,
     addFiles,
@@ -152,6 +192,9 @@ export function useUpload(assignmentId: string, draft: DraftVersion | null) {
     submit,
     submitting: finalize.isPending,
     submitError: finalize.error ? errorTextOf(finalize.error) : undefined,
+    cancel,
+    cancelling: cancelOpen.isPending,
+    cancelError: cancelOpen.error ? errorTextOf(cancelOpen.error) : undefined,
     /** How many files are stored, still on their way, and failed or refused. */
     counts: { stored: stored.length, waiting, stuck },
   };
