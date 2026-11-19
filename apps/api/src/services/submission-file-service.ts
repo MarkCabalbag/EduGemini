@@ -107,7 +107,8 @@ export async function removeFile(db: PrismaClient, bucket: string, actor: Actor,
 
   await db.$transaction(async (tx) => {
     await lockSubmission(tx, submissionId);
-    const version = await tx.submissionVersion.findUniqueOrThrow({ where: { id: versionId }, include: { files: { where: { clientFileId } } } });
+    const version = await tx.submissionVersion.findUnique({ where: { id: versionId }, include: { files: { where: { clientFileId } } } });
+    if (!version) throw new AppError('NOT_FOUND'); // cancelled (SUB-06) after this request began
     if (version.status !== 'UPLOADING') throw new AppError('UPLOAD_NOT_OPEN');
     const [file] = version.files;
     if (!file) return;

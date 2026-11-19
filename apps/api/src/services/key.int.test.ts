@@ -15,7 +15,14 @@ const ENV = { ENCRYPTION_KEY: randomBytes(32).toString('base64'), ENCRYPTION_KEY
 const db = createTestDb();
 const makeUser = async (name: string, role: Role = 'INSTRUCTOR'): Promise<Actor> => {
   const user = await db.user.create({
-    data: { email: `${name}${EMAIL_END}`, firstName: 'Ada', lastName: 'Lovelace', role, termsAcceptedAt: new Date(), termsVersion: TERMS_VERSION },
+    data: {
+      email: `${name}${EMAIL_END}`,
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      role,
+      termsAcceptedAt: new Date(),
+      termsVersion: TERMS_VERSION,
+    },
   });
   return { id: user.id, role };
 };
@@ -112,7 +119,10 @@ describe('saving a key (EG-KEY-01)', () => {
     const actor = await makeUser('noack');
     const apiKey = newApiKey();
 
-    await expect(saveKey(db, ENV, actor, apiKey, null)).rejects.toMatchObject({ code: 'VALIDATION', fields: { disclosureAcknowledged: expect.any(String) } });
+    await expect(saveKey(db, ENV, actor, apiKey, null)).rejects.toMatchObject({
+      code: 'VALIDATION',
+      fields: { disclosureAcknowledged: expect.any(String) },
+    });
     expect(await rowsOf(actor)).toHaveLength(0);
 
     await saveKey(db, ENV, actor, apiKey, ACK);

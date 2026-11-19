@@ -32,12 +32,7 @@ export async function enrollmentCounts(db: PrismaClient, classId: string): Promi
 }
 
 /** Turn join approval on or off. Existing students are never changed, either way (PRD §8.3). */
-export async function changeSettings(
-  db: PrismaClient,
-  actor: Actor,
-  classId: string,
-  input: ClassSettings,
-): Promise<ClassSettingsResult> {
+export async function changeSettings(db: PrismaClient, actor: Actor, classId: string, input: ClassSettings): Promise<ClassSettingsResult> {
   const row = await ownClass(db, actor, classId);
   if (row.archivedAt) throw new AppError('CLASS_ARCHIVED');
   await db.class.update({ where: { id: classId }, data: { requireApproval: input.requireApproval } });
@@ -86,12 +81,7 @@ const TRANSITIONS = {
   REMOVE: { from: ['ACTIVE'], to: 'REMOVED' },
 } as const satisfies Record<Decision['action'], { from: readonly EnrollmentStatus[]; to: EnrollmentStatus }>;
 
-export async function decideEnrollment(
-  db: PrismaClient,
-  actor: Actor,
-  enrollmentId: string,
-  input: Decision,
-): Promise<EnrollmentView> {
+export async function decideEnrollment(db: PrismaClient, actor: Actor, enrollmentId: string, input: Decision): Promise<EnrollmentView> {
   const found = await db.enrollment.findUnique({
     where: { id: enrollmentId },
     include: { class: { select: { instructorId: true, archivedAt: true } } },

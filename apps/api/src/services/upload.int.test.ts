@@ -112,7 +112,7 @@ const openUpload = (app: TestApp, assignmentId: string, cookie?: string) => {
 };
 
 let PDF: Buffer; // a real one-page PDF, made in beforeAll: the server opens every PDF to count its pages
-const PNG =Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('pretend image data')]);
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('pretend image data')]);
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('pretend image data')]);
 /** A PNG of exactly this many bytes, so size limits can be hit to the byte. */
 const pngOfSize = (bytes: number) => Buffer.concat([PNG, Buffer.alloc(bytes - PNG.length)]);
@@ -241,11 +241,20 @@ describe('PUT /api/versions/:id/files/:clientFileId (SUB-03)', () => {
 
     expect(res.status).toBe(201);
     const file = FileViewSchema.parse(res.body);
-    expect(file).toMatchObject({ ordinal: 1, displayName: 'My essay (final).pdf', mimeType: 'application/pdf', sizeBytes: PDF.length, status: 'STORED', failureCode: null });
+    expect(file).toMatchObject({
+      ordinal: 1,
+      displayName: 'My essay (final).pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: PDF.length,
+      status: 'STORED',
+      failureCode: null,
+    });
 
     const row = await db.submissionFile.findUniqueOrThrow({ where: { id: file.id } });
     expect(row.sha256).toBe(createHash('sha256').update(PDF).digest('hex'));
-    expect(row.storagePath).toMatch(new RegExp(`^submissions/${cls.id}/${assignment.id}/${student.user.id}/${versionId}/1-[0-9a-f-]{36}\\.pdf$`));
+    expect(row.storagePath).toMatch(
+      new RegExp(`^submissions/${cls.id}/${assignment.id}/${student.user.id}/${versionId}/1-[0-9a-f-]{36}\\.pdf$`),
+    );
     expect(row.storagePath).not.toContain('essay'); // the name the student gave is never part of a path
     expect(await storage.exists(BUCKET, row.storagePath!)).toBe(true);
   });
@@ -437,7 +446,11 @@ describe('PUT /api/versions/:id/files/:clientFileId (SUB-03)', () => {
     expect((await sendFile(build(), versionId, classmate.cookie, PDF)).body.error.code).toBe('NOT_FOUND');
     expect((await sendFile(build(), versionId, owner.cookie, PDF)).status).toBe(404);
     expect((await sendFile(build(), randomUUID(), student.cookie, PDF)).status).toBe(404);
-    const signedOut = await request(build()).put(`/api/versions/${versionId}/files/file-${RUN}-x1`).set('Origin', APP_URL).set('Content-Type', 'application/pdf').send(PDF);
+    const signedOut = await request(build())
+      .put(`/api/versions/${versionId}/files/file-${RUN}-x1`)
+      .set('Origin', APP_URL)
+      .set('Content-Type', 'application/pdf')
+      .send(PDF);
     expect(signedOut.status).toBe(401);
   });
 
@@ -445,7 +458,10 @@ describe('PUT /api/versions/:id/files/:clientFileId (SUB-03)', () => {
     const leaver = await enrolledStudent('leaver', cls.id);
     const room = await seedAssignment(cls.id);
     const opened = await openUpload(build(), room.id, leaver.cookie);
-    await db.enrollment.update({ where: { classId_studentId: { classId: cls.id, studentId: leaver.user.id } }, data: { status: 'REMOVED' } });
+    await db.enrollment.update({
+      where: { classId_studentId: { classId: cls.id, studentId: leaver.user.id } },
+      data: { status: 'REMOVED' },
+    });
 
     expect((await sendFile(build(), opened.body.id, leaver.cookie, PDF)).body.error.code).toBe('NOT_FOUND');
   });
@@ -513,7 +529,11 @@ async function upload(assignmentId: string, who: TestUser, count = 1) {
   const ids: string[] = [];
   for (let i = 0; i < count; i++) {
     const clientFileId = `fin-${RUN}-${++fileCounter}`;
-    const sent = await sendFile(build(), opened.body.id, who.cookie, PNG, { contentType: 'image/png', clientFileId, name: `page${i + 1}.png` });
+    const sent = await sendFile(build(), opened.body.id, who.cookie, PNG, {
+      contentType: 'image/png',
+      clientFileId,
+      name: `page${i + 1}.png`,
+    });
     expect(sent.status).toBe(201);
     ids.push(clientFileId);
   }
@@ -532,7 +552,14 @@ describe('POST /api/versions/:id/finalize (SUB-05)', () => {
 
     expect(res.status).toBe(200);
     const receipt = StudentSubmissionSchema.parse(res.body);
-    expect(receipt).toMatchObject({ state: 'GRADING', isLate: false, closed: false, attemptsLeft: 3, unlimited: false, draftVersion: null });
+    expect(receipt).toMatchObject({
+      state: 'GRADING',
+      isLate: false,
+      closed: false,
+      attemptsLeft: 3,
+      unlimited: false,
+      draftVersion: null,
+    });
     expect(receipt.files.map((file) => file.displayName)).toEqual(['page1.png', 'page2.png']);
     expect(receipt.firstSubmittedAt).not.toBeNull();
     expect(receipt.latestSubmittedAt).toBe(receipt.firstSubmittedAt);
@@ -613,7 +640,14 @@ describe('POST /api/versions/:id/finalize (SUB-05)', () => {
   it('counts the reference files toward the same 15 MB: FILE_LIMIT grading-budget', async () => {
     const assignment = await seedAssignment(cls.id);
     await db.referenceFile.create({
-      data: { assignmentId: assignment.id, ordinal: 1, storagePath: `reference/${RUN}/${assignment.id}.pdf`, mimeType: 'application/pdf', sizeBytes: BigInt(6 * MiB), sha256: 'a'.repeat(64) },
+      data: {
+        assignmentId: assignment.id,
+        ordinal: 1,
+        storagePath: `reference/${RUN}/${assignment.id}.pdf`,
+        mimeType: 'application/pdf',
+        sizeBytes: BigInt(6 * MiB),
+        sha256: 'a'.repeat(64),
+      },
     });
     const { versionId, ids } = await upload(assignment.id, student);
     await db.submissionFile.updateMany({ where: { versionId }, data: { sizeBytes: BigInt(10 * MiB) } }); // 10 on its own is fine, 16 with the reference file is not
@@ -643,14 +677,23 @@ describe('POST /api/versions/:id/finalize (SUB-05)', () => {
     expect((await finalize(build(), versionId, classmate.cookie, ids)).body.error.code).toBe('NOT_FOUND');
     expect((await finalize(build(), versionId, owner.cookie, ids)).status).toBe(404);
     expect((await finalize(build(), randomUUID(), student.cookie, ids)).status).toBe(404);
-    const signedOut = await request(build()).post(`/api/versions/${versionId}/finalize`).set('Origin', APP_URL).send({ expectedFileIds: ids });
+    const signedOut = await request(build())
+      .post(`/api/versions/${versionId}/finalize`)
+      .set('Origin', APP_URL)
+      .send({ expectedFileIds: ids });
     expect(signedOut.status).toBe(401);
 
-    await db.enrollment.update({ where: { classId_studentId: { classId: cls.id, studentId: student.user.id } }, data: { status: 'REMOVED' } });
+    await db.enrollment.update({
+      where: { classId_studentId: { classId: cls.id, studentId: student.user.id } },
+      data: { status: 'REMOVED' },
+    });
     try {
       expect((await finalize(build(), versionId, student.cookie, ids)).body.error.code).toBe('NOT_FOUND');
     } finally {
-      await db.enrollment.update({ where: { classId_studentId: { classId: cls.id, studentId: student.user.id } }, data: { status: 'ACTIVE' } });
+      await db.enrollment.update({
+        where: { classId_studentId: { classId: cls.id, studentId: student.user.id } },
+        data: { status: 'ACTIVE' },
+      });
     }
   });
 });
@@ -722,11 +765,17 @@ describe('DELETE /api/versions/:id/files/:clientFileId (SUB-04)', () => {
     expect((await removeRequest(build(), versionId, ids[0]!)).status).toBe(401);
     expect(await db.submissionFile.count({ where: { versionId } })).toBe(1); // nobody but the owner removed anything
 
-    await db.enrollment.update({ where: { classId_studentId: { classId: cls.id, studentId: student.user.id } }, data: { status: 'REMOVED' } });
+    await db.enrollment.update({
+      where: { classId_studentId: { classId: cls.id, studentId: student.user.id } },
+      data: { status: 'REMOVED' },
+    });
     try {
       expect((await removeRequest(build(), versionId, ids[0]!, student.cookie)).body.error.code).toBe('NOT_FOUND');
     } finally {
-      await db.enrollment.update({ where: { classId_studentId: { classId: cls.id, studentId: student.user.id } }, data: { status: 'ACTIVE' } });
+      await db.enrollment.update({
+        where: { classId_studentId: { classId: cls.id, studentId: student.user.id } },
+        data: { status: 'ACTIVE' },
+      });
     }
   });
 
@@ -734,6 +783,161 @@ describe('DELETE /api/versions/:id/files/:clientFileId (SUB-04)', () => {
     const assignment = await seedAssignment(cls.id);
     const { versionId } = await upload(assignment.id, student);
     expect((await removeRequest(build(), versionId, 'short', student.cookie)).body.error.code).toBe('VALIDATION');
+  });
+});
+
+const cancelRequest = (app: TestApp, versionId: string, cookie?: string) => {
+  const req = request(app).delete(`/api/versions/${versionId}`).set('Origin', APP_URL);
+  return cookie ? req.set('Cookie', cookie) : req;
+};
+
+describe('DELETE /api/versions/:id (SUB-06)', () => {
+  it('deletes an open first upload with its files, queues the objects, and the student is NOT_SUBMITTED again', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId } = await upload(assignment.id, student, 2);
+    const files = await db.submissionFile.findMany({ where: { versionId } });
+
+    const res = await cancelRequest(build(), versionId, student.cookie);
+    expect(res.status).toBe(204);
+    expect(await db.submissionVersion.count({ where: { id: versionId } })).toBe(0);
+    expect(await db.submissionFile.count({ where: { versionId } })).toBe(0);
+    for (const file of files) expect(await db.storageDeletion.count({ where: { bucket: BUCKET, objectPath: file.storagePath! } })).toBe(1);
+    expect(await submissionOf(assignment.id, student)).toMatchObject({ state: null, currentVersionId: null }); // the row stays
+    expect((await getMine(build(), assignment.id, student.cookie)).body).toMatchObject({ state: 'NOT_SUBMITTED', draftVersion: null });
+    expect((await openUpload(build(), assignment.id, student.cookie)).status).toBe(201); // a new upload can be opened
+  });
+
+  it('cancels a resubmission and leaves the earlier submission, its files, its grade and its attempts alone', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const first = await upload(assignment.id, student, 2);
+    await finalize(build(), first.versionId, student.cookie, first.ids);
+    const kept = await db.submissionFile.findMany({ where: { versionId: first.versionId } });
+    const before = await submissionOf(assignment.id, student);
+
+    const second = await upload(assignment.id, student);
+    const added = await db.submissionFile.findFirstOrThrow({ where: { versionId: second.versionId } });
+    expect((await cancelRequest(build(), second.versionId, student.cookie)).status).toBe(204);
+
+    expect(await db.submissionVersion.count({ where: { id: second.versionId } })).toBe(0);
+    expect(await db.storageDeletion.count({ where: { bucket: BUCKET, objectPath: added.storagePath! } })).toBe(1);
+    // The first version is still the current one: its files stay stored and none of them was queued for deletion.
+    expect(await submissionOf(assignment.id, student)).toMatchObject({
+      state: before.state,
+      currentVersionId: first.versionId,
+      resubmissionsUsed: 0,
+    });
+    expect(await db.submissionFile.count({ where: { versionId: first.versionId } })).toBe(2);
+    expect(await db.storageDeletion.count({ where: { bucket: BUCKET, objectPath: { in: kept.map((file) => file.storagePath!) } } })).toBe(
+      0,
+    );
+    expect((await getMine(build(), assignment.id, student.cookie)).body).toMatchObject({
+      state: 'GRADING',
+      attemptsLeft: 3,
+      draftVersion: null,
+    });
+  });
+
+  it('is UPLOAD_NOT_OPEN for a stored version and for a replaced one, and nothing is deleted', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const first = await upload(assignment.id, student);
+    await finalize(build(), first.versionId, student.cookie, first.ids);
+
+    const stored = await cancelRequest(build(), first.versionId, student.cookie);
+    expect(stored.status).toBe(409);
+    expect(stored.body.error.code).toBe('UPLOAD_NOT_OPEN');
+    expect(await db.submissionFile.count({ where: { versionId: first.versionId } })).toBe(1);
+
+    const second = await upload(assignment.id, student);
+    await finalize(build(), second.versionId, student.cookie, second.ids); // the first version is replaced now
+    expect((await cancelRequest(build(), first.versionId, student.cookie)).body.error.code).toBe('UPLOAD_NOT_OPEN');
+    expect((await cancelRequest(build(), second.versionId, student.cookie)).body.error.code).toBe('UPLOAD_NOT_OPEN');
+    expect(await db.submissionFile.count({ where: { versionId: second.versionId } })).toBe(1);
+  });
+
+  it('answers 204 for a cancel and NOT_FOUND for the same cancel sent again', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId } = await upload(assignment.id, student);
+
+    expect((await cancelRequest(build(), versionId, student.cookie)).status).toBe(204);
+    expect((await cancelRequest(build(), versionId, student.cookie)).body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('gives 204 to one of two cancels at the same moment and never an error, and queues each object once', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId } = await upload(assignment.id, student, 2);
+    const files = await db.submissionFile.findMany({ where: { versionId } });
+    const app = build();
+
+    const [a, b] = await Promise.all([cancelRequest(app, versionId, student.cookie), cancelRequest(app, versionId, student.cookie)]);
+    // The second is 204 if it was waiting on the lock when the first finished, and NOT_FOUND if it started after.
+    expect([a.status, b.status].sort()).toSatisfy((statuses: number[]) => statuses[0] === 204 && [204, 404].includes(statuses[1]!));
+    expect(await db.submissionVersion.count({ where: { id: versionId } })).toBe(0);
+    for (const file of files) expect(await db.storageDeletion.count({ where: { bucket: BUCKET, objectPath: file.storagePath! } })).toBe(1);
+  });
+
+  it('runs a cancel and a finalize at the same moment one after the other: one wins, the other is refused, never a 500', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId, ids } = await upload(assignment.id, student);
+    const app = build();
+
+    const [cancelled, finalized] = await Promise.all([
+      cancelRequest(app, versionId, student.cookie),
+      finalize(app, versionId, student.cookie, ids),
+    ]);
+
+    const versions = await db.submissionVersion.count({ where: { id: versionId } });
+    if (cancelled.status === 204) {
+      expect(finalized.status).toBe(404); // the version was gone when finalize looked
+      expect(versions).toBe(0);
+      expect((await submissionOf(assignment.id, student)).state).toBeNull();
+    } else {
+      expect([cancelled.status, cancelled.body.error.code, finalized.status]).toEqual([409, 'UPLOAD_NOT_OPEN', 200]); // finalize got there first
+      expect(versions).toBe(1);
+      expect((await submissionOf(assignment.id, student)).currentVersionId).toBe(versionId);
+    }
+  });
+
+  it('answers a file removal that arrives after the cancel with NOT_FOUND, not a 500', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId, ids } = await upload(assignment.id, student);
+    const app = build();
+
+    const [cancelled, removed] = await Promise.all([
+      cancelRequest(app, versionId, student.cookie),
+      removeRequest(app, versionId, ids[0]!, student.cookie),
+    ]);
+    expect(cancelled.status).toBe(204);
+    expect([204, 404]).toContain(removed.status); // 204 if the removal won the lock, NOT_FOUND if the cancel did
+  });
+
+  it('is NOT_FOUND for another student, an instructor, a removed student and a missing version, and 401 signed out', async () => {
+    const assignment = await seedAssignment(cls.id);
+    const { versionId } = await upload(assignment.id, student);
+    const classmate = await enrolledStudent('cancel-classmate', cls.id);
+
+    expect((await cancelRequest(build(), versionId, classmate.cookie)).body.error.code).toBe('NOT_FOUND');
+    expect((await cancelRequest(build(), versionId, owner.cookie)).status).toBe(404);
+    expect((await cancelRequest(build(), randomUUID(), student.cookie)).status).toBe(404);
+    expect((await cancelRequest(build(), versionId)).status).toBe(401);
+    expect(await db.submissionVersion.count({ where: { id: versionId } })).toBe(1); // nobody but the owner cancelled anything
+
+    await db.enrollment.update({
+      where: { classId_studentId: { classId: cls.id, studentId: student.user.id } },
+      data: { status: 'REMOVED' },
+    });
+    try {
+      expect((await cancelRequest(build(), versionId, student.cookie)).body.error.code).toBe('NOT_FOUND');
+    } finally {
+      await db.enrollment.update({
+        where: { classId_studentId: { classId: cls.id, studentId: student.user.id } },
+        data: { status: 'ACTIVE' },
+      });
+    }
+    expect(await db.submissionVersion.count({ where: { id: versionId } })).toBe(1);
+  });
+
+  it('is VALIDATION for a version id that is not a UUID', async () => {
+    expect((await cancelRequest(build(), 'not-a-uuid', student.cookie)).body.error.code).toBe('VALIDATION');
   });
 });
 
@@ -816,7 +1020,10 @@ describe('resubmitting through finalize (SUB-05)', () => {
 
   it('starts again after manual review, clearing the cause', async () => {
     const { assignment } = await submitted();
-    await db.submission.updateMany({ where: { assignmentId: assignment.id, studentId: student.user.id }, data: { state: 'NEEDS_MANUAL_REVIEW', manualReviewCause: 'AI_FAILED' } });
+    await db.submission.updateMany({
+      where: { assignmentId: assignment.id, studentId: student.user.id },
+      data: { state: 'NEEDS_MANUAL_REVIEW', manualReviewCause: 'AI_FAILED' },
+    });
 
     const second = await upload(assignment.id, student);
     expect((await finalize(build(), second.versionId, student.cookie, second.ids)).status).toBe(200);
@@ -827,7 +1034,10 @@ describe('resubmitting through finalize (SUB-05)', () => {
     const { assignment } = await submitted();
     const second = await upload(assignment.id, student);
     const app = build();
-    const [a, b] = await Promise.all([finalize(app, second.versionId, student.cookie, second.ids), finalize(app, second.versionId, student.cookie, second.ids)]);
+    const [a, b] = await Promise.all([
+      finalize(app, second.versionId, student.cookie, second.ids),
+      finalize(app, second.versionId, student.cookie, second.ids),
+    ]);
 
     expect([a.status, b.status]).toEqual([200, 200]);
     expect(a.body).toEqual(b.body);
@@ -919,7 +1129,18 @@ describe('finalize starts grading (AI-08)', () => {
     await finalize(build(), first.versionId, student.cookie, first.ids);
     const submission = await submissionOf(assignment.id, student);
     const grade = await db.gradeResult.create({
-      data: { submissionId: submission.id, versionId: first.versionId, source: 'AI', status: 'ACTIVE', score: 80, feedback: 'Good.', criteriaVersion: 1, model: 'fake', promptVersion: 'grade-v1', confidence: 'high' },
+      data: {
+        submissionId: submission.id,
+        versionId: first.versionId,
+        source: 'AI',
+        status: 'ACTIVE',
+        score: 80,
+        feedback: 'Good.',
+        criteriaVersion: 1,
+        model: 'fake',
+        promptVersion: 'grade-v1',
+        confidence: 'high',
+      },
     });
     await db.submission.update({ where: { id: submission.id }, data: { activeGradeId: grade.id, state: 'AI_GENERATED' } });
 
@@ -964,7 +1185,10 @@ describe('late work (SUB-06)', () => {
     await finalize(build(), first.versionId, student.cookie, first.ids);
     // The time passes: the first submission was two days ago, and the due date was yesterday.
     const twoDaysAgo = new Date(Date.now() - 2 * DAY_MS);
-    await db.submission.updateMany({ where: { assignmentId: assignment.id, studentId: student.user.id }, data: { firstSubmittedAt: twoDaysAgo, latestSubmittedAt: twoDaysAgo } });
+    await db.submission.updateMany({
+      where: { assignmentId: assignment.id, studentId: student.user.id },
+      data: { firstSubmittedAt: twoDaysAgo, latestSubmittedAt: twoDaysAgo },
+    });
     await makePastDue(assignment.id);
     expect((await getMine(build(), assignment.id, student.cookie)).body.isLate).toBe(false);
 
@@ -1106,17 +1330,38 @@ describe('GET /api/assignments/:id/me (SUB-01)', () => {
 
   describe('the result (AI-11)', () => {
     /** A submitted assignment whose grading has finished as the worker leaves it: the active AI grade, and the state `state`. */
-    async function graded(state: 'QUEUED' | 'GRADING' | 'AI_GENERATED' | 'NEEDS_MANUAL_REVIEW' | 'INSTRUCTOR_APPROVED', overrides: Partial<Prisma.AssignmentUncheckedCreateInput> = {}) {
+    async function graded(
+      state: 'QUEUED' | 'GRADING' | 'AI_GENERATED' | 'NEEDS_MANUAL_REVIEW' | 'INSTRUCTOR_APPROVED',
+      overrides: Partial<Prisma.AssignmentUncheckedCreateInput> = {},
+    ) {
       const assignment = await seedAssignment(cls.id, overrides);
       const { versionId, ids } = await upload(assignment.id, student);
       await finalize(build(), versionId, student.cookie, ids);
       const submission = await submissionOf(assignment.id, student);
       const grade = await db.gradeResult.create({
-        data: { submissionId: submission.id, versionId, source: 'AI', status: 'ACTIVE', score: 42.5, feedback: 'Clear thesis.\nCite a source.', criteriaVersion: 1, model: 'fake', promptVersion: 'grade-v1', confidence: 'high', readabilityIssue: true },
+        data: {
+          submissionId: submission.id,
+          versionId,
+          source: 'AI',
+          status: 'ACTIVE',
+          score: 42.5,
+          feedback: 'Clear thesis.\nCite a source.',
+          criteriaVersion: 1,
+          model: 'fake',
+          promptVersion: 'grade-v1',
+          confidence: 'high',
+          readabilityIssue: true,
+        },
       });
       await db.submission.update({
         where: { id: submission.id },
-        data: { state, activeGradeId: state === 'NEEDS_MANUAL_REVIEW' ? null : grade.id, manualReviewCause: state === 'NEEDS_MANUAL_REVIEW' ? 'AI_FAILED' : null, approvedAt: state === 'INSTRUCTOR_APPROVED' ? new Date() : null, instructorComment: 'See me after class.' },
+        data: {
+          state,
+          activeGradeId: state === 'NEEDS_MANUAL_REVIEW' ? null : grade.id,
+          manualReviewCause: state === 'NEEDS_MANUAL_REVIEW' ? 'AI_FAILED' : null,
+          approvedAt: state === 'INSTRUCTOR_APPROVED' ? new Date() : null,
+          instructorComment: 'See me after class.',
+        },
       });
       return assignment;
     }
@@ -1127,10 +1372,28 @@ describe('GET /api/assignments/:id/me (SUB-01)', () => {
 
       expect(StudentSubmissionSchema.parse(res.body)).toMatchObject({
         state: 'AI_GENERATED',
-        grade: { source: 'AI', score: 42.5, maxScore: 100, scoringFormat: 'POINTS', letter: null, percentage: 43, feedback: 'Clear thesis.\nCite a source.', chip: 'status-ai' },
+        grade: {
+          source: 'AI',
+          score: 42.5,
+          maxScore: 100,
+          scoringFormat: 'POINTS',
+          letter: null,
+          percentage: 43,
+          feedback: 'Clear thesis.\nCite a source.',
+          chip: 'status-ai',
+        },
         instructorComment: null, // only an approved grade carries the instructor's comment
       });
-      expect(Object.keys(res.body.grade).sort()).toEqual(['chip', 'feedback', 'letter', 'maxScore', 'percentage', 'score', 'scoringFormat', 'source']);
+      expect(Object.keys(res.body.grade).sort()).toEqual([
+        'chip',
+        'feedback',
+        'letter',
+        'maxScore',
+        'percentage',
+        'score',
+        'scoringFormat',
+        'source',
+      ]);
       expect(JSON.stringify(res.body)).not.toMatch(/promptVersion|confidence|readability|model|manualReviewCause/);
     });
 
@@ -1138,17 +1401,29 @@ describe('GET /api/assignments/:id/me (SUB-01)', () => {
       const assignment = await graded('INSTRUCTOR_APPROVED');
       const res = await getMine(build(), assignment.id, student.cookie);
 
-      expect(res.body).toMatchObject({ state: 'INSTRUCTOR_APPROVED', grade: { chip: 'status-approved' }, instructorComment: 'See me after class.' });
+      expect(res.body).toMatchObject({
+        state: 'INSTRUCTOR_APPROVED',
+        grade: { chip: 'status-approved' },
+        instructorComment: 'See me after class.',
+      });
     });
 
     it('rounds the percentage to a whole number, from the assignment maximum', async () => {
       const assignment = await graded('AI_GENERATED', { scoringFormat: 'PERCENTAGE', maxScore: 100 });
-      expect((await getMine(build(), assignment.id, student.cookie)).body.grade).toMatchObject({ scoringFormat: 'PERCENTAGE', score: 42.5, percentage: 43 });
+      expect((await getMine(build(), assignment.id, student.cookie)).body.grade).toMatchObject({
+        scoringFormat: 'PERCENTAGE',
+        score: 42.5,
+        percentage: 43,
+      });
     });
 
     it.each(['QUEUED', 'GRADING'] as const)('has no grade while the state is %s, even if an old one is still stored', async (state) => {
       const assignment = await graded(state);
-      expect((await getMine(build(), assignment.id, student.cookie)).body).toMatchObject({ state: 'GRADING', grade: null, instructorComment: null });
+      expect((await getMine(build(), assignment.id, student.cookie)).body).toMatchObject({
+        state: 'GRADING',
+        grade: null,
+        instructorComment: null,
+      });
     });
 
     it('is awaiting review with no grade and no cause when the submission needs manual review', async () => {
@@ -1239,7 +1514,10 @@ describe('reference files (API Spec REF-01 to REF-04)', () => {
     ];
 
     for (const [index, file] of files.entries()) {
-      const res = await addReference(assignment.id, owner.cookie, file.body, file.name, file.type).field('impactToken', 'ignored on a draft');
+      const res = await addReference(assignment.id, owner.cookie, file.body, file.name, file.type).field(
+        'impactToken',
+        'ignored on a draft',
+      );
       expect(res.status, file.name).toBe(201);
       expect(ReferenceFileViewSchema.parse(res.body)).toEqual({
         id: expect.any(String),
@@ -1306,7 +1584,12 @@ describe('reference files (API Spec REF-01 to REF-04)', () => {
     expect([empty.status, empty.body.error.code]).toEqual([415, 'FILE_TYPE']);
     const encrypted = await addReference(assignment.id, owner.cookie, ENCRYPTED_PDF, 'locked.pdf');
     expect(encrypted.body.error).toMatchObject({ code: 'FILE_ERROR', details: { failureCode: 'PASSWORD' } });
-    const broken = await addReference(assignment.id, owner.cookie, Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from('not a real pdf')]), 'broken.pdf');
+    const broken = await addReference(
+      assignment.id,
+      owner.cookie,
+      Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from('not a real pdf')]),
+      'broken.pdf',
+    );
     expect(broken.body.error).toMatchObject({ code: 'FILE_ERROR', details: { failureCode: 'CORRUPT' } });
     const long = await addReference(assignment.id, owner.cookie, await makePdf(LIMITS.maxPdfPages + 1), 'long.pdf');
     expect(long.body.error).toMatchObject({ code: 'FILE_LIMIT', details: { limit: 'pages' } });
@@ -1397,8 +1680,13 @@ describe('reference files (API Spec REF-01 to REF-04)', () => {
     const instructorView = await readBy(assignment.id, owner.cookie);
     const studentView = await readBy(assignment.id, student.cookie);
 
-    expect(instructorView.body.referenceFiles.map((file: { label: string }) => file.label)).toEqual(['Reference file 1', 'Reference file 2']);
-    expect(studentView.body.referenceFiles).toEqual([expect.objectContaining({ id: first.body.id, label: 'Reference file 1', visibleToStudents: true })]);
+    expect(instructorView.body.referenceFiles.map((file: { label: string }) => file.label)).toEqual([
+      'Reference file 1',
+      'Reference file 2',
+    ]);
+    expect(studentView.body.referenceFiles).toEqual([
+      expect.objectContaining({ id: first.body.id, label: 'Reference file 1', visibleToStudents: true }),
+    ]);
   });
 
   it('is the owning instructor’s alone to add, change and remove: others find nothing, and signed out is 401', async () => {

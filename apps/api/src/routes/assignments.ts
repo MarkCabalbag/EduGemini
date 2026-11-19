@@ -10,13 +10,7 @@ import {
 import { requireAction } from '../middleware/authorize';
 import { requireAuth } from '../middleware/session';
 import { validate, validated } from '../middleware/validate';
-import {
-  createAssignment,
-  getAssignment,
-  listAssignments,
-  publishAssignment,
-  updateAssignment,
-} from '../services/assignment-service';
+import { createAssignment, getAssignment, listAssignments, publishAssignment, updateAssignment } from '../services/assignment-service';
 
 // What each route accepts, named once so `validate` and `validated` cannot drift apart.
 const create = { params: ClassParamsSchema, body: CreateAssignmentSchema };

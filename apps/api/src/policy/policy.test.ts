@@ -84,9 +84,7 @@ describe('what a denial looks like', () => {
     const { actor, resource } = callers.pendingStudent;
     expect(decide(actor, 'announcement.view', resource)).toBe('pending');
     expect(() => authorize(actor, 'announcement.view', resource)).toThrowError(AppError);
-    expect(() => authorize(actor, 'announcement.view', resource)).toThrowError(
-      expect.objectContaining({ code: 'ENROLLMENT_PENDING' }),
-    );
+    expect(() => authorize(actor, 'announcement.view', resource)).toThrowError(expect.objectContaining({ code: 'ENROLLMENT_PENDING' }));
   });
 
   it('treats declined and removed students like strangers', () => {

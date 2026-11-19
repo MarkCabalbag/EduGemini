@@ -32,14 +32,23 @@ let seeded = 0;
 async function seedWorld({ key = 'ok', fileNames = ['essay.png'] }: { key?: KeyState; fileNames?: string[] } = {}) {
   const n = ++seeded;
   const instructor = await db.user.create({
-    data: { email: `instructor${n}${EMAIL_END}`, firstName: 'Grace', lastName: 'Hopper', role: 'INSTRUCTOR', termsAcceptedAt: new Date(), termsVersion: TERMS_VERSION },
+    data: {
+      email: `instructor${n}${EMAIL_END}`,
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      role: 'INSTRUCTOR',
+      termsAcceptedAt: new Date(),
+      termsVersion: TERMS_VERSION,
+    },
   });
   const apiKey = `AIza${randomBytes(18).toString('hex')}`;
   if (key !== 'none') {
     await saveKey(db, ENV, { id: instructor.id, role: 'INSTRUCTOR' }, apiKey, new Date());
     if (key !== 'ok') await db.instructorKey.update({ where: { instructorId: instructor.id }, data: { status: key } });
   }
-  const cls = await db.class.create({ data: { instructorId: instructor.id, name: `Grading class ${n}`, joinCode: newJoinCode(), attestedAt: new Date() } });
+  const cls = await db.class.create({
+    data: { instructorId: instructor.id, name: `Grading class ${n}`, joinCode: newJoinCode(), attestedAt: new Date() },
+  });
   const assignment = await db.assignment.create({
     data: {
       classId: cls.id,
@@ -89,7 +98,15 @@ function makeDeps(overrides: { grade?: GeminiAdapter['grade']; pacer?: Pacer } =
   const fake = createFakeGemini();
   const grade = vi.fn<GeminiAdapter['grade']>(overrides.grade ?? fake.grade);
   const pacer: Pacer = overrides.pacer ?? { take: vi.fn(() => 0) };
-  const deps: GradingDeps = { db, storage, bucket: BUCKET, gemini: { model: 'fake', grade }, pacer, env: ENV, logger: createLogger('silent', 'test') };
+  const deps: GradingDeps = {
+    db,
+    storage,
+    bucket: BUCKET,
+    gemini: { model: 'fake', grade },
+    pacer,
+    env: ENV,
+    logger: createLogger('silent', 'test'),
+  };
   return { deps, grade, pacer };
 }
 
@@ -100,7 +117,14 @@ const gradesOf = (submissionId: string) => db.gradeResult.findMany({ where: { su
 beforeAll(async () => {
   await db.$connect();
   student = await db.user.create({
-    data: { email: `student${EMAIL_END}`, firstName: 'Ada', lastName: 'Lovelace', role: 'STUDENT', termsAcceptedAt: new Date(), termsVersion: TERMS_VERSION },
+    data: {
+      email: `student${EMAIL_END}`,
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      role: 'STUDENT',
+      termsAcceptedAt: new Date(),
+      termsVersion: TERMS_VERSION,
+    },
   });
 });
 
@@ -134,7 +158,9 @@ describe('gradeSubmission: a result is stored (EG-AI-03, TRD §10.3)', () => {
     });
     expect(Number(grade?.score)).toBe(85);
 
-    expect(await attemptsOf(world.submission.id)).toMatchObject([{ attemptNo: 1, outcome: 'SUCCESS', model: 'fake', errorClass: null, versionId: world.version.id }]);
+    expect(await attemptsOf(world.submission.id)).toMatchObject([
+      { attemptNo: 1, outcome: 'SUCCESS', model: 'fake', errorClass: null, versionId: world.version.id },
+    ]);
     const [notification] = await db.notification.findMany({ where: { userId: student.id, link: `/assignments/${world.assignment.id}` } });
     expect(notification).toMatchObject({ type: 'SUBMISSION_GRADED', payload: { className: world.cls.name } });
   });
@@ -263,18 +289,21 @@ describe('gradeSubmission: the key (TRD §10.3 step 2)', () => {
     ['none', 'KEY_MISSING'],
     ['NEEDS_ATTENTION', 'KEY_INVALID'],
     ['QUOTA_REACHED', 'KEY_QUOTA'],
-  ] as const)('with a key that is %s, sends the submission to manual review (%s) without calling Gemini or using a token', async (key, cause) => {
-    const world = await seedWorld({ key });
-    const { deps, grade, pacer } = makeDeps();
+  ] as const)(
+    'with a key that is %s, sends the submission to manual review (%s) without calling Gemini or using a token',
+    async (key, cause) => {
+      const world = await seedWorld({ key });
+      const { deps, grade, pacer } = makeDeps();
 
-    expect(await gradeSubmission(deps, world.job, { attemptNo: 1 })).toBeUndefined();
+      expect(await gradeSubmission(deps, world.job, { attemptNo: 1 })).toBeUndefined();
 
-    expect(grade).not.toHaveBeenCalled();
-    expect(pacer.take).not.toHaveBeenCalled();
-    expect(await submissionOf(world.submission.id)).toMatchObject({ state: 'NEEDS_MANUAL_REVIEW', manualReviewCause: cause });
-    expect(await attemptsOf(world.submission.id)).toHaveLength(0);
-    expect(await gradesOf(world.submission.id)).toHaveLength(0);
-  });
+      expect(grade).not.toHaveBeenCalled();
+      expect(pacer.take).not.toHaveBeenCalled();
+      expect(await submissionOf(world.submission.id)).toMatchObject({ state: 'NEEDS_MANUAL_REVIEW', manualReviewCause: cause });
+      expect(await attemptsOf(world.submission.id)).toHaveLength(0);
+      expect(await gradesOf(world.submission.id)).toHaveLength(0);
+    },
+  );
 });
 
 describe('gradeSubmission: pacing (TRD §10.2)', () => {
@@ -298,7 +327,9 @@ describe('gradeSubmission: a call that fails (TRD §10.7)', () => {
 
     await expect(gradeSubmission(deps, world.job, { attemptNo: 2 })).rejects.toBeInstanceOf(GeminiError);
 
-    expect(await attemptsOf(world.submission.id)).toMatchObject([{ attemptNo: 2, outcome: 'TRANSIENT_ERROR', errorClass: 'TRANSIENT', model: 'fake' }]);
+    expect(await attemptsOf(world.submission.id)).toMatchObject([
+      { attemptNo: 2, outcome: 'TRANSIENT_ERROR', errorClass: 'TRANSIENT', model: 'fake' },
+    ]);
     expect(await gradesOf(world.submission.id)).toHaveLength(0);
     expect(await submissionOf(world.submission.id)).toMatchObject({ state: 'GRADING', manualReviewCause: null });
   });
@@ -307,19 +338,22 @@ describe('gradeSubmission: a call that fails (TRD §10.7)', () => {
     ['key-invalid', 'KEY_ERROR', 'KEY_INVALID', 'KEY_INVALID'],
     ['quota-daily', 'QUOTA_ERROR', 'QUOTA', 'KEY_QUOTA'],
     ['file-quality', 'FILE_ERROR', 'FILE_QUALITY', 'FILE_QUALITY'],
-  ] as const)('sends the %s scenario to manual review (%s) without throwing, so it is not retried', async (scenario, outcome, errorClass, cause) => {
-    const world = await seedWorld({ fileNames: [`__scenario-${scenario}__.png`] });
-    const { deps, grade } = makeDeps();
+  ] as const)(
+    'sends the %s scenario to manual review (%s) without throwing, so it is not retried',
+    async (scenario, outcome, errorClass, cause) => {
+      const world = await seedWorld({ fileNames: [`__scenario-${scenario}__.png`] });
+      const { deps, grade } = makeDeps();
 
-    expect(await gradeSubmission(deps, world.job, { attemptNo: 1 })).toBeUndefined();
+      expect(await gradeSubmission(deps, world.job, { attemptNo: 1 })).toBeUndefined();
 
-    expect(grade).toHaveBeenCalledTimes(1);
-    expect(await attemptsOf(world.submission.id)).toMatchObject([{ attemptNo: 1, outcome, errorClass, model: 'fake' }]);
-    expect(await gradesOf(world.submission.id)).toHaveLength(0);
-    expect(await submissionOf(world.submission.id)).toMatchObject({ state: 'NEEDS_MANUAL_REVIEW', manualReviewCause: cause });
-  });
+      expect(grade).toHaveBeenCalledTimes(1);
+      expect(await attemptsOf(world.submission.id)).toMatchObject([{ attemptNo: 1, outcome, errorClass, model: 'fake' }]);
+      expect(await gradesOf(world.submission.id)).toHaveLength(0);
+      expect(await submissionOf(world.submission.id)).toMatchObject({ state: 'NEEDS_MANUAL_REVIEW', manualReviewCause: cause });
+    },
+  );
 
-  it('does not touch the instructor\'s key status: that is written by the key tickets (KEY-05, KEY-07)', async () => {
+  it("does not touch the instructor's key status: that is written by the key tickets (KEY-05, KEY-07)", async () => {
     const world = await seedWorld({ fileNames: ['__scenario-key-invalid__.png'] });
     const { deps } = makeDeps();
 
@@ -341,7 +375,8 @@ describe('gradeSubmission: a call that fails (TRD §10.7)', () => {
   it('stops waiting for Gemini at the timeout and records it', async () => {
     const world = await seedWorld();
     const { deps } = makeDeps({
-      grade: (_input, _key, { signal } = {}) => new Promise<string>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason))),
+      grade: (_input, _key, { signal } = {}) =>
+        new Promise<string>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason))),
     });
 
     await expect(gradeSubmission(deps, world.job, { attemptNo: 1, timeoutMs: 50 })).rejects.toMatchObject({ name: 'TimeoutError' });
@@ -398,7 +433,11 @@ describe('gradeSubmission: a submission that is not waiting for grading (a dupli
     await gradeSubmission(deps, world.job, { attemptNo: 1 });
     const graded = await submissionOf(world.submission.id);
 
-    const second = makeDeps({ grade: async () => { throw new GeminiError('TRANSIENT'); } });
+    const second = makeDeps({
+      grade: async () => {
+        throw new GeminiError('TRANSIENT');
+      },
+    });
     expect(await gradeSubmission(second.deps, world.job, { attemptNo: 1 })).toBeUndefined();
 
     expect(second.grade).not.toHaveBeenCalled();
@@ -411,7 +450,10 @@ describe('gradeSubmission: a submission that is not waiting for grading (a dupli
     const real = createFakeGemini();
     const { deps } = makeDeps({
       grade: async (input, apiKey, options) => {
-        await db.submission.update({ where: { id: world.submission.id }, data: { state: 'NEEDS_MANUAL_REVIEW', manualReviewCause: 'KEY_MISSING' } });
+        await db.submission.update({
+          where: { id: world.submission.id },
+          data: { state: 'NEEDS_MANUAL_REVIEW', manualReviewCause: 'KEY_MISSING' },
+        });
         return real.grade(input, apiKey, options);
       },
     });
@@ -439,7 +481,14 @@ describe('gradeSubmission: a submission that is not waiting for grading (a dupli
 
 describe('the grading handler: tries and the last try (TRD §10.7, EG-AI-06)', () => {
   /** What pg-boss gives the handler for one job: the payload, and how many times it has been retried. */
-  const jobOf = (payload: GradeJob, retryCount: number) => ({ id: randomUUID(), name: GRADE_SUBMISSION, data: payload, retryCount, signal: new AbortController().signal }) as unknown as Job<GradeJob>;
+  const jobOf = (payload: GradeJob, retryCount: number) =>
+    ({
+      id: randomUUID(),
+      name: GRADE_SUBMISSION,
+      data: payload,
+      retryCount,
+      signal: new AbortController().signal,
+    }) as unknown as Job<GradeJob>;
   const run = (deps: GradingDeps, payload: GradeJob, retryCount: number, send = vi.fn()) =>
     gradeSubmissionHandler({ send } as unknown as PgBoss, deps)([jobOf(payload, retryCount)]);
 
@@ -518,7 +567,11 @@ describe('the grading handler: tries and the last try (TRD §10.7, EG-AI-06)', (
   it('does not demote a graded submission when a duplicate job reaches its last try', async () => {
     const world = await seedWorld();
     await gradeSubmission(makeDeps().deps, world.job, { attemptNo: 1 });
-    const failing = makeDeps({ grade: async () => { throw new GeminiError('TRANSIENT'); } });
+    const failing = makeDeps({
+      grade: async () => {
+        throw new GeminiError('TRANSIENT');
+      },
+    });
 
     await expect(run(failing.deps, world.job, 2)).resolves.toBeUndefined();
 
@@ -534,7 +587,11 @@ describe('the grading handler: tries and the last try (TRD §10.7, EG-AI-06)', (
     await run(deps, { ...world.job, tries: 1 }, 1, send);
 
     expect(grade).not.toHaveBeenCalled();
-    expect(send).toHaveBeenCalledWith(GRADE_SUBMISSION, { ...world.job, tries: 2 }, { singletonKey: `grade:${world.job.submissionId}`, startAfter: 7 });
+    expect(send).toHaveBeenCalledWith(
+      GRADE_SUBMISSION,
+      { ...world.job, tries: 2 },
+      { singletonKey: `grade:${world.job.submissionId}`, startAfter: 7 },
+    );
     expect((await submissionOf(world.submission.id)).state).toBe('QUEUED');
   });
 });

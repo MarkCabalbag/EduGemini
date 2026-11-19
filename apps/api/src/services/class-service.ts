@@ -105,12 +105,7 @@ export async function createClass(db: PrismaClient, actor: Actor, input: CreateC
 }
 
 /** The caller's own classes, newest first. Archived classes only when asked for (API Spec CLS-01). */
-export async function listClasses(
-  db: PrismaClient,
-  actor: Actor,
-  query: ListClassesQuery,
-  appUrl: string,
-): Promise<ClassPage> {
+export async function listClasses(db: PrismaClient, actor: Actor, query: ListClassesQuery, appUrl: string): Promise<ClassPage> {
   authorize(actor, 'class.list');
 
   const after = query.cursor ? decodeCursor(query.cursor) : undefined;
@@ -294,7 +289,11 @@ export async function deleteClass(db: PrismaClient, bucket: string, actor: Actor
     await queueDeletions(tx, bucket, [...submissionFiles, ...referenceFiles, ...announcementFiles]);
     await tx.class.delete({ where: { id: classId } }); // the rest goes with it (foreign-key cascades)
     // The class is gone, so the notification opens the student's class list. Titles and links are final with NTF-05.
-    await notify(tx, 'CLASS_DELETED', approved.map((enrollment) => enrollment.studentId), { link: '/classes', className: row.name });
+    await notify(
+      tx,
+      'CLASS_DELETED',
+      approved.map((enrollment) => enrollment.studentId),
+      { link: '/classes', className: row.name },
+    );
   });
 }
-

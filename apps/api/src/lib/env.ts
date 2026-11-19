@@ -25,9 +25,7 @@ const EnvSchema = z
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 
     // Secrets
-    ENCRYPTION_KEY: z
-      .string()
-      .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64 encoded'),
+    ENCRYPTION_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64 encoded'),
     ENCRYPTION_KEY_VERSION: z.coerce.number().int().min(1).default(1),
     SESSION_SECRET: z.string().min(32, 'must be at least 32 characters'),
 
@@ -39,8 +37,9 @@ const EnvSchema = z
     SMTP_USER: z.string().min(1).optional(),
     SMTP_PASS: z.string().min(1).optional(),
 
-    // Gemini (TRD §11). The model is a candidate until spike S3.
-    GEMINI_MODE: z.enum(['live', 'fake']).default('fake'),
+    // Gemini (TRD §11). The app grades with the live model. `fake` exists only for the end-to-end tests, which start the API
+    // themselves (apps/e2e/playwright.config.ts); it is refused in production.
+    GEMINI_MODE: z.enum(['live', 'fake']).default('live'),
     GEMINI_MODEL: z.string().min(1).default('gemini-2.5-flash'),
 
     REGRADE_DEBOUNCE_SECONDS: z.coerce.number().int().min(0).default(120),

@@ -57,7 +57,10 @@ export function authRouter({ db, appUrl }: AuthDeps): Router {
   router.post('/auth/signout', async (req, res) => {
     const token = readSessionToken(req);
     if (token) await deleteSession(db, token);
-    res.clearCookie(SESSION_COOKIE, { ...cookie, maxAge: undefined }).status(204).end();
+    res
+      .clearCookie(SESSION_COOKIE, { ...cookie, maxAge: undefined })
+      .status(204)
+      .end();
   });
 
   return router;

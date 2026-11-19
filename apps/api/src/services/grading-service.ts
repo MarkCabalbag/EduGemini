@@ -72,7 +72,11 @@ function parseAnswer(raw: string, maxScore: number): GradeOutput | null {
  * current one or the submission is no longer waiting for grading: the single UPDATE checks both, so a newer submission, or one
  * that already has its result, is never moved.
  */
-export async function moveToManualReview(db: PrismaClient, job: Pick<GradeJob, 'submissionId' | 'versionId'>, cause: ManualReviewCause): Promise<void> {
+export async function moveToManualReview(
+  db: PrismaClient,
+  job: Pick<GradeJob, 'submissionId' | 'versionId'>,
+  cause: ManualReviewCause,
+): Promise<void> {
   await db.submission.updateMany({
     where: { id: job.submissionId, currentVersionId: job.versionId, state: { in: IN_FLIGHT } },
     data: { state: 'NEEDS_MANUAL_REVIEW', manualReviewCause: cause },
@@ -86,20 +90,32 @@ export async function moveToManualReview(db: PrismaClient, job: Pick<GradeJob, '
  * (`GRADING_TRIES`). A failure that retrying cannot fix, such as a bad key, no quota or an unreadable file, sends the submission
  * to manual review with its cause and returns. Only `first` and `resubmit` work for now: the other modes come with their tickets.
  */
-export async function gradeSubmission(deps: GradingDeps, job: GradeJob, { attemptNo, signal, timeoutMs = 60_000 }: GradingRun): Promise<{ waitSeconds: number } | undefined> {
+export async function gradeSubmission(
+  deps: GradingDeps,
+  job: GradeJob,
+  { attemptNo, signal, timeoutMs = 60_000 }: GradingRun,
+): Promise<{ waitSeconds: number } | undefined> {
   const { db, storage, bucket, gemini, pacer, env, logger } = deps;
   if (job.mode === 'regrade_approved') throw new Error('The mode regrade_approved is not built until REV-09.');
 
   // 1. Load the submission. A job for a submission that is gone, or for a version that is no longer the current one, ends here.
   const submission = await db.submission.findUnique({
     where: { id: job.submissionId },
-    include: { assignment: { include: { class: { select: { name: true, instructorId: true } } } } },
+    include: {
+      assignment: { include: { class: { select: { name: true, instructorId: true } }, referenceFiles: { orderBy: { ordinal: 'asc' } } } },
+    },
   });
   if (!submission) return;
   const { assignment } = submission;
 
-  const record = async (client: Prisma.TransactionClient, outcome: AttemptOutcome, extra: { errorClass?: string; latencyMs?: number; model?: string } = {}) => {
-    await client.gradingAttempt.create({ data: { submissionId: job.submissionId, versionId: job.versionId, attemptNo, outcome, ...extra } });
+  const record = async (
+    client: Prisma.TransactionClient,
+    outcome: AttemptOutcome,
+    extra: { errorClass?: string; latencyMs?: number; model?: string } = {},
+  ) => {
+    await client.gradingAttempt.create({
+      data: { submissionId: job.submissionId, versionId: job.versionId, attemptNo, outcome, ...extra },
+    });
     logger.info({ event: 'grading.attempt', submissionId: job.submissionId, attemptNo, outcome, ...extra });
   };
 
@@ -125,12 +141,27 @@ export async function gradeSubmission(deps: GradingDeps, job: GradeJob, { attemp
   if (waitSeconds > 0) return { waitSeconds };
 
   // 4. The request: the assignment and the student's files in order (never a name, an ID or an email, TRD §10.4).
-  await db.submission.updateMany({ where: { id: job.submissionId, currentVersionId: job.versionId, state: { in: IN_FLIGHT } }, data: { state: 'GRADING' } });
+  await db.submission.updateMany({
+    where: { id: job.submissionId, currentVersionId: job.versionId, state: { in: IN_FLIGHT } },
+    data: { state: 'GRADING' },
+  });
   const files = await db.submissionFile.findMany({ where: { versionId: job.versionId, status: 'STORED' }, orderBy: { ordinal: 'asc' } });
   const studentFiles: GradeFile[] = [];
   for (const file of files) {
     // A stored file always has its object and type. `displayName` is for the fake adapter only.
-    studentFiles.push({ mimeType: file.mimeType!, displayName: file.displayName ?? 'file', data: await buffer(await storage.get(bucket, file.storagePath!)) });
+    studentFiles.push({
+      mimeType: file.mimeType!,
+      displayName: file.displayName ?? 'file',
+      data: await buffer(await storage.get(bucket, file.storagePath!)),
+    });
+  }
+  const referenceFiles: GradeFile[] = [];
+  for (const file of assignment.referenceFiles) {
+    referenceFiles.push({
+      mimeType: file.mimeType,
+      displayName: 'reference',
+      data: await buffer(await storage.get(bucket, file.storagePath)),
+    });
   }
   const maxScore = Number(assignment.maxScore);
 
@@ -139,8 +170,15 @@ export async function gradeSubmission(deps: GradingDeps, job: GradeJob, { attemp
   try {
     answer = await gemini.grade(
       {
-        assignment: { title: assignment.title, instructions: assignment.instructions, criteriaText: assignment.criteriaText, scoringFormat: assignment.scoringFormat, maxScore },
+        assignment: {
+          title: assignment.title,
+          instructions: assignment.instructions,
+          criteriaText: assignment.criteriaText,
+          scoringFormat: assignment.scoringFormat,
+          maxScore,
+        },
         studentFiles,
+        referenceFiles,
       },
       key.apiKey,
       { signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(timeoutMs)]) },
@@ -166,7 +204,10 @@ export async function gradeSubmission(deps: GradingDeps, job: GradeJob, { attemp
   // submission is no longer waiting for this result.
   await db.$transaction(async (tx) => {
     await lockSubmission(tx, job.submissionId);
-    const current = await tx.submission.findUniqueOrThrow({ where: { id: job.submissionId }, select: { currentVersionId: true, state: true } });
+    const current = await tx.submission.findUniqueOrThrow({
+      where: { id: job.submissionId },
+      select: { currentVersionId: true, state: true },
+    });
     if (current.currentVersionId !== job.versionId || !current.state || !IN_FLIGHT.includes(current.state)) {
       await record(tx, 'STALE_DISCARDED', { latencyMs, model: gemini.model });
       return;
@@ -187,8 +228,14 @@ export async function gradeSubmission(deps: GradingDeps, job: GradeJob, { attemp
         readabilityIssue: output.readabilityIssue,
       },
     });
-    await tx.submission.update({ where: { id: job.submissionId }, data: { activeGradeId: grade.id, state: 'AI_GENERATED', manualReviewCause: null } });
-    await notify(tx, 'SUBMISSION_GRADED', [submission.studentId], { link: `/assignments/${assignment.id}`, className: assignment.class.name });
+    await tx.submission.update({
+      where: { id: job.submissionId },
+      data: { activeGradeId: grade.id, state: 'AI_GENERATED', manualReviewCause: null },
+    });
+    await notify(tx, 'SUBMISSION_GRADED', [submission.studentId], {
+      link: `/assignments/${assignment.id}`,
+      className: assignment.class.name,
+    });
     // 7. The attempt is recorded in the same transaction, so a result never exists without it.
     await record(tx, 'SUCCESS', { latencyMs, model: gemini.model });
   });

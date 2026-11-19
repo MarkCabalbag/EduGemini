@@ -22,7 +22,7 @@ describe('env', () => {
     const env = parseEnv(example);
     expect(env.PORT).toBe(4000);
     expect(env.MAIL_DRIVER).toBe('fake');
-    expect(env.GEMINI_MODE).toBe('fake');
+    expect(env.GEMINI_MODEL).toBe('gemini-2.5-flash');
   });
 
   it('reports every problem at once', () => {
@@ -47,7 +47,13 @@ describe('env', () => {
     expect(() => parseEnv({ ...example, SUPABASE_URL: 'not a url' })).toThrowError(/SUPABASE_URL/);
   });
 
+  it('grades with the live Gemini unless GEMINI_MODE=fake is set', () => {
+    expect(parseEnv(example).GEMINI_MODE).toBe('live');
+  });
+
   it('refuses the fake mailer and the fake Gemini in production', () => {
-    expect(() => parseEnv({ ...example, NODE_ENV: 'production' })).toThrowError(/MAIL_DRIVER[\s\S]*GEMINI_MODE/);
+    expect(() => parseEnv({ ...example, NODE_ENV: 'production' })).toThrowError(/MAIL_DRIVER/);
+    const mail = { MAIL_DRIVER: 'smtp', SMTP_HOST: 'h', SMTP_PORT: '587', SMTP_USER: 'u', SMTP_PASS: 'p' };
+    expect(() => parseEnv({ ...example, ...mail, NODE_ENV: 'production', GEMINI_MODE: 'fake' })).toThrowError(/GEMINI_MODE/);
   });
 });

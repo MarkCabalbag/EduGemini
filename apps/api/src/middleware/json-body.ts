@@ -2,7 +2,7 @@ import express, { type RequestHandler } from 'express';
 import { AppError } from '../lib/app-error';
 
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-export const JSON_BODY_LIMIT = '100kb';
+const JSON_BODY_LIMIT = '100kb';
 
 // The one body that is not JSON: a file sent as raw bytes with its own type (API Spec SUB-03). The route reads it itself.
 const FILE_UPLOAD_PATH = /^\/versions\/[^/]+\/files\/[^/]+$/;

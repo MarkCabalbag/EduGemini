@@ -20,10 +20,11 @@ import { validate, validated } from '../middleware/validate';
 import { addReferenceFile, referenceFileUrl, removeReferenceFile, setReferenceVisibility } from '../services/assignment-service';
 import type { EnqueueGrading } from '../services/grading-service';
 import { removeFile, storeFile } from '../services/submission-file-service';
-import { finalizeVersion, getMySubmission, openVersion } from '../services/submission-service';
+import { cancelVersion, finalizeVersion, getMySubmission, openVersion } from '../services/submission-service';
 
 const open = { params: AssignmentParamsSchema };
 const send = { params: FileParamsSchema };
+const cancel = { params: VersionParamsSchema };
 const finalize = { params: VersionParamsSchema, body: FinalizeSchema };
 const referenceFile = { params: ReferenceFileParamsSchema };
 const referenceVisibility = { params: ReferenceFileParamsSchema, body: UpdateReferenceFileSchema };
@@ -31,7 +32,9 @@ const referenceVisibility = { params: ReferenceFileParamsSchema, body: UpdateRef
 // A reference file arrives as a form with the file in it (API Spec REF-01). multer writes it to a temporary file, with the
 // 10 MiB cap applied as it arrives; the service checks the type and stores it. The form envelope adds a little to the length.
 const FORM_ENVELOPE_BYTES = 64 * 1024;
-const takeOneFile = multer({ storage: multer.diskStorage({}), limits: { fileSize: LIMITS.maxFileBytes, files: 1, fields: 2 } }).single('file');
+const takeOneFile = multer({ storage: multer.diskStorage({}), limits: { fileSize: LIMITS.maxFileBytes, files: 1, fields: 2 } }).single(
+  'file',
+);
 
 /** Reads the form, and turns what multer refuses into the API's own errors. */
 const receiveFile: RequestHandler = (req, res, next) => {
@@ -41,7 +44,9 @@ const receiveFile: RequestHandler = (req, res, next) => {
   if (!req.is('multipart/form-data')) return next(new AppError('UNSUPPORTED_MEDIA_TYPE'));
   takeOneFile(req, res, (error: unknown) => {
     if (error instanceof multer.MulterError) {
-      return next(error.code === 'LIMIT_FILE_SIZE' ? new AppError('FILE_TOO_LARGE') : new AppError('VALIDATION', { message: error.message }));
+      return next(
+        error.code === 'LIMIT_FILE_SIZE' ? new AppError('FILE_TOO_LARGE') : new AppError('VALIDATION', { message: error.message }),
+      );
     }
     next(error);
   });
@@ -63,7 +68,7 @@ function displayNameFrom(header: string | undefined): string {
 }
 
 /**
- * A student's submission: read it, open an upload, send and remove its files, finalize (API Spec SUB-01 to SUB-05).
+ * A student's submission: read it, open an upload, send and remove its files, finalize or cancel it (API Spec SUB-01 to SUB-06).
  * Students only. Whether this student may use this class is the service's call, so the role check is "any student", as
  * `class.join` is for joining.
  */
@@ -110,6 +115,12 @@ export function uploadsRouter({
   router.delete('/versions/:versionId/files/:clientFileId', ...guard, validate(send), async (req, res) => {
     const { params } = validated(res, send);
     await removeFile(db, bucket, req.auth!.user, params.versionId, params.clientFileId);
+    res.status(204).end();
+  });
+
+  router.delete('/versions/:versionId', ...guard, validate(cancel), async (req, res) => {
+    const { params } = validated(res, cancel);
+    await cancelVersion(db, bucket, req.auth!.user, params.versionId);
     res.status(204).end();
   });
 

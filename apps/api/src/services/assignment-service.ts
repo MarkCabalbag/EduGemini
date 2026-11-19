@@ -227,7 +227,10 @@ export async function publishAssignment(db: PrismaClient, actor: Actor, assignme
     if (!row.criteriaText.trim()) {
       throw new AppError('VALIDATION', { fields: { criteriaText: 'Add grading criteria before publishing' } });
     }
-    await db.assignment.updateMany({ where: { id: assignmentId, status: 'DRAFT' }, data: { status: 'PUBLISHED', publishedAt: new Date() } });
+    await db.assignment.updateMany({
+      where: { id: assignmentId, status: 'DRAFT' },
+      data: { status: 'PUBLISHED', publishedAt: new Date() },
+    });
   }
 
   const published = await db.assignment.findUniqueOrThrow({ where: { id: assignmentId }, include: withFiles });
@@ -274,7 +277,10 @@ export async function addReferenceFile(
   try {
     return await db.$transaction(async (tx) => {
       await lockAssignment(tx, assignmentId);
-      const current = await tx.assignment.findUnique({ where: { id: assignmentId }, include: { referenceFiles: { select: { ordinal: true } } } });
+      const current = await tx.assignment.findUnique({
+        where: { id: assignmentId },
+        include: { referenceFiles: { select: { ordinal: true } } },
+      });
       if (!current) throw new AppError('NOT_FOUND');
       if (current.status !== 'DRAFT') throw new AppError('CONFIRMATION_REQUIRED'); // published while the file was arriving
       const used = new Set(current.referenceFiles.map((file) => file.ordinal));
@@ -303,7 +309,12 @@ async function ownReferenceFile(db: PrismaClient, actor: Actor, fileId: string) 
 }
 
 /** Show a reference file to students or hide it (API Spec REF-02). Not a criteria change, so no token and no re-grade. */
-export async function setReferenceVisibility(db: PrismaClient, actor: Actor, fileId: string, visibleToStudents: boolean): Promise<ReferenceFileView> {
+export async function setReferenceVisibility(
+  db: PrismaClient,
+  actor: Actor,
+  fileId: string,
+  visibleToStudents: boolean,
+): Promise<ReferenceFileView> {
   const file = await ownReferenceFile(db, actor, fileId);
   if (file.assignment.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
   if (file.assignment.status === 'ARCHIVED') throw new AppError('CONFLICT');

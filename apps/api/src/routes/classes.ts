@@ -50,17 +50,10 @@ export function classesRouter({ db, appUrl, bucket }: ClassDeps): Router {
   const router = Router();
 
   // The creation limit comes after validation, so a request with errors does not use it up.
-  router.post(
-    '/classes',
-    requireAuth,
-    requireAction('class.create'),
-    validate(create),
-    limiters.classCreateByUser(),
-    async (req, res) => {
-      const { body } = validated(res, create);
-      res.status(201).json(await createClass(db, req.auth!.user, body, appUrl));
-    },
-  );
+  router.post('/classes', requireAuth, requireAction('class.create'), validate(create), limiters.classCreateByUser(), async (req, res) => {
+    const { body } = validated(res, create);
+    res.status(201).json(await createClass(db, req.auth!.user, body, appUrl));
+  });
 
   router.get('/classes', requireAuth, requireAction('class.list'), validate(list), async (req, res) => {
     const { query } = validated(res, list);

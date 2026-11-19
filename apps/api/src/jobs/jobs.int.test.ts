@@ -145,12 +145,27 @@ describe('the worker (startJobs)', () => {
     await queueDeletion(pending);
     const instructor = await db.user.create({ data: userData('instructor', 'INSTRUCTOR') });
     const student = await db.user.create({ data: userData('student', 'STUDENT') });
-    const cls = await db.class.create({ data: { instructorId: instructor.id, name: 'Jobs test', joinCode: newJoinCode(), attestedAt: new Date() } });
+    const cls = await db.class.create({
+      data: { instructorId: instructor.id, name: 'Jobs test', joinCode: newJoinCode(), attestedAt: new Date() },
+    });
     const assignment = await db.assignment.create({
-      data: { classId: cls.id, title: 'Jobs test', criteriaText: 'Clear thesis.', dueAt: new Date(Date.now() + 86_400_000), timezone: 'UTC', scoringFormat: 'POINTS', maxScore: 100, maxResubmissions: 3, status: 'PUBLISHED', publishedAt: new Date() },
+      data: {
+        classId: cls.id,
+        title: 'Jobs test',
+        criteriaText: 'Clear thesis.',
+        dueAt: new Date(Date.now() + 86_400_000),
+        timezone: 'UTC',
+        scoringFormat: 'POINTS',
+        maxScore: 100,
+        maxResubmissions: 3,
+        status: 'PUBLISHED',
+        publishedAt: new Date(),
+      },
     });
     const submission = await db.submission.create({ data: { assignmentId: assignment.id, studentId: student.id } });
-    const stale = await db.submissionVersion.create({ data: { submissionId: submission.id, versionNo: 1, createdAt: new Date(Date.now() - 25 * 3_600_000) } });
+    const stale = await db.submissionVersion.create({
+      data: { submissionId: submission.id, versionNo: 1, createdAt: new Date(Date.now() - 25 * 3_600_000) },
+    });
     staleVersionId = stale.id;
     instructorId = instructor.id;
     studentId = student.id;
@@ -167,15 +182,36 @@ describe('the worker (startJobs)', () => {
   });
 
   function userData(name: string, role: 'INSTRUCTOR' | 'STUDENT') {
-    return { email: `${name}-${RUN}@example.test`, firstName: 'Ada', lastName: 'Lovelace', role, termsAcceptedAt: new Date(), termsVersion: TERMS_VERSION };
+    return {
+      email: `${name}-${RUN}@example.test`,
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      role,
+      termsAcceptedAt: new Date(),
+      termsVersion: TERMS_VERSION,
+    };
   }
 
   it('creates every queue of TRD §10.1, with grading limited to one running job per key', async () => {
     const queues = (await boss.getQueues()).map((queue) => queue.name);
     expect(queues).toEqual(
-      expect.arrayContaining(['grade.submission', 'regrade.assignment', 'send.email', 'digest.flush', 'retention.sweep', STAGED_CLEANUP, STORAGE_CLEANUP]),
+      expect.arrayContaining([
+        'grade.submission',
+        'regrade.assignment',
+        'send.email',
+        'digest.flush',
+        'retention.sweep',
+        STAGED_CLEANUP,
+        STORAGE_CLEANUP,
+      ]),
     );
-    expect(await boss.getQueue('grade.submission')).toMatchObject({ policy: 'singleton', retryLimit: 2, retryDelay: 5, retryBackoff: true, retryDelayMax: 60 });
+    expect(await boss.getQueue('grade.submission')).toMatchObject({
+      policy: 'singleton',
+      retryLimit: 2,
+      retryDelay: 5,
+      retryBackoff: true,
+      retryDelayMax: 60,
+    });
     expect(await boss.getQueue('send.email')).toMatchObject({ retryLimit: 5 });
   });
 
@@ -188,7 +224,10 @@ describe('the worker (startJobs)', () => {
   it('runs each job once at start', async () => {
     await vi.waitFor(async () => expect((await row(pending)).completedAt).not.toBeNull(), { timeout: 20_000, interval: 250 });
     expect(await storage.exists(BUCKET, pending)).toBe(false);
-    await vi.waitFor(async () => expect(await db.submissionVersion.count({ where: { id: staleVersionId } })).toBe(0), { timeout: 20_000, interval: 250 });
+    await vi.waitFor(async () => expect(await db.submissionVersion.count({ where: { id: staleVersionId } })).toBe(0), {
+      timeout: 20_000,
+      interval: 250,
+    });
   });
 
   it('runs a job that is sent to a queue', async () => {
@@ -205,10 +244,22 @@ describe('the worker (startJobs)', () => {
   /** A queued submission with a stored version and no files, for an assignment of its own. */
   async function queuedSubmission() {
     const assignment = await db.assignment.create({
-      data: { classId, title: 'Grading job test', criteriaText: 'Clear thesis.', dueAt: new Date(Date.now() + 86_400_000), timezone: 'UTC', scoringFormat: 'POINTS', maxScore: 100, status: 'PUBLISHED', publishedAt: new Date() },
+      data: {
+        classId,
+        title: 'Grading job test',
+        criteriaText: 'Clear thesis.',
+        dueAt: new Date(Date.now() + 86_400_000),
+        timezone: 'UTC',
+        scoringFormat: 'POINTS',
+        maxScore: 100,
+        status: 'PUBLISHED',
+        publishedAt: new Date(),
+      },
     });
     const submission = await db.submission.create({ data: { assignmentId: assignment.id, studentId } });
-    const version = await db.submissionVersion.create({ data: { submissionId: submission.id, versionNo: 1, status: 'STORED', storedAt: new Date() } });
+    const version = await db.submissionVersion.create({
+      data: { submissionId: submission.id, versionNo: 1, status: 'STORED', storedAt: new Date() },
+    });
     await db.submission.update({ where: { id: submission.id }, data: { state: 'QUEUED', currentVersionId: version.id } });
     return { submissionId: submission.id, versionId: version.id, mode: 'first' as const };
   }
@@ -256,7 +307,18 @@ describe('the worker (startJobs)', () => {
     /** Opens an upload, sends one image (the fake Gemini reads its scenario from the name) and finalizes. Returns the submission's ID. */
     async function submit(scenario?: string) {
       const assignment = await db.assignment.create({
-        data: { classId, title: 'HTTP grading test', criteriaText: 'Clear thesis.', dueAt: new Date(Date.now() + 86_400_000), timezone: 'UTC', scoringFormat: 'POINTS', maxScore: 100, maxResubmissions: 3, status: 'PUBLISHED', publishedAt: new Date() },
+        data: {
+          classId,
+          title: 'HTTP grading test',
+          criteriaText: 'Clear thesis.',
+          dueAt: new Date(Date.now() + 86_400_000),
+          timezone: 'UTC',
+          scoringFormat: 'POINTS',
+          maxScore: 100,
+          maxResubmissions: 3,
+          status: 'PUBLISHED',
+          publishedAt: new Date(),
+        },
       });
       const opened = await request(app).post(`/api/assignments/${assignment.id}/versions`).set('Origin', APP_URL).set('Cookie', cookie);
       expect(opened.status).toBe(201);
@@ -270,7 +332,11 @@ describe('the worker (startJobs)', () => {
         .set('X-File-Name', encodeURIComponent(scenario ? `essay__scenario-${scenario}__.png` : 'essay.png'))
         .send(image);
       expect(sent.status).toBe(201);
-      const finalized = await request(app).post(`/api/versions/${opened.body.id}/finalize`).set('Origin', APP_URL).set('Cookie', cookie).send({ expectedFileIds: [clientFileId] });
+      const finalized = await request(app)
+        .post(`/api/versions/${opened.body.id}/finalize`)
+        .set('Origin', APP_URL)
+        .set('Cookie', cookie)
+        .send({ expectedFileIds: [clientFileId] });
       expect(finalized.status).toBe(200);
       return (await db.submission.findUniqueOrThrow({ where: { assignmentId_studentId: { assignmentId: assignment.id, studentId } } })).id;
     }
@@ -290,7 +356,10 @@ describe('the worker (startJobs)', () => {
 
       // The student's own page reads the result (AI-11).
       const mine = await request(app).get(`/api/assignments/${submission.assignmentId}/me`).set('Cookie', cookie);
-      expect(mine.body).toMatchObject({ state: 'AI_GENERATED', grade: { source: 'AI', score: 85, maxScore: 100, chip: 'status-ai', feedback: grade.feedback } });
+      expect(mine.body).toMatchObject({
+        state: 'AI_GENERATED',
+        grade: { source: 'AI', score: 85, maxScore: 100, chip: 'status-ai', feedback: grade.feedback },
+      });
       expect(await db.notification.count({ where: { userId: studentId, type: 'SUBMISSION_GRADED' } })).toBeGreaterThan(0);
     });
 

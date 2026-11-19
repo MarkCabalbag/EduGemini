@@ -11,7 +11,9 @@ let db: PGlite;
 
 beforeAll(async () => {
   db = new PGlite();
-  for (const folder of readdirSync(MIGRATIONS).filter((name) => /^\d/.test(name)).sort()) {
+  for (const folder of readdirSync(MIGRATIONS)
+    .filter((name) => /^\d/.test(name))
+    .sort()) {
     await db.exec(readFileSync(resolve(MIGRATIONS, folder, 'migration.sql'), 'utf8'));
   }
 }, 60_000);
@@ -26,9 +28,7 @@ async function rejects(sql: string, pattern: RegExp) {
 
 describe('migrations', () => {
   it('creates all 21 tables with row-level security on', async () => {
-    const { rows } = await db.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'public' AND rowsecurity`,
-    );
+    const { rows } = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'public' AND rowsecurity`);
     expect(rows[0]?.n).toBe(21);
   });
 
