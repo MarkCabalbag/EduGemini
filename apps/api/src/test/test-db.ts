@@ -12,7 +12,9 @@ export function testDatabaseUrl(): string {
   }
   const parsed = new URL(url);
   if (parsed.port === '6543' || parsed.searchParams.has('pgbouncer')) {
-    throw new Error('E2E_DATABASE_URL must use the Supabase session pooler (port 5432, no ?pgbouncer=true). Migrations fail on the transaction pooler.');
+    throw new Error(
+      'E2E_DATABASE_URL must use the Supabase session pooler (port 5432, no ?pgbouncer=true). Migrations fail on the transaction pooler.',
+    );
   }
   if (!decodeURIComponent(parsed.username).endsWith(`.${ref}`)) {
     throw new Error('E2E_DATABASE_URL does not belong to the project named by E2E_PROJECT_REF. Refusing to run.');

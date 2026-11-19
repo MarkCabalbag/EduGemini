@@ -1,4 +1,7 @@
-import type { Assignment, Prisma, PrismaClient } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import type { Assignment, Prisma, PrismaClient, ReferenceFile } from '@prisma/client';
+import { LIMITS, sniffFileType } from '@edugemini/shared';
 import type {
   AssignmentDetail,
   AssignmentPage,
@@ -7,12 +10,17 @@ import type {
   ListAssignmentsQuery,
   PublishedAssignment,
   PublishWarning,
+  ReferenceFileLink,
+  ReferenceFileView,
   ScoringFormat,
   UpdateAssignment,
 } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import { decodeCursor, pageOf } from '../lib/cursor';
-import { authorize, type Action, type Actor } from '../policy/policy';
+import { lockAssignment } from '../lib/lock';
+import { countPdfPages } from '../lib/pdf-pages';
+import { queueDeletions, readHead, SIGNED_URL_SECONDS, type StorageAdapter } from '../lib/storage';
+import { authorize, can, type Action, type Actor } from '../policy/policy';
 
 /** Assignments (API Spec ASG-01 to ASG-04, ASG-06). The owning instructor does everything; an approved student can read published ones. */
 
@@ -33,10 +41,25 @@ const toSummary = (row: Assignment): AssignmentSummary => ({
   criteriaVersion: row.criteriaVersion,
 });
 
-const toDetail = (row: Assignment): AssignmentDetail => ({
+/** Loads an assignment's reference files in their places, for `toDetail`. */
+const withFiles = { referenceFiles: { orderBy: { ordinal: 'asc' } } } as const;
+type AssignmentWithFiles = Prisma.AssignmentGetPayload<{ include: typeof withFiles }>;
+
+const toReferenceFile = (file: ReferenceFile): ReferenceFileView => ({
+  id: file.id,
+  ordinal: file.ordinal,
+  label: `Reference file ${file.ordinal}`,
+  mimeType: file.mimeType,
+  sizeBytes: Number(file.sizeBytes),
+  visibleToStudents: file.visibleToStudents,
+});
+
+/** A student is shown only the reference files marked visible (API Spec A5). */
+const toDetail = (row: AssignmentWithFiles, student = false): AssignmentDetail => ({
   ...toSummary(row),
   instructions: row.instructions,
   criteriaText: row.criteriaText,
+  referenceFiles: row.referenceFiles.filter((file) => !student || file.visibleToStudents).map(toReferenceFile),
 });
 
 /** A student's status in the class. Anyone else has none, so no lookup is made for them. */
@@ -64,7 +87,7 @@ async function classFor(db: PrismaClient, actor: Actor, classId: string, action:
 async function assignmentFor(db: PrismaClient, actor: Actor, assignmentId: string, action: Action) {
   const row = await db.assignment.findUnique({
     where: { id: assignmentId },
-    include: { class: { select: { instructorId: true, archivedAt: true } } },
+    include: { class: { select: { instructorId: true, archivedAt: true } }, ...withFiles },
   });
   if (!row) throw new AppError('NOT_FOUND');
   authorize(actor, action, { classInstructorId: row.class.instructorId, enrollment: await enrollmentOf(db, actor, row.classId) });
@@ -98,6 +121,7 @@ export async function createAssignment(
       maxResubmissions: input.maxResubmissions === undefined ? 3 : input.maxResubmissions, // null is Unlimited (FR-ASG-10)
       acceptLate: input.acceptLate ?? true,
     },
+    include: withFiles,
   });
   return toDetail(row);
 }
@@ -109,7 +133,7 @@ export async function createAssignment(
 export async function getAssignment(db: PrismaClient, actor: Actor, assignmentId: string): Promise<AssignmentDetail> {
   const row = await assignmentFor(db, actor, assignmentId, 'assignment.view');
   if (actor.role === 'STUDENT' && row.status !== 'PUBLISHED') throw new AppError('NOT_FOUND');
-  return toDetail(row);
+  return toDetail(row, actor.role === 'STUDENT');
 }
 
 /**
@@ -186,7 +210,7 @@ export async function updateAssignment(
     const locked = formatChanged && (await db.submission.count({ where: { assignmentId, state: { not: null } } })) > 0;
     throw new AppError(locked ? 'FORMAT_LOCKED' : 'CONFLICT');
   }
-  return toDetail(await db.assignment.findUniqueOrThrow({ where: { id: assignmentId } }));
+  return toDetail(await db.assignment.findUniqueOrThrow({ where: { id: assignmentId }, include: withFiles }));
 }
 
 /**
@@ -203,12 +227,145 @@ export async function publishAssignment(db: PrismaClient, actor: Actor, assignme
     if (!row.criteriaText.trim()) {
       throw new AppError('VALIDATION', { fields: { criteriaText: 'Add grading criteria before publishing' } });
     }
-    await db.assignment.updateMany({ where: { id: assignmentId, status: 'DRAFT' }, data: { status: 'PUBLISHED', publishedAt: new Date() } });
+    await db.assignment.updateMany({
+      where: { id: assignmentId, status: 'DRAFT' },
+      data: { status: 'PUBLISHED', publishedAt: new Date() },
+    });
   }
 
-  const published = await db.assignment.findUniqueOrThrow({ where: { id: assignmentId } });
+  const published = await db.assignment.findUniqueOrThrow({ where: { id: assignmentId }, include: withFiles });
   const warnings: PublishWarning[] = [];
   if (published.dueAt.getTime() < Date.now()) warnings.push('DUE_IN_PAST');
   if ((await db.instructorKey.count({ where: { instructorId: actor.id, status: 'CONNECTED' } })) === 0) warnings.push('NO_VALID_KEY');
   return { ...toDetail(published), warnings };
+}
+
+// ---------- Reference files (API Spec REF-01 to REF-04) ----------
+// Part of the criteria, so on a published assignment adding or removing one needs the criteria impact check (API Spec A6).
+// That check is not built yet, so for now those answer CONFIRMATION_REQUIRED, as a criteria edit does. A draft needs no token.
+
+const FILE_PLACES = Array.from({ length: LIMITS.maxReferenceFiles }, (_, index) => index + 1);
+
+/**
+ * Add a reference file to a draft (API Spec REF-01). `tempPath` is the upload as the multipart parser left it on disk, with
+ * the size cap already applied. The type comes from the first bytes, never the name; a PDF is opened to be sure it is readable.
+ * The object is stored first, then the row takes the next free place (1 to 3) on the locked assignment row, so two adds at the
+ * same moment never share a place. A row that cannot be written removes the object again.
+ */
+export async function addReferenceFile(
+  db: PrismaClient,
+  storage: StorageAdapter,
+  bucket: string,
+  actor: Actor,
+  assignmentId: string,
+  tempPath: string,
+): Promise<ReferenceFileView> {
+  const row = await assignmentFor(db, actor, assignmentId, 'assignment.write');
+  if (row.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
+  if (row.status === 'ARCHIVED') throw new AppError('CONFLICT');
+  if (row.status !== 'DRAFT') throw new AppError('CONFIRMATION_REQUIRED');
+  if (row.referenceFiles.length >= LIMITS.maxReferenceFiles) throw new AppError('FILE_LIMIT', { details: { limit: 'reference-count' } });
+
+  const kind = sniffFileType(await readHead(tempPath));
+  if (!kind) throw new AppError('FILE_TYPE');
+  if (kind.mimeType === 'application/pdf') await countPdfPages(tempPath);
+
+  // Built from IDs and the sniffed type, never from the file's name (code-standards §9).
+  const path = `reference/${row.classId}/${assignmentId}/${randomUUID()}.${kind.extension}`;
+  const stored = await storage.put(bucket, path, createReadStream(tempPath), kind.mimeType, LIMITS.maxFileBytes);
+
+  try {
+    return await db.$transaction(async (tx) => {
+      await lockAssignment(tx, assignmentId);
+      const current = await tx.assignment.findUnique({
+        where: { id: assignmentId },
+        include: { referenceFiles: { select: { ordinal: true } } },
+      });
+      if (!current) throw new AppError('NOT_FOUND');
+      if (current.status !== 'DRAFT') throw new AppError('CONFIRMATION_REQUIRED'); // published while the file was arriving
+      const used = new Set(current.referenceFiles.map((file) => file.ordinal));
+      const ordinal = FILE_PLACES.find((place) => !used.has(place));
+      if (!ordinal) throw new AppError('FILE_LIMIT', { details: { limit: 'reference-count' } });
+      const created = await tx.referenceFile.create({
+        data: { assignmentId, ordinal, storagePath: path, mimeType: kind.mimeType, sizeBytes: stored.size, sha256: stored.sha256 },
+      });
+      return toReferenceFile(created);
+    });
+  } catch (error) {
+    await storage.remove(bucket, [path]).catch(() => undefined); // no object without a row
+    throw error;
+  }
+}
+
+/** The reference file, if it is in a class the caller owns. Someone else's file looks the same as a missing one (API Spec A3). */
+async function ownReferenceFile(db: PrismaClient, actor: Actor, fileId: string) {
+  const file = await db.referenceFile.findUnique({
+    where: { id: fileId },
+    include: { assignment: { include: { class: { select: { instructorId: true, archivedAt: true } } } } },
+  });
+  if (!file) throw new AppError('NOT_FOUND');
+  authorize(actor, 'assignment.write', { classInstructorId: file.assignment.class.instructorId });
+  return file;
+}
+
+/** Show a reference file to students or hide it (API Spec REF-02). Not a criteria change, so no token and no re-grade. */
+export async function setReferenceVisibility(
+  db: PrismaClient,
+  actor: Actor,
+  fileId: string,
+  visibleToStudents: boolean,
+): Promise<ReferenceFileView> {
+  const file = await ownReferenceFile(db, actor, fileId);
+  if (file.assignment.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
+  if (file.assignment.status === 'ARCHIVED') throw new AppError('CONFLICT');
+  return toReferenceFile(await db.referenceFile.update({ where: { id: fileId }, data: { visibleToStudents } }));
+}
+
+/**
+ * Remove a reference file from a draft (API Spec REF-03). The row goes and its object is queued for deletion; the other
+ * files keep their places. It runs on the locked assignment row, so it cannot cross an add or a publish.
+ */
+export async function removeReferenceFile(db: PrismaClient, bucket: string, actor: Actor, fileId: string): Promise<void> {
+  const { assignmentId, assignment } = await ownReferenceFile(db, actor, fileId);
+  if (assignment.class.archivedAt) throw new AppError('CLASS_ARCHIVED');
+  if (assignment.status === 'ARCHIVED') throw new AppError('CONFLICT');
+  if (assignment.status !== 'DRAFT') throw new AppError('CONFIRMATION_REQUIRED');
+
+  await db.$transaction(async (tx) => {
+    await lockAssignment(tx, assignmentId);
+    const file = await tx.referenceFile.findUnique({ where: { id: fileId }, include: { assignment: { select: { status: true } } } });
+    if (!file) throw new AppError('NOT_FOUND'); // removed by another request while this one waited
+    if (file.assignment.status !== 'DRAFT') throw new AppError('CONFIRMATION_REQUIRED'); // published meanwhile
+    await queueDeletions(tx, bucket, [file]);
+    await tx.referenceFile.delete({ where: { id: fileId } });
+  });
+}
+
+/**
+ * A link to a reference file, good for five minutes (API Spec REF-04, TRD §9.3). The owning instructor always gets one; an
+ * approved student only for a file marked visible on a published assignment. Everyone else, a hidden file included, finds nothing.
+ */
+export async function referenceFileUrl(
+  db: PrismaClient,
+  storage: StorageAdapter,
+  bucket: string,
+  actor: Actor,
+  fileId: string,
+): Promise<ReferenceFileLink> {
+  const file = await db.referenceFile.findUnique({
+    where: { id: fileId },
+    include: { assignment: { include: { class: { select: { instructorId: true } } } } },
+  });
+  if (!file) throw new AppError('NOT_FOUND');
+
+  const { assignment } = file;
+  const allowed = can(actor, 'assignment.view', {
+    classInstructorId: assignment.class.instructorId,
+    enrollment: await enrollmentOf(db, actor, assignment.classId),
+  });
+  const studentMayOpen = file.visibleToStudents && assignment.status === 'PUBLISHED';
+  if (!allowed || (actor.role === 'STUDENT' && !studentMayOpen)) throw new AppError('NOT_FOUND');
+
+  const url = await storage.signedUrl(bucket, file.storagePath, SIGNED_URL_SECONDS);
+  return { url, expiresAt: new Date(Date.now() + SIGNED_URL_SECONDS * 1000).toISOString() };
 }

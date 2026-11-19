@@ -24,7 +24,8 @@ const EMAIL_END = `-${randomUUID().slice(0, 8)}@example.test`;
 const db = createTestDb();
 
 // A fresh app per test: the in-memory rate limits start empty each time.
-const build = () => createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
+const build = () =>
+  createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
 
 /** A user with a live session, made straight in the database so no password has to be hashed. */
 async function signedInUser(name: string, role: Role) {
@@ -396,7 +397,7 @@ describe('a removed student (EG-CLS-09)', () => {
     expect(await db.enrollment.count({ where: { classId: klass.id, studentId: back.user.id } })).toBe(1);
   });
 
-  it('changes nobody else, and none of the same student\'s other classes', async () => {
+  it("changes nobody else, and none of the same student's other classes", async () => {
     const first = await seedClass();
     const second = await seedClass();
     const gone = await approved(first.id);

@@ -1,5 +1,5 @@
 import { PgBoss, type Queue } from 'pg-boss';
-import type { GradingDeps } from '../services/grading-service';
+import { GRADING_TRIES, type GradingDeps } from '../services/grading-service';
 import { GRADE_SUBMISSION, GRADING_CONCURRENCY, gradeSubmissionHandler } from './grade-submission.job';
 import { runStagedCleanup, STAGED_CLEANUP } from './staged-cleanup.job';
 import { runStorageCleanup, STORAGE_CLEANUP } from './storage-cleanup.job';
@@ -11,7 +11,7 @@ export type JobDeps = GradingDeps;
 // only exists, so the ticket that starts sending to it has nothing to set up.
 const QUEUES: Record<string, Omit<Queue, 'name'>> = {
   // One job runs at a time per singleton key, which the sender sets to `grade:<submissionId>`. Retries as in TRD §10.7.
-  'grade.submission': { policy: 'singleton', retryLimit: 2, retryDelay: 5, retryBackoff: true, retryDelayMax: 60 },
+  'grade.submission': { policy: 'singleton', retryLimit: GRADING_TRIES - 1, retryDelay: 5, retryBackoff: true, retryDelayMax: 60 },
   'regrade.assignment': {},
   'send.email': { retryLimit: 5 },
   'digest.flush': {},

@@ -18,7 +18,9 @@ describe('checkFile', () => {
     const named = (bytes: number[], name: string) => new File([new Uint8Array(bytes)], name);
     expect(await checkFile(named([...PDF_BYTES, 1], 'notes.txt'))).toEqual({ kind: { mimeType: 'application/pdf', extension: 'pdf' } });
     expect(await checkFile(named([0xff, 0xd8, 0xff, 0xe0], 'scan.dat'))).toMatchObject({ kind: { mimeType: 'image/jpeg' } });
-    expect(await checkFile(named([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'x'))).toMatchObject({ kind: { mimeType: 'image/png' } });
+    expect(await checkFile(named([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'x'))).toMatchObject({
+      kind: { mimeType: 'image/png' },
+    });
   });
 
   it('refuses another type with the message, even when it is called .pdf and declared as one', async () => {

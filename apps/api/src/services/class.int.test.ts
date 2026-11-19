@@ -40,7 +40,7 @@ const db = createTestDb();
 
 // A fresh app per test: the in-memory rate limits start empty each time.
 const build = () =>
-  createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
+  createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
 type TestApp = ReturnType<typeof build>;
 
 /** A user with a live session, made straight in the database so no password has to be hashed. */
@@ -233,7 +233,7 @@ describe('join code collisions', () => {
 });
 
 describe('list classes (API Spec CLS-01)', () => {
-  it('lists only the caller\'s own active classes, newest first', async () => {
+  it("lists only the caller's own active classes, newest first", async () => {
     const mine = await signedInUser('list-mine', 'INSTRUCTOR');
     const theirs = await signedInUser('list-theirs', 'INSTRUCTOR');
     const older = await seed(mine.user.id, { createdAt: new Date('2026-01-01T00:00:00Z') });
@@ -492,10 +492,38 @@ describe('a student lists their classes (API Spec JOIN-03)', () => {
 
     expect(res.status).toBe(200);
     expect(EnrolledPageSchema.parse(res.body).items).toEqual([
-      { classId: e!.id, className: 'Enrolled E', status: 'ACTIVE', instructorName: 'Ada L.', archived: true, joinedAt: new Date(base + 4000).toISOString() },
-      { classId: c!.id, className: 'Enrolled C', status: 'DECLINED', instructorName: 'Ada L.', archived: false, joinedAt: new Date(base + 2000).toISOString() },
-      { classId: b!.id, className: 'Enrolled B', status: 'PENDING', instructorName: 'Ada L.', archived: false, joinedAt: new Date(base + 1000).toISOString() },
-      { classId: a!.id, className: 'Enrolled A', status: 'ACTIVE', instructorName: 'Ada L.', archived: false, joinedAt: new Date(base).toISOString() },
+      {
+        classId: e!.id,
+        className: 'Enrolled E',
+        status: 'ACTIVE',
+        instructorName: 'Ada L.',
+        archived: true,
+        joinedAt: new Date(base + 4000).toISOString(),
+      },
+      {
+        classId: c!.id,
+        className: 'Enrolled C',
+        status: 'DECLINED',
+        instructorName: 'Ada L.',
+        archived: false,
+        joinedAt: new Date(base + 2000).toISOString(),
+      },
+      {
+        classId: b!.id,
+        className: 'Enrolled B',
+        status: 'PENDING',
+        instructorName: 'Ada L.',
+        archived: false,
+        joinedAt: new Date(base + 1000).toISOString(),
+      },
+      {
+        classId: a!.id,
+        className: 'Enrolled A',
+        status: 'ACTIVE',
+        instructorName: 'Ada L.',
+        archived: false,
+        joinedAt: new Date(base).toISOString(),
+      },
     ]);
     expect(res.body.nextCursor).toBeNull();
   });
@@ -511,7 +539,9 @@ describe('a student lists their classes (API Spec JOIN-03)', () => {
     const classes = await Promise.all([1, 2, 3].map(() => seed(owner.user.id)));
     const me = await signedInUser('list-pages', 'STUDENT');
     for (const [i, klass] of classes.entries()) {
-      await db.enrollment.create({ data: { classId: klass.id, studentId: me.user.id, status: 'ACTIVE', joinedAt: new Date(base + i * 1000) } });
+      await db.enrollment.create({
+        data: { classId: klass.id, studentId: me.user.id, status: 'ACTIVE', joinedAt: new Date(base + i * 1000) },
+      });
     }
 
     const first = await list(me.cookie, '?limit=2');
@@ -618,22 +648,25 @@ describe('archive and restore a class (API Spec CLS-05, CLS-06)', () => {
     expect(list.items).toMatchObject([{ classId: klass.id, status: 'ACTIVE', archived: true }]);
   });
 
-  it.each(['archive', 'restore'] as const)('is NOT_FOUND to another instructor, a student and a missing class on %s, and changes nothing', async (action) => {
-    const klass = await seed(owner.user.id, action === 'restore' ? { archivedAt: LONG_AGO } : {});
-    const before = (await stored(klass.id)).archivedAt;
+  it.each(['archive', 'restore'] as const)(
+    'is NOT_FOUND to another instructor, a student and a missing class on %s, and changes nothing',
+    async (action) => {
+      const klass = await seed(owner.user.id, action === 'restore' ? { archivedAt: LONG_AGO } : {});
+      const before = (await stored(klass.id)).archivedAt;
 
-    const answers = [
-      await post(other.cookie, klass.id, action),
-      await post(student.cookie, klass.id, action),
-      await post(owner.cookie, randomUUID(), action),
-    ];
+      const answers = [
+        await post(other.cookie, klass.id, action),
+        await post(student.cookie, klass.id, action),
+        await post(owner.cookie, randomUUID(), action),
+      ];
 
-    for (const res of answers) {
-      expect(res.status).toBe(404);
-      expect(res.body.error.code).toBe('NOT_FOUND');
-    }
-    expect((await stored(klass.id)).archivedAt).toEqual(before);
-  });
+      for (const res of answers) {
+        expect(res.status).toBe(404);
+        expect(res.body.error.code).toBe('NOT_FOUND');
+      }
+      expect((await stored(klass.id)).archivedAt).toEqual(before);
+    },
+  );
 
   it.each(['archive', 'restore'] as const)('needs a session and a class id on %s', async (action) => {
     const klass = await seed(owner.user.id);
@@ -858,15 +891,17 @@ describe('join a class by code (API Spec JOIN-01)', () => {
     expect(res.status).toBe(401);
   });
 
-  it.each([['no code', undefined], ['a code that is too short', 'ABC'], ['a code that is too long', 'ABCDEFGHJ'], ['a blank code', '   ']])(
-    'refuses %s',
-    async (_label, code) => {
-      const res = await join(build(), student.cookie, code);
-      expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('VALIDATION');
-      expect(res.body.error.fields).toHaveProperty(['code']);
-    },
-  );
+  it.each([
+    ['no code', undefined],
+    ['a code that is too short', 'ABC'],
+    ['a code that is too long', 'ABCDEFGHJ'],
+    ['a blank code', '   '],
+  ])('refuses %s', async (_label, code) => {
+    const res = await join(build(), student.cookie, code);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(res.body.error.fields).toHaveProperty(['code']);
+  });
 
   it('keeps one row when the same student joins twice at the same moment', async () => {
     const klass = await seed(owner.user.id);
@@ -901,7 +936,7 @@ describe('preview a join link (API Spec JOIN-02)', () => {
   };
   const NO_SUCH_CODE = '22222222';
 
-  it('shows the class name, the instructor\'s first name and the approval setting to someone signed out, and nothing else', async () => {
+  it("shows the class name, the instructor's first name and the approval setting to someone signed out, and nothing else", async () => {
     const klass = await seed(owner.user.id, { name: 'Chemistry', requireApproval: true });
 
     const res = await preview(build(), klass.joinCode);

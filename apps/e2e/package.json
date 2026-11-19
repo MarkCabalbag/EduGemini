@@ -1,0 +1,16 @@
+{
+  "name": "@edugemini/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test",
+    "prepare-db": "tsx prepare-db.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15"
+  }
+}

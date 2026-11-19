@@ -13,6 +13,22 @@ Built from: `prd.md` (v2.2) and `trd.md` (v1.0). The PRD and TRD remain the sour
 - **Depends on:** ticket IDs. Spikes (`SPK`) are listed as dependencies where they gate a feature.
 - **Coverage:** every FR ID in PRD §7 appears in at least one ticket's Refs.
 
+## Portfolio scope (owner's call, 2026-11-19)
+
+The app is finished as a portfolio project in one day. This section overrides the milestones and the build order below.
+
+**Kept:** every ticket already done or partly done (see the tracker), SUB-07 (resubmission) and QA-01 (authorization matrix tests), both built and not yet committed.
+
+**Still to build, in this order:**
+
+1. **Live Gemini adapter.** Grading always calls Gemini through the `@google/genai` SDK's Interactions API (API Spec C.1, TRD §10.4, §11.1); the fake adapter is for tests only, and `GEMINI_MODE` is removed. Part of AI-04 and AI-05: the score is checked against 0 to max; letter grades show the numeric score.
+2. **Instructor review, trimmed.** REV-01 as a per-assignment submissions list (no cross-class queue, no filters), REV-03 (edit score and feedback, then approve), REV-04 (the student's chip changes). The file opens through a signed link instead of the REV-02 side-by-side viewer.
+3. **Deploy** (FND-10) with a short README section instead of the runbook.
+4. **README and seed script** (DEMO-02, DEMO-01, trimmed).
+5. **If time is left:** GB-01 and GB-02 (gradebook table and CSV).
+
+**Cut:** every other ticket that is not done. This includes all spikes (SPK), all of M3 (email, verification, reset, account settings, account deletion, Super Admin, audit, retention), all of M4, M5 except the README and seed script, QA-02 to QA-09, FND-07, SUB-03, SUB-08, SUB-10, ASG-04, ASG-06, ASG-10, ASG-11, AI-07, AI-09, KEY-03, KEY-05, KEY-07, REV-02, REV-05 to REV-10, GB-03 to GB-08, NTF-02 to NTF-07, and DEMO-03 to DEMO-06. The open "Decide" items in the tracker that only concern cut tickets are closed as cut.
+
 ## Epic index
 
 | Epic | Scope | Milestones |
@@ -41,11 +57,11 @@ Built from: `prd.md` (v2.2) and `trd.md` (v1.0). The PRD and TRD remain the sour
 | ID | Ticket and acceptance | Refs | Pri | Size | MS | Depends on |
 |---|---|---|---|---|---|---|
 | EG-FND-01 | **Monorepo scaffold.** pnpm workspace with `apps/web`, `apps/api`, `packages/shared`, `packages/ai`. Strict TypeScript. `tsc --noEmit` passes for every package. Lint rules in `code-standards.md` §11 are configured. | TRD §2, §3 | Infra | S | M0 | — |
-| EG-FND-02 | **Local dev environment.** No Docker (TRD §4.1). Two Supabase projects, `edugemini` and `edugemini-test`. Vite proxies `/api` to the local API. `.env.example` from TRD App A. `MAIL_DRIVER=fake` with the dev outbox route, local-disk storage, and `GEMINI_MODE=fake` let the app run without SMTP, storage, or a Gemini key. | TRD §4, App A | Infra | S | M0 | FND-01 |
+| EG-FND-02 | **Local dev environment.** No Docker (TRD §4.1). Two Supabase projects, `edugemini` and `edugemini-test`. Vite proxies `/api` to the local API. `.env.example` from TRD App A. grading needs an instructor's Gemini key (the fake adapter is for tests only, 2026-11-19); storage is always a private Supabase bucket (there is no local-disk storage, decided 2026-11-17), so a dev bucket and its keys are part of the setup. The fake mailer and the dev outbox route come with NTF-02, the first ticket that sends mail. | TRD §4, App A | Infra | S | M0 | FND-01 |
 | EG-FND-03 | **Prisma schema and first migration.** Auth, classes, enrollments, and assignments per `backend-schema.md` Appendix A (Prisma) and Appendix B (raw SQL). Record a decision for each of the 8 open questions in `backend-schema.md` §16.2 before the migration is merged. | backend-schema App A, App B, §16.2 | Infra | M | M0 | FND-02 |
 | EG-FND-04 | **API baseline.** Express 5 with Zod validation middleware, pino structured logs, helmet, one shared error format, and `/healthz`. | TRD §8, §16.1 | Infra | M | M0 | FND-01 |
-| EG-FND-05 | **Rate limits.** express-rate-limit on sign-in, sign-up, join, and reset endpoints. Document that limits are in memory and only valid for one instance. | TRD §6.7, §3; FR-CLS-03 | Infra | S | M0 | FND-04 |
-| EG-FND-06 | **Storage adapter.** Private buckets, 5-minute signed URLs. Supabase Storage implementation plus a local fake. Every file request checks role and class membership. | TRD §7.4, §9.3; PRD §11 | Infra | M | M0 | FND-02 |
+| EG-FND-05 | **Rate limits.** express-rate-limit on sign-in, sign-up, and join endpoints. The reset endpoint's limit comes with AUTH-06. Document that limits are in memory and only valid for one instance. | TRD §6.7, §3; FR-CLS-03 | Infra | S | M0 | FND-04 |
+| EG-FND-06 | **Storage adapter.** Private buckets, 5-minute signed URLs. Supabase Storage implementation, plus an in-memory fake for the tests. Every file request checks role and class membership. | TRD §7.4, §9.3; PRD §11 | Infra | M | M0 | FND-02 |
 | EG-FND-07 | **CI skeleton.** GitHub Actions steps 1 to 5 (install with frozen lockfile, typecheck, lint, tests with a Postgres service container, build). | TRD §16.3 | Infra | S | M0 | FND-01, FND-03 |
 | EG-FND-08 | **Authorization policy module.** One policy layer that every route calls. Super Admin is metadata-only and cannot read submissions. | TRD §7.1, §7.3; PRD §5.1, §11 | Infra | M | M0 | FND-04 |
 | EG-FND-09 | **Job queue.** pg-boss on Postgres, with the worker in the same process. Queue names and singleton keys as in TRD §10.1. | TRD §10.1, §3 | Infra | M | M0 | FND-03, SPK-02 |
@@ -72,7 +88,7 @@ Each spike has a pass criterion and a fallback (TRD §17.1). Run a spike before 
 | EG-AUTH-01 | **Email and password sign-up and sign-in.** Role chosen once at sign-up. First and last name collected. Password of at least 10 characters with a strength check. Duplicate emails get a clear message. | FR-AUTH-01, FR-AUTH-03; A6 | Must | M | M0 | AUTH-02 |
 | EG-AUTH-04 | **Terms and privacy acceptance.** Required tick at sign-up. Text says submissions go to Google Gemini and are reviewed by the instructor. Placeholder wording until DEMO-05. | FR-AUTH-09; PRD §11 | Must | S | M0 | AUTH-01 |
 | EG-AUTH-05 | **Email verification.** Verification link (24-hour lifetime, TQ1 proposal). Unverified users can use the app. A banner offers to resend. | FR-AUTH-04; A2; TRD §6.6 | Should | M | M3 | AUTH-01, NTF-02 |
-| EG-AUTH-06 | **Password reset.** Link expires after 60 minutes and is single use. Pri is Must, but it needs email, so it is in M3 unless the mailer moves earlier. | FR-AUTH-05; TRD §6.6 | Must | S | M3 | AUTH-01, NTF-02 |
+| EG-AUTH-06 | **Password reset.** Link expires after 60 minutes and is single use. The request endpoint has its own rate limit (API Spec A12). Pri is Must, but it needs email, so it is in M3 unless the mailer moves earlier. | FR-AUTH-05; TRD §6.6 | Must | S | M3 | AUTH-01, NTF-02 |
 | EG-AUTH-07 | **Session management.** Idle expiry shown to the user. Sign out of all devices. | FR-AUTH-06 | Should | S | M3 | AUTH-02 |
 | EG-AUTH-08 | **Account settings.** Change display name. Change password (current password required). Manual theme choice goes here (see FE-02). | FR-AUTH-07 | Should | S | M3 | AUTH-03 |
 | EG-AUTH-09 | **First-run guidance.** Short, role-specific "how to get started" steps on the home page. Dismissible. | FR-AUTH-08 | Could | S | M3 | AUTH-01 |
@@ -244,7 +260,7 @@ Each spike has a pass criterion and a fallback (TRD §17.1). Run a spike before 
 | ID | Ticket and acceptance | Refs | Pri | Size | MS | Depends on |
 |---|---|---|---|---|---|---|
 | EG-FE-01 | **App shell and routing.** Routes per TRD §15.1. Guards per §15.2 for role, class membership, and suspended users. Mobile-first layout with no horizontal scroll at phone width. | TRD §15.1, §15.2; PRD §12 Device support | Must | M | M0 | FND-01, AUTH-02 |
-| EG-FE-02 | **Design tokens and themes.** Light and dark themes from `ux-brief.md`. Follow the system setting by default. Manual choice in Settings > Account (see AUTH-08). | PRD §12 Theming; ux-brief | Should | M | M0 | FE-01 |
+| EG-FE-02 | **Design tokens and themes.** Light and dark themes from `ux-brief.md`. Follow the system setting by default. The manual choice in Settings > Account is AUTH-08. | PRD §12 Theming; ux-brief | Should | M | M0 | FE-01 |
 | EG-FE-03 | **Shared forms and components.** react-hook-form with the shared Zod schemas. shadcn/ui primitives. A shared error component that tells users how to recover. | TRD §15.4; PRD §12 Maintainability | Should | M | M0 | FE-01, FND-01 |
 | EG-FE-04 | **Data fetching and polling.** TanStack Query. Grading status updates without a refresh when the result is ready. | TRD §15.3; PRD §9.8 | Must | S | M1 | FE-01, AI-03 |
 | EG-FE-05 | **Accessibility baseline.** Labels, keyboard access, focus order, visible focus, and color not the only signal, for core flows (WCAG 2.1 AA). | PRD §12 Accessibility; TRD §15.6 | Should | M | M0 | FE-01 |
@@ -272,7 +288,7 @@ These need an owner decision or an artifact that doesn't exist yet. Tickets that
 | TQ5: HEIC library | TRD §17.5 | SUB-03 | Resolve at S4 |
 | TQ7: label scope (per class proposed) | TRD §17.5 | ASG-11 | Confirm |
 | TQ10: SMTP provider | TRD §17.5 | NTF-02, AUTH-05, AUTH-06 | Resolve at S5 |
-| TQ11: Gemini model (2.5 Flash candidate) | TRD §17.5 | SPK-03, KEY-03, AI-02 | Resolve at S3 |
+| TQ11: Gemini model | TRD §17.5 | SPK-03, KEY-03, AI-02 | Closed: `gemini-2.5-flash` (TRD §11.1) |
 | PRD §16.3: announcements in v1 | PRD §16.3 | ANN-01 to ANN-05 | Owner decision; M4 is cut first by default |
 | PRD §16.3: pilot with real classes | PRD §16.3 | None (not ticketed) | Owner decision |
 | PRD §16.3 Q3: Terms and Privacy wording | PRD §16.3 | DEMO-05, AUTH-04, KEY-04 | Owner writes or approves |

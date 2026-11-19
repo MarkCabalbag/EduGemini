@@ -2,18 +2,20 @@ import { ArrowLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import type { AssignmentDetail } from '@edugemini/shared';
+import { Alert } from '../components/ui/Alert';
+import { Button } from '../components/ui/Button';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
 import { StatusChip } from '../components/ui/StatusChip';
-import { useAssignment } from '../hooks/use-assignments';
-import { useMe } from '../hooks/use-auth';
+import { useAssignment, useOpenReferenceFile } from '../hooks/use-assignments';
 import { useClass } from '../hooks/use-classes';
 import { useMySubmission } from '../hooks/use-submission';
 import { ApiRequestError } from '../lib/api';
-import { scoringText } from '../lib/assignment-meta';
-import { errorText } from '../lib/error-text';
+import { attemptsLeftText, scoringText } from '../lib/assignment-meta';
+import { errorText, errorTextOf } from '../lib/error-text';
 import { browserTimeZone, formatDue } from '../lib/zoned-time';
 import { NotFound } from './NotFound';
+import { Resubmit } from './Resubmit';
 import { SubmissionReceipt } from './SubmissionReceipt';
 import { UploadFiles } from './UploadFiles';
 
@@ -29,17 +31,53 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** The reference files the instructor marked visible (the API sends a student only those). Each opens in a new tab through a link that lasts five minutes (API Spec REF-04). */
+function ReferenceFileList({ files }: { files: AssignmentDetail['referenceFiles'] }) {
+  const open = useOpenReferenceFile();
+  return (
+    <section className="space-y-2">
+      <h2 className="text-title font-semibold">Reference files</h2>
+      <ul className="space-y-1">
+        {files.map((file) => (
+          <li key={file.id} className="flex flex-wrap items-center gap-3">
+            <span>{file.label}</span>
+            <Button
+              type="button"
+              variant="secondary"
+              loading={open.isPending && open.variables === file.id}
+              onClick={() => open.mutate(file.id)}
+            >
+              Open <span className="sr-only">{file.label}</span>
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {open.isError && <Alert>{errorTextOf(open.error)}</Alert>}
+    </section>
+  );
+}
+
 /**
  * The student's part of the page: the upload control (with the files of an upload still open) until they have submitted, then the receipt. When the due date has
- * passed and late work is closed, a student who has not submitted sees that instead of the upload control. A resubmit
- * control and the result block come with their tickets, so for now a submitted student sees the receipt only.
+ * passed and late work is closed, a student who has not submitted sees that instead of the upload control. A submitted student
+ * sees the receipt, with the result once it is ready (the page asks again every 5 seconds until then), and below it the
+ * Resubmit control (`Resubmit.tsx`).
  */
 function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; canUpload: boolean }) {
   const mine = useMySubmission(assignmentId);
   if (mine.isPending) return <PageLoading />;
   if (mine.isError) return <ErrorState error={mine.error} onRetry={() => void mine.refetch()} />;
   const { state, closed } = mine.data;
-  if (state !== 'NOT_SUBMITTED' && state !== 'UPLOADING') return <SubmissionReceipt submission={mine.data} />;
+  if (state !== 'NOT_SUBMITTED' && state !== 'UPLOADING') {
+    // An approved submission is read-only (App Flow §6 step 9); the message and the reopening come with SUB-08 and REV-06.
+    const canResubmit = canUpload && state !== 'INSTRUCTOR_APPROVED';
+    return (
+      <div className="space-y-6">
+        <SubmissionReceipt submission={mine.data} />
+        {canResubmit && <Resubmit assignmentId={assignmentId} submission={mine.data} />}
+      </div>
+    );
+  }
   if (!canUpload) return null;
   // The upload control reads the open upload's files once, when it appears. An answer cached from an earlier visit may not
   // list files stored since, so it waits for the fresh one.
@@ -58,11 +96,13 @@ function SubmissionArea({ assignmentId, canUpload }: { assignmentId: string; can
 
 /**
  * What an approved student reads about one published assignment (App Flow §6 step 3), and the control to upload their files.
- * An archived class is read-only, so it has no upload control (UX Brief, student pages). The result block comes with grading.
+ * An archived class is read-only, so it has no upload control (UX Brief, student pages).
  */
 function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
   // The class gives the name for the way back, and says whether it is archived (read-only). The page works without it.
   const cls = useClass(assignment.classId);
+  // The same answer the submission area reads, so the count is on top of the page without a second request.
+  const mine = useMySubmission(assignment.id);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -79,9 +119,14 @@ function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
         <p className="text-muted">
           {assignment.acceptLate ? 'Late submissions are accepted and marked Late.' : 'Late submissions are not accepted.'}
         </p>
+        {/* An archived class takes no submissions and an approved one is read-only, so there is nothing to count (UX Brief, AttemptsCounter). */}
+        {mine.data && cls.data?.status === 'ACTIVE' && mine.data.state !== 'INSTRUCTOR_APPROVED' && (
+          <p className="text-muted">{attemptsLeftText(mine.data.attemptsLeft)}</p>
+        )}
       </div>
       {assignment.instructions && <Section title="Instructions">{assignment.instructions}</Section>}
       <Section title="Criteria">{assignment.criteriaText}</Section>
+      {assignment.referenceFiles.length > 0 && <ReferenceFileList files={assignment.referenceFiles} />}
       <SubmissionArea assignmentId={assignment.id} canUpload={cls.data?.status === 'ACTIVE'} />
       <p className="text-small text-muted">{DISCLOSURE}</p>
     </div>
@@ -91,11 +136,8 @@ function AssignmentPage({ assignment }: { assignment: AssignmentDetail }) {
 /** The assignment page for a student. A draft, an archived assignment, a pending, declined or removed student and a stranger all see the same "not found" (API Spec A3, API-7). */
 export function StudentAssignment() {
   const assignmentId = useParams<'assignmentId'>().assignmentId!; // the route has :assignmentId
-  const me = useMe().data;
   const assignment = useAssignment(assignmentId);
 
-  // The API refuses everyone else too; this just keeps an instructor from getting a student's page (API Spec A3).
-  if (me?.role !== 'STUDENT') return <NotFound />;
   if (assignment.isPending) return <PageLoading />;
   if (assignment.isError) {
     const error = assignment.error;

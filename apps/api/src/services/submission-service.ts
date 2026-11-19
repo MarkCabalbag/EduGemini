@@ -1,8 +1,17 @@
 import type { Assignment, Prisma, PrismaClient, SubmissionFile, SubmissionState, SubmissionVersion } from '@prisma/client';
-import { LIMITS, type DisplayState, type FileView, type GradeJob, type StudentSubmission, type VersionView } from '@edugemini/shared';
+import {
+  LIMITS,
+  type DisplayState,
+  type FileView,
+  type GradeJob,
+  type GradeView,
+  type StudentSubmission,
+  type VersionView,
+} from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import { lockSubmission } from '../lib/lock';
 import { isUniqueViolation } from '../lib/prisma-errors';
+import { queueDeletions } from '../lib/storage';
 import { authorize, type Actor } from '../policy/policy';
 import { enrollmentOf } from './assignment-service';
 import type { EnqueueGrading } from './grading-service';
@@ -55,12 +64,6 @@ export async function ownVersion(db: PrismaClient, actor: Actor, versionId: stri
   return version;
 }
 
-/** Queue the files' stored objects in the storage outbox (Backend Schema §10.2a); the `storage.cleanup` job deletes them. */
-export async function queueDeletions(tx: Prisma.TransactionClient, bucket: string, files: { storagePath: string | null }[]): Promise<void> {
-  const data = files.flatMap((file) => (file.storagePath ? [{ bucket, objectPath: file.storagePath }] : []));
-  await tx.storageDeletion.createMany({ data, skipDuplicates: true });
-}
-
 /**
  * Open an upload for the student (API Spec SUB-02). While one is open, asking again gives that same one. The database
  * allows one open version per submission, so two taps at the same moment also end up with the same version.
@@ -98,7 +101,10 @@ export async function openVersion(
     update: {},
   });
   // A student who has submitted and has no resubmissions left cannot open another upload (finalize checks again).
-  if (submission.currentVersionId && attemptsLeft(assignment.maxResubmissions, submission.extraAttempts, submission.resubmissionsUsed) === 0) {
+  if (
+    submission.currentVersionId &&
+    attemptsLeft(assignment.maxResubmissions, submission.extraAttempts, submission.resubmissionsUsed) === 0
+  ) {
     throw new AppError('ATTEMPTS_EXHAUSTED');
   }
   const last = await db.submissionVersion.findFirst({
@@ -144,6 +150,26 @@ export async function deleteStagedUploads(db: PrismaClient, bucket: string, now 
   return deleted;
 }
 
+/**
+ * Cancel the student's open upload (API Spec SUB-06): the version goes with its files, and the objects are queued for deletion.
+ * It runs on the locked submission row, as finalize does, so a cancel and a finalize at the same moment run one after the
+ * other, and a version that is already stored is never deleted (`UPLOAD_NOT_OPEN`). The submission row stays, with whatever
+ * was stored before: a student who had not submitted is `NOT_SUBMITTED` again, and a resubmission leaves the earlier
+ * submission, its grade and the attempts used alone.
+ */
+export async function cancelVersion(db: PrismaClient, bucket: string, actor: Actor, versionId: string): Promise<void> {
+  const { submissionId } = await ownVersion(db, actor, versionId);
+
+  await db.$transaction(async (tx) => {
+    await lockSubmission(tx, submissionId);
+    const version = await tx.submissionVersion.findUnique({ where: { id: versionId }, include: { files: true } });
+    if (!version) return; // a second cancel at the same moment: already gone
+    if (version.status !== 'UPLOADING') throw new AppError('UPLOAD_NOT_OPEN');
+    await queueDeletions(tx, bucket, version.files);
+    await tx.submissionVersion.delete({ where: { id: versionId } }); // its files go with it
+  });
+}
+
 // The student's view of the database state (API Spec A5). Causes and internal states never reach the student.
 const DISPLAY_STATE: Record<SubmissionState, DisplayState> = {
   QUEUED: 'GRADING',
@@ -152,6 +178,33 @@ const DISPLAY_STATE: Record<SubmissionState, DisplayState> = {
   NEEDS_MANUAL_REVIEW: 'AWAITING_REVIEW',
   INSTRUCTOR_APPROVED: 'INSTRUCTOR_APPROVED',
 };
+
+/**
+ * The grade the student sees: the active grade, only while the submission is `AI_GENERATED` or `INSTRUCTOR_APPROVED`.
+ * Nothing but the score, the feedback and the chip goes out: no model, prompt version, confidence or cause (API Spec A5).
+ */
+async function gradeViewOf(
+  db: Prisma.TransactionClient,
+  submission: { state: SubmissionState | null; activeGradeId: string | null },
+  assignment: Pick<Assignment, 'maxScore' | 'scoringFormat'>,
+): Promise<GradeView | null> {
+  const { state, activeGradeId } = submission;
+  if ((state !== 'AI_GENERATED' && state !== 'INSTRUCTOR_APPROVED') || !activeGradeId) return null;
+  const grade = await db.gradeResult.findUnique({ where: { id: activeGradeId } });
+  if (!grade || grade.score === null) return null;
+  const score = Number(grade.score);
+  const maxScore = Number(assignment.maxScore);
+  return {
+    source: grade.source,
+    score,
+    maxScore,
+    scoringFormat: assignment.scoringFormat,
+    letter: grade.letter,
+    percentage: Math.round((score / maxScore) * 100),
+    feedback: grade.feedback ?? '',
+    chip: state === 'INSTRUCTOR_APPROVED' ? 'status-approved' : 'status-ai',
+  };
+}
 
 /**
  * The student's own submission for one assignment (API Spec SUB-01), read through `db`, which may be a transaction.
@@ -167,7 +220,10 @@ async function studentSubmissionOf(db: Prisma.TransactionClient, studentId: stri
       })
     : null;
   const current = submission?.currentVersionId
-    ? await db.submissionVersion.findUnique({ where: { id: submission.currentVersionId }, include: { files: { orderBy: { ordinal: 'asc' } } } })
+    ? await db.submissionVersion.findUnique({
+        where: { id: submission.currentVersionId },
+        include: { files: { orderBy: { ordinal: 'asc' } } },
+      })
     : null;
 
   const latest = submission?.latestSubmittedAt ?? null;
@@ -181,6 +237,8 @@ async function studentSubmissionOf(db: Prisma.TransactionClient, studentId: stri
     firstSubmittedAt: submission?.firstSubmittedAt?.toISOString() ?? null,
     latestSubmittedAt: latest?.toISOString() ?? null,
     files: current?.files.map(toFileView) ?? [],
+    grade: submission ? await gradeViewOf(db, submission, assignment) : null,
+    instructorComment: submission?.state === 'INSTRUCTOR_APPROVED' ? submission.instructorComment : null,
     draftVersion: draft ? { ...toVersionView(draft), files: draft.files.map(toFileView) } : null,
   };
 }
@@ -214,7 +272,8 @@ export async function finalizeVersion(
   const { view, job } = await db.$transaction(async (tx): Promise<{ view: StudentSubmission; job: GradeJob | null }> => {
     await lockSubmission(tx, submissionId);
     const submission = await tx.submission.findUniqueOrThrow({ where: { id: submissionId } });
-    const version = await tx.submissionVersion.findUniqueOrThrow({ where: { id: versionId }, include: { files: true } });
+    const version = await tx.submissionVersion.findUnique({ where: { id: versionId }, include: { files: true } });
+    if (!version) throw new AppError('NOT_FOUND'); // cancelled (SUB-06) after this request began
     const assignment = await tx.assignment.findUniqueOrThrow({
       where: { id: submission.assignmentId },
       include: { class: { select: { archivedAt: true } }, referenceFiles: { select: { sizeBytes: true } } },
@@ -249,7 +308,10 @@ export async function finalizeVersion(
     await tx.submissionFile.deleteMany({ where: { id: { in: leaving.map((file) => file.id) } } });
     // The list is in the order shown to the student, so the files take that order. A removed or retried file leaves gaps in the places.
     for (const [index, clientFileId] of expectedFileIds.entries()) {
-      await tx.submissionFile.update({ where: { versionId_clientFileId: { versionId: version.id, clientFileId } }, data: { ordinal: index + 1 } });
+      await tx.submissionFile.update({
+        where: { versionId_clientFileId: { versionId: version.id, clientFileId } },
+        data: { ordinal: index + 1 },
+      });
     }
     if (previousId) await tx.submissionVersion.update({ where: { id: previousId }, data: { status: 'REPLACED' } });
 

@@ -36,6 +36,28 @@ export const UpdateClassSchema = z.strictObject({
 });
 export type UpdateClass = z.infer<typeof UpdateClassSchema>;
 
+/**
+ * Delete class (API Spec CLS-07). The confirmation must equal the class name; the service compares it, because it needs the
+ * stored name. Any other field is refused.
+ */
+export const DeleteClassSchema = z.strictObject({ confirmation: z.string().max(200) });
+export type DeleteClass = z.infer<typeof DeleteClassSchema>;
+
+/**
+ * What deleting a class removes, for the confirmation dialog (API Spec CLS-11). `students` counts every enrollment, whatever
+ * its state. `gradebookCsvPath` is left out until the gradebook download exists (TRK-04).
+ */
+export const ClassDeletionImpactSchema = z.object({
+  students: z.number().int().min(0),
+  approvedStudents: z.number().int().min(0),
+  pendingStudents: z.number().int().min(0),
+  assignments: z.number().int().min(0),
+  submissions: z.number().int().min(0),
+  files: z.number().int().min(0),
+  gradebookCsvPath: z.string().optional(),
+});
+export type ClassDeletionImpact = z.infer<typeof ClassDeletionImpactSchema>;
+
 /** The class id in the path of every `/classes/:classId` route. */
 export const ClassParamsSchema = z.object({ classId: z.uuid() });
 

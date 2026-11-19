@@ -19,7 +19,13 @@ const instructor: Me = {
 const student: Me = { ...instructor, role: 'STUDENT' };
 
 const NO_KEY: KeyStatus = { connected: false, status: null, last4: null, lastSuccessAt: null, disclosureAckAt: null };
-const savedKey = (last4: string): KeyStatus => ({ connected: true, status: null, last4, lastSuccessAt: null, disclosureAckAt: '2026-11-16T10:00:00.000Z' });
+const savedKey = (last4: string): KeyStatus => ({
+  connected: true,
+  status: null,
+  last4,
+  lastSuccessAt: null,
+  disclosureAckAt: '2026-11-16T10:00:00.000Z',
+});
 const API_KEY = 'AIzaSyExampleKeyForTestsOnly1234';
 
 type Call = { path: string; method: string; body?: { apiKey?: string; disclosureAcknowledged?: boolean } };
@@ -80,7 +86,7 @@ describe('Settings > AI, before a key is saved', () => {
     expect(screen.getByText(/sent to Google Gemini under your key/)).toBeTruthy();
     expect(screen.getByLabelText('I understand')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Save key' })).toBeTruthy();
-    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(within(screen.getByRole('main')).getByRole('list')).getAllByRole('listitem')).toHaveLength(3); // the header's nav is a list too
     expect(screen.getByRole('link', { name: /Google AI Studio/ }).getAttribute('href')).toBe('https://aistudio.google.com/docs');
     expect(keyBox().type).toBe('password'); // the key is not shown as it is typed
   });
@@ -133,7 +139,7 @@ describe('Settings > AI, before a key is saved', () => {
     expect(sent('PUT')).toHaveLength(0);
   });
 
-  it('shows the API\'s reason under the key box when it refuses the key', async () => {
+  it("shows the API's reason under the key box when it refuses the key", async () => {
     saveResult = () => failure(400, 'VALIDATION', { apiKey: 'This key looks too long. Check that you copied only the key.' });
     const user = userEvent.setup();
     renderAt('/settings/ai');
@@ -182,6 +188,7 @@ describe('Settings > AI, with a key saved', () => {
     let dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Remove your Gemini key?')).toBeTruthy();
     expect(within(dialog).getByText(/AI grading stops for all your assignments/)).toBeTruthy();
+    expect(screen.queryByText('Enter your Gemini key.')).toBeNull(); // Remove does not submit the key form behind it
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(sent('DELETE')).toHaveLength(0);
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -217,11 +224,11 @@ describe('who sees Settings > AI', () => {
     expect(link.getAttribute('href')).toBe('/settings/ai');
   });
 
-  it('gives a student the not-found page, with no Settings link and no request for the key', async () => {
+  it('gives a student the no-access page, with no Settings link and no request for the key', async () => {
     me = student;
     renderAt('/settings/ai');
 
-    expect(await screen.findByText(/couldn.t find that page/i)).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: /you don.t have access to this page/i })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Settings' })).toBeNull();
     expect(calls.some((c) => c.path === '/me/key')).toBe(false);
   });

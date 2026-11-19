@@ -1,6 +1,8 @@
 import { Navigate, Outlet, useLocation } from 'react-router';
+import type { Role } from '@edugemini/shared';
 import { useMe } from '../hooks/use-auth';
 import { safeReturnPath } from '../lib/return-path';
+import { NoAccess } from '../pages/NoAccess';
 import { ErrorState } from './ui/ErrorState';
 import { PageLoading } from './ui/Skeleton';
 
@@ -14,6 +16,12 @@ export function RequireAuth() {
   if (me.data === undefined && me.isError) return <ErrorState error={me.error} onRetry={() => void me.refetch()} />;
   if (!me.data) return <Navigate to="/signin" replace state={{ from: location.pathname + location.search }} />;
   return <Outlet />;
+}
+
+/** Inside `RequireAuth`, for pages of one role. Anyone else gets the no-access screen (TRD §15.2). The API refuses them too. */
+export function RequireRole({ role }: { role: Role }) {
+  const me = useMe().data;
+  return me?.role === role ? <Outlet /> : <NoAccess />;
 }
 
 /**

@@ -25,8 +25,7 @@ export function createQueryClient(): QueryClient {
     mutationCache: new MutationCache({ onError: (error) => endSessionOn401(client, error) }),
     defaultOptions: {
       queries: {
-        retry: (failures, error) =>
-          !(error instanceof ApiRequestError && error.status >= 400 && error.status < 500) && failures < 2,
+        retry: (failures, error) => !(error instanceof ApiRequestError && error.status >= 400 && error.status < 500) && failures < 2,
       },
     },
   });

@@ -81,7 +81,7 @@ function renderWithState(path: string, state: unknown) {
 const joins = () => calls.filter((c) => c.method === 'POST' && c.path === '/join');
 
 describe('join link, signed out', () => {
-  it('shows the class and its instructor\'s first name, and offers Sign up to join and Sign in', async () => {
+  it("shows the class and its instructor's first name, and offers Sign up to join and Sign in", async () => {
     renderAt('/join/K7M2PQ9X');
 
     expect(await screen.findByRole('heading', { name: 'Biology 101' })).toBeTruthy();

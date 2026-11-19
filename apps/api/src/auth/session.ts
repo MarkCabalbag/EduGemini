@@ -9,8 +9,8 @@ import { ME_SELECT, toMe } from './me';
 export const SESSION_COOKIE = 'eg_session';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-export const IDLE_TIMEOUT_MS = 7 * DAY_MS;
-export const ABSOLUTE_TIMEOUT_MS = 30 * DAY_MS;
+const IDLE_TIMEOUT_MS = 7 * DAY_MS;
+const ABSOLUTE_TIMEOUT_MS = 30 * DAY_MS;
 /** last_seen_at is written at most this often, to limit database writes. */
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 

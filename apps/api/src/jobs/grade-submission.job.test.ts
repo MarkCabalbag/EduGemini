@@ -4,7 +4,11 @@ import type { GradeJob } from '@edugemini/shared';
 import type { Logger } from '../lib/logger';
 import { createGradingSender, GRADE_SUBMISSION, sendGradeJob } from './grade-submission.job';
 
-const job: GradeJob = { submissionId: '6f1f5c7e-1b8a-4a5e-9d3c-2b7a1c0e4f11', versionId: '0a9d1c52-83f4-4e2a-b6a1-5e3f7d2c9b08', mode: 'first' };
+const job: GradeJob = {
+  submissionId: '6f1f5c7e-1b8a-4a5e-9d3c-2b7a1c0e4f11',
+  versionId: '0a9d1c52-83f4-4e2a-b6a1-5e3f7d2c9b08',
+  mode: 'first',
+};
 const bossWith = (send = vi.fn()) => ({ send }) as unknown as PgBoss;
 const loggerWith = (error = vi.fn()) => ({ error }) as unknown as Logger;
 

@@ -4,11 +4,9 @@ import { useForm } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router';
 import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
-import { useMe } from '../../hooks/use-auth';
 import { useCreateAssignment } from '../../hooks/use-assignments';
 import { showApiError } from '../../lib/form-errors';
 import { browserTimeZone } from '../../lib/zoned-time';
-import { NotFound } from '../NotFound';
 import { BasicsFields, BasicsSchema } from './BasicsStep';
 import { WizardFrame } from './WizardFrame';
 
@@ -18,14 +16,10 @@ import { WizardFrame } from './WizardFrame';
  */
 export function NewAssignment() {
   const classId = useParams<'classId'>().classId!; // the route has :classId
-  const me = useMe().data;
   const navigate = useNavigate();
   const create = useCreateAssignment(classId);
   const [formError, setFormError] = useState<string>();
   const { register, handleSubmit, setError, formState } = useForm({ resolver: zodResolver(BasicsSchema), mode: 'onBlur' });
-
-  // The API refuses everyone else too; this just keeps the form from showing to a student (API Spec A3).
-  if (me?.role !== 'INSTRUCTOR') return <NotFound />;
 
   const onSubmit = handleSubmit((values) => {
     setFormError(undefined);
@@ -40,12 +34,14 @@ export function NewAssignment() {
 
   return (
     <WizardFrame classId={classId} title="New assignment" step={1}>
-      <form onSubmit={onSubmit} noValidate className="space-y-4">
+      <form onSubmit={onSubmit} noValidate className="space-y-[18px]">
         {formError && <Alert>{formError}</Alert>}
         <BasicsFields register={register} errors={formState.errors} />
-        <Button type="submit" loading={create.isPending}>
-          Continue
-        </Button>
+        <div className="pt-[18px]">
+          <Button type="submit" loading={create.isPending}>
+            Continue
+          </Button>
+        </div>
       </form>
     </WizardFrame>
   );

@@ -5,11 +5,13 @@ import type {
   AssignmentStatus,
   CreateAssignment,
   PublishedAssignment,
+  ReferenceFileLink,
+  ReferenceFileView,
   UpdateAssignment,
 } from '@edugemini/shared';
 import { api } from '../lib/api';
 
-export const assignmentKeys = {
+const assignmentKeys = {
   all: ['assignments'] as const,
   lists: () => [...assignmentKeys.all, 'list'] as const,
   list: (classId: string, status: AssignmentStatus) => [...assignmentKeys.lists(), classId, status] as const,
@@ -67,5 +69,61 @@ export function usePublishAssignment(assignmentId: string) {
   return useMutation({
     mutationFn: () => api<PublishedAssignment>(`/assignments/${assignmentId}/publish`, { method: 'POST' }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: assignmentKeys.all }),
+  });
+}
+
+/** Add a reference file to a draft (API Spec REF-01). The file goes inside a form; the assignment is read again afterwards, so its list shows the file. */
+export function useAddReferenceFile(assignmentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return api<ReferenceFileView>(`/assignments/${assignmentId}/reference-files`, { method: 'POST', body: form });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: assignmentKeys.one(assignmentId) }),
+  });
+}
+
+/** Show a reference file to students or hide it (API Spec REF-02). */
+export function useSetReferenceVisibility(assignmentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fileId, visibleToStudents }: { fileId: string; visibleToStudents: boolean }) =>
+      api<ReferenceFileView>(`/reference-files/${fileId}`, { method: 'PATCH', body: { visibleToStudents } }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: assignmentKeys.one(assignmentId) }),
+  });
+}
+
+/** Remove a reference file from a draft (API Spec REF-03). */
+export function useRemoveReferenceFile(assignmentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (fileId: string) => api(`/reference-files/${fileId}`, { method: 'DELETE' }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: assignmentKeys.one(assignmentId) }),
+  });
+}
+
+/**
+ * Open a reference file in a new tab (API Spec REF-04). The link lasts five minutes, so it is asked for when the button is
+ * pressed. The tab is opened first, in the click itself, because a browser blocks a tab opened after a wait.
+ */
+export function useOpenReferenceFile() {
+  return useMutation({
+    mutationFn: async (fileId: string) => {
+      const tab = window.open('about:blank', '_blank');
+      try {
+        const { url } = await api<ReferenceFileLink>(`/reference-files/${fileId}/url`);
+        if (tab) {
+          tab.opener = null;
+          tab.location.href = url;
+        } else {
+          window.open(url, '_blank', 'noopener');
+        }
+      } catch (error) {
+        tab?.close();
+        throw error;
+      }
+    },
   });
 }

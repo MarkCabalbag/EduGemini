@@ -69,7 +69,7 @@ Folder names inside each app are set by this file. Imports go one way: apps impo
 - **Race-prone writes** (approve, reopen, grant, finalize, re-grade, the worker's grade write) lock the submission row, regenerating a class code locks the class row, and saving an instructor's key locks the key row, all with the shared lock helper (`lib/lock.ts`, `SELECT ... FOR UPDATE`), and rely on state checks for idempotency (API Spec A11).
 - **Every route behind the session has a rate limit.** The general per-user limit ([API Spec A12](api-spec.md), "everything else") is mounted once in `createApp`, after the session loads, so no route can forget it. A route with its own row adds that limiter on the route; a route whose row allows more than the general limit (notifications) is excluded from the general one when it is added. The public join-link preview is mounted before it, because it has a row of its own and a class opens the same link together on one network. A limit on creating something goes after validation, so a request with errors does not use it up.
 - **A role that may not use a route gets `NOT_FOUND` before anything else runs.** Put `requireAction(action)` right after `requireAuth`, ahead of validation (API Spec A3).
-- **Adapters** for outside services (`Mailer`, `StorageAdapter`, the Gemini adapter) are interfaces with a real and a fake implementation, chosen by environment (`STORAGE_DRIVER`, `GEMINI_MODE`).
+- **Adapters** for outside services (`Mailer`, `StorageAdapter`, the Gemini adapter) are interfaces with a real and a fake implementation, chosen by environment (`MAIL_DRIVER`, `GEMINI_MODE`; Gemini is `live` unless the end-to-end tests set `fake`). Storage has no setting: the app always uses the real Supabase adapter, and only the unit and integration tests use the in-memory fake (`test/memory-storage.ts`).
 
 **Middleware order** (set by this file; the checks themselves are in TRD §6 and §14): request ID, helmet, `trust proxy`, `Origin` check on non-GET (before the body is read, API Spec A3), JSON body (100 KB limit), session load (suspension checked on every request), rate limit, routes, 404, error handler.
 
@@ -79,7 +79,7 @@ Folder names inside each app are set by this file. Imports go one way: apps impo
 
 - Jobs live in `apps/api/src/jobs`, one file per queue in TRD §10.1, and each is added to the list in `jobs/index.ts`, which creates its queue, worker and schedule. A job with no schedule (grading, which is sent when a student finalizes) is registered with `boss.work` in the same file, and the route that sends it is given an `enqueueGrading` function, so no route imports pg-boss. A handler is safe to run twice and checks the submission version before and after the Gemini call (TRD §10.3).
 - Gemini generation is called only from the `grade.submission` job, never from a route. The key check (model list) runs on save and goes through the same adapter (TRD §11.5).
-- The model name and prompt version are single constants (`GEMINI_MODEL`, `PROMPT_VERSION`) stored with every result. Prompts live in `packages/ai/prompts`, are versioned, and treat student and reference content as data (TRD §10.4).
+- The model name and prompt version are single constants (`GEMINI_MODEL`, `PROMPT_VERSION`) stored with every result. The prompt lives in `packages/ai/src/live-gemini.ts`, is versioned, and treat student and reference content as data (TRD §10.4).
 - AI tests use only the fake adapter.
 
 ## 7. Database

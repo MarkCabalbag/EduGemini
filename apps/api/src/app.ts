@@ -19,7 +19,7 @@ import { notificationsRouter } from './routes/notifications';
 import { peopleRouter } from './routes/people';
 
 export type AppDeps = {
-  env: Pick<Env, 'APP_URL'>;
+  env: Pick<Env, 'APP_URL' | 'STORAGE_BUCKET'>;
   logger: Logger;
   db: PrismaClient;
   /** A trivial query that proves the database answers. */
@@ -51,7 +51,7 @@ export function createApp({ env, logger, db, checkDb, routers = [] }: AppDeps): 
   api.use(notificationsRouter({ db })); // 300 a minute is its own A12 row, so it sits before the general one too
   api.use(limiters.everythingElseByUser()); // one counter per user (the IP when signed out) for every route below
   api.use(meRouter());
-  api.use(classesRouter({ db, appUrl: env.APP_URL }));
+  api.use(classesRouter({ db, appUrl: env.APP_URL, bucket: env.STORAGE_BUCKET }));
   api.use(peopleRouter({ db }));
   api.use(assignmentsRouter({ db }));
   for (const router of routers) api.use(router);

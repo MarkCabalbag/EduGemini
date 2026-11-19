@@ -50,6 +50,8 @@ export function createFakeGemini(): GeminiAdapter {
           throw new GeminiError('KEY_INVALID', 'The fake rejected the key.');
         case 'quota-daily':
           throw new GeminiError('QUOTA', 'The fake ran out of daily quota.');
+        case 'file-quality':
+          throw new GeminiError('FILE_QUALITY', 'The fake could not read a file.');
         case 'score-above-max':
           return answer(max + 1);
         case 'malformed-json':

@@ -832,7 +832,7 @@ paths:
     post:
       operationId: REF-01
       tags: [Reference files]
-      summary: Add a reference file (criteria change)
+      summary: Add a reference file (criteria change; a draft needs no impactToken)
       requestBody:
         required: true
         content:
@@ -2179,7 +2179,7 @@ components:
         assignments: { type: integer, minimum: 0 }
         submissions: { type: integer, minimum: 0 }
         files: { type: integer, minimum: 0 }
-        gradebookCsvPath: { type: string }
+        gradebookCsvPath: { type: string, description: "Left out until the gradebook download exists (TRK-04)." }
 
     JoinRequest:
       type: object
@@ -2402,10 +2402,10 @@ components:
 
     ReferenceUpload:
       type: object
-      required: [file, impactToken]
+      required: [file]
       properties:
         file: { type: string, format: binary, description: "One PDF, JPEG, or PNG, at most 10 MiB, checked by content." }
-        impactToken: { type: string }
+        impactToken: { type: string, description: "Required on a published assignment, ignored on a draft (API Spec A6)." }
 
     ReferenceFileView:
       type: object

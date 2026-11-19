@@ -387,6 +387,8 @@ Layout notes:
 - The stepper shows "Step 2 of 5: Criteria" as text; the dots are supporting detail.
 - "Draft saved" appears after each autosave (App Flow 5.1, step 1 and F15). It is `status-approved` text with a check icon, not a toast.
 - The visibility toggle is labeled in full ("Visible to students"), and the helper text under the list states who sees the file.
+- A row shows the label "Reference file N" and the size, not the file name (the API stores no name, API Spec A5), then Open, "Visible to students" and Remove; the mock above is only the layout. "Add a reference file" is disabled once there are three. On a published assignment the list shows the files and the toggle but no Add or Remove, until the re-grade confirmation exists (ASG-04).
+- On the student assignment page the visible files are listed under "Reference files", each with an Open button that opens the file in a new tab.
 - On phones, the stepper collapses to "Step 2 of 5: Criteria" with a progress bar.
 - Publishing returns to the Assignments tab, where an info message says "<Title> is published. Approved students can see it now." Each warning follows on its own line: "The due date has already passed, so every submission will be marked Late." and "No Gemini key is connected, so submissions will wait for your review instead of being graded by AI."
 - "Save as draft" on the Review step only leaves the wizard, because every step has already saved the draft.
@@ -523,6 +525,7 @@ Layout notes:
 - "Regenerate code" and "Disable code" in a card labeled Class code; both use confirm dialogs explaining that members are unaffected. Regenerate also says the old code and link stop working at once. Disable also says nobody can join until the code is regenerated. While the code is disabled, the card shows "The class code is off. Nobody can join with the code or the join link. Regenerate the code to turn it on again." in place of the code and link, and offers only "Regenerate code". The card is not shown on an archived class.
 - A Class details card has "Edit class details", which opens a dialog with the five fields of Create class (name, description, section, subject, room) filled in, and Save changes and Cancel. Saving closes the dialog; a problem shows under its field or at the top of the dialog. The card is not shown on an archived class. "Archive class" and "Delete class" are in a separate Danger zone card at the bottom.
 - "Archive class" asks first, in a `ConfirmDialog`: the class becomes read-only, students can still open it and see their work, the class code stops working, and it can be restored. On an archived class the card offers "Restore class" instead, which does not ask.
+- "Delete class" is in the same Danger zone card, also on an archived class. It opens a `ConfirmDialog` titled "Delete {class name}?" that says the class and everything in it are permanently deleted and it can't be undone, and gives the counts ("This deletes 12 students, 3 assignments and 1 submission, with all their files."). While the class is active it also offers "Archive instead", which archives and closes the dialog. The instructor types the class name in a field labeled "Type {class name} to confirm", and "Delete class" stays disabled until it matches exactly. Afterwards the page goes to the class list. The gradebook CSV link is left out until the gradebook download exists (GB-02).
 - The first-run prompts (App Flow 4, step 1) appear as a short checklist card above the code, dismissible.
 
 **Create class (layout notes)**
@@ -579,7 +582,7 @@ Layout notes:
 - The result block appears below the instructions once a submission exists; before submission, the upload control replaces it.
 - The disclosure line is always visible on the result block, not behind a tooltip.
 - Instructor-approved: the result is read-only, with a lock icon and "Locked by your instructor."
-- Late work closed (past due, late not accepted, and the instructor has not allowed this student): a student who has not submitted sees the "Closed" chip and "Late submissions are closed for this assignment." in place of the upload control. A student who already submitted still sees their receipt.
+- Late work closed (past due, late not accepted, and the instructor has not allowed this student): a student who has not submitted sees the "Closed" chip and "Late submissions are closed for this assignment." in place of the upload control. A student who already submitted still sees their receipt, with the same sentence in place of the Resubmit button.
 
 **Upload (wireframe, phone; App Flow 6, step 4)**
 
@@ -615,9 +618,11 @@ Layout notes:
 - After submit, the page shows the receipt in place of the upload control: timestamp, file list, and "Grading in progress, usually about a minute" (App Flow 6, step 5). It is shown again whenever the student returns to the page.
 
 **Result, after grading (student)**
-- Chip, score, feedback, the disclosure line, attempts left, and the resubmit control.
+- Chip, score, feedback, the disclosure line, attempts left, and the resubmit control. The result block under the chip has a "Score" heading and a "Feedback" heading (an approved grade with an instructor comment adds an "Instructor comment" heading) *(new wording)*. The page asks for the result every 5 seconds while it is Grading, so it appears without a refresh.
 - At 0 attempts left, the resubmit control is replaced by "You've used all your resubmissions. Your instructor can give you more." (App Flow 6, step 7).
-- Score shown in the assignment's format: "42 / 50", "84%", or "B+ (87)".
+- The resubmit control is a "Resubmit (N left)" button under the receipt ("Resubmit" when unlimited), also while the first submission is still being graded, since the latest version wins. It opens the upload control with the heading "Your new files" and a Cancel button next to Submit files; the receipt of the earlier submission stays above it until the new one is submitted. Cancel throws the new upload away and puts the button back; it is disabled while a file is still being sent. Submitting shows the new receipt and the button with one attempt fewer. An approved submission and an archived class show no button. When late work is closed, a student who has submitted sees "Late submissions are closed for this assignment." in its place, without the "Closed" chip *(new wording: "Your new files", "Resubmit (N left)", "Cancel")*.
+- The attempts count ("3 resubmissions left", "1 resubmission left", "0 resubmissions left", "Unlimited resubmissions") is one line under the late-policy line at the top of the page, in an active class, also before the first submission.
+- Score shown in the assignment's format: "42 / 50", "84%", or "B+ (87)". A letter assignment shows "87 / 100" until the letter scale exists (AI-05).
 
 **Class page, student (layout notes; App Flow 6, step 2)**
 - Assignment list ordered by nearest due date. Each row: title, label (Could), due date in the viewer's time zone, and the student's status chip.

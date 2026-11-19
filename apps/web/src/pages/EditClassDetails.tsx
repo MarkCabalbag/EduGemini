@@ -71,12 +71,14 @@ export function EditClassDetails({ cls }: { cls: ClassSummary }) {
   };
 
   return (
-    <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
-      <h2 className="text-title font-semibold">Class details</h2>
+    <section>
+      <h2 className="text-title leading-9 font-bold">Class details</h2>
       <p>Change the name, description, section, subject or room. The class code and your students are not affected.</p>
       <Dialog.Root open={open} onOpenChange={setOpen}>
         <Dialog.Trigger asChild>
-          <Button variant="secondary">Edit class details</Button>
+          <Button variant="secondary" className="mt-[18px]">
+            Edit class details
+          </Button>
         </Dialog.Trigger>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-overlay" />
@@ -84,7 +86,8 @@ export function EditClassDetails({ cls }: { cls: ClassSummary }) {
           <Dialog.Content
             onEscapeKeyDown={stayWhileSaving}
             onInteractOutside={stayWhileSaving}
-            className="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] space-y-4 overflow-y-auto rounded-t-lg border border-border bg-surface p-6 shadow-overlay sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-140 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg">
+            className="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] space-y-4 overflow-y-auto rounded-t-lg border border-border bg-surface p-6 shadow-overlay sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-140 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg"
+          >
             <Dialog.Title className="text-title font-semibold">Edit class details</Dialog.Title>
             <Dialog.Description>The class code and your students are not affected.</Dialog.Description>
             <EditForm cls={cls} updateClass={updateClass} onDone={() => setOpen(false)} />

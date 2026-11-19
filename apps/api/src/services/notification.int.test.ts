@@ -17,7 +17,8 @@ const MINUTE_MS = 60_000;
 const db = createTestDb();
 
 // A fresh app per test: the in-memory rate limits start empty each time.
-const build = () => createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
+const build = () =>
+  createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
 
 /** A user with a live session, made straight in the database so no password has to be hashed. */
 async function signedInUser(name: string, role: Role) {
@@ -42,7 +43,8 @@ const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * MINUTE_M
 
 const list = (cookie: string, query = '', app = build()) => request(app).get(`/api/notifications${query}`).set('Cookie', cookie);
 const count = (cookie: string, app = build()) => request(app).get('/api/notifications/unread-count').set('Cookie', cookie);
-const markOne = (cookie: string, id: string) => request(build()).post(`/api/notifications/${id}/read`).set('Origin', APP_URL).set('Cookie', cookie);
+const markOne = (cookie: string, id: string) =>
+  request(build()).post(`/api/notifications/${id}/read`).set('Origin', APP_URL).set('Cookie', cookie);
 const markAll = (cookie: string) => request(build()).post('/api/notifications/read-all').set('Origin', APP_URL).set('Cookie', cookie);
 
 let made = 0;
@@ -101,7 +103,12 @@ describe('notify (the in-app half, TRD §13.1)', () => {
 describe('list notifications (API Spec NTF-01)', () => {
   it('lists the caller newest first, with the title for the type and the class name as the body', async () => {
     const old = await seed(ada.user.id, { type: 'ASSIGNMENT_PUBLISHED', payload: { className: 'Biology 101' }, createdAt: minutesAgo(30) });
-    const recent = await seed(ada.user.id, { type: 'KEY_NEEDS_ATTENTION', link: '/settings/ai', createdAt: minutesAgo(5), readAt: new Date() });
+    const recent = await seed(ada.user.id, {
+      type: 'KEY_NEEDS_ATTENTION',
+      link: '/settings/ai',
+      createdAt: minutesAgo(5),
+      readAt: new Date(),
+    });
 
     const res = await list(ada.cookie);
 
@@ -172,12 +179,15 @@ describe('list notifications (API Spec NTF-01)', () => {
     expect(seen[4]).toBe(ids[4]);
   });
 
-  it.each(['?limit=0', '?limit=101', '?unreadOnly=yes', '?cursor=garbage', '?sneaky=1'])('refuses the query %s with VALIDATION', async (query) => {
-    const res = await list(ada.cookie, query);
+  it.each(['?limit=0', '?limit=101', '?unreadOnly=yes', '?cursor=garbage', '?sneaky=1'])(
+    'refuses the query %s with VALIDATION',
+    async (query) => {
+      const res = await list(ada.cookie, query);
 
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION');
-  });
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION');
+    },
+  );
 
   it('needs a session: UNAUTHENTICATED without one', async () => {
     const res = await request(build()).get('/api/notifications');
@@ -197,7 +207,7 @@ describe('list notifications (API Spec NTF-01)', () => {
 });
 
 describe('mark one read (API Spec NTF-02)', () => {
-  it('marks the recipient\'s own notification read and answers 204', async () => {
+  it("marks the recipient's own notification read and answers 204", async () => {
     const row = await seed(ada.user.id);
 
     const res = await markOne(ada.cookie, row.id);
@@ -275,7 +285,7 @@ describe('mark all read (API Spec NTF-03)', () => {
 });
 
 describe('unread count (API Spec NTF-04)', () => {
-  it('counts the caller\'s unread only', async () => {
+  it("counts the caller's unread only", async () => {
     await seed(ada.user.id);
     await seed(ada.user.id);
     await seed(ada.user.id, { readAt: new Date() });

@@ -18,7 +18,7 @@ const email = (name: string) => `${name}-${RUN}@example.test`;
 
 // A fresh app per test: the in-memory rate limits start empty each time.
 const build = () =>
-  createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
+  createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
 
 const signUpBody = (name: string, overrides: object = {}) => ({
   email: email(name),
@@ -31,8 +31,7 @@ const signUpBody = (name: string, overrides: object = {}) => ({
   ...overrides,
 });
 
-const post = (app: ReturnType<typeof build>, path: string, body?: object) =>
-  request(app).post(path).set('Origin', APP_URL).send(body);
+const post = (app: ReturnType<typeof build>, path: string, body?: object) => request(app).post(path).set('Origin', APP_URL).send(body);
 
 /** The session token from a Set-Cookie header. */
 function tokenFrom(res: request.Response): string {
@@ -227,7 +226,10 @@ describe('the session', () => {
     expect(await db.session.count({ where: { userId: (await user('expiry-abs')).id } })).toBe(0); // cleaned up
 
     const idle = tokenFrom(await post(app, '/api/auth/signup', signUpBody('expiry-idle')));
-    await db.session.updateMany({ where: { userId: (await user('expiry-idle')).id }, data: { lastSeenAt: new Date(Date.now() - 8 * DAY) } });
+    await db.session.updateMany({
+      where: { userId: (await user('expiry-idle')).id },
+      data: { lastSeenAt: new Date(Date.now() - 8 * DAY) },
+    });
     expect((await withSession(app, idle)).status).toBe(401);
   });
 

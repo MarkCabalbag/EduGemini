@@ -12,13 +12,9 @@ const APP_URL = 'http://localhost:5173';
 const silent = createLogger('silent', 'test');
 
 const testRouter = Router();
-testRouter.post(
-  '/echo',
-  validate({ body: z.object({ title: z.string().min(1), score: z.number() }) }),
-  (_req, res) => {
-    res.json({ ok: true, input: validated(res) });
-  },
-);
+testRouter.post('/echo', validate({ body: z.object({ title: z.string().min(1), score: z.number() }) }), (_req, res) => {
+  res.json({ ok: true, input: validated(res) });
+});
 testRouter.get('/items', validate({ query: z.object({ limit: z.coerce.number().default(25) }) }), (_req, res) => {
   res.json({ items: [], nextCursor: null });
 });
@@ -33,7 +29,7 @@ testRouter.get('/boom', () => {
 });
 
 function build(checkDb: () => Promise<void> = async () => {}) {
-  return createApp({ env: { APP_URL }, logger: silent, db: unusedDb, checkDb, routers: [testRouter] });
+  return createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: silent, db: unusedDb, checkDb, routers: [testRouter] });
 }
 
 describe('GET /healthz', () => {
@@ -83,7 +79,10 @@ describe('request parsing', () => {
   });
 
   it('rejects a JSON body over 100 KB with 413', async () => {
-    const res = await request(build()).post('/api/echo').set('Origin', APP_URL).send({ title: 'x'.repeat(150_000), score: 1 });
+    const res = await request(build())
+      .post('/api/echo')
+      .set('Origin', APP_URL)
+      .send({ title: 'x'.repeat(150_000), score: 1 });
     expect(res.status).toBe(413);
     expect(res.body.error.code).toBe('PAYLOAD_TOO_LARGE');
   });
@@ -94,11 +93,7 @@ describe('request parsing', () => {
   });
 
   it('rejects malformed JSON as VALIDATION', async () => {
-    const res = await request(build())
-      .post('/api/echo')
-      .set('Origin', APP_URL)
-      .set('Content-Type', 'application/json')
-      .send('{"title":');
+    const res = await request(build()).post('/api/echo').set('Origin', APP_URL).set('Content-Type', 'application/json').send('{"title":');
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
   });

@@ -60,9 +60,32 @@ export const AssignmentSummarySchema = z.object({
 });
 export type AssignmentSummary = z.infer<typeof AssignmentSummarySchema>;
 
+/** A reference file (API Spec A5). The schema stores no name for it, so the label is "Reference file N" from its place. */
+export const ReferenceFileViewSchema = z.object({
+  id: z.uuid(),
+  ordinal: z.number().int().min(1).max(3),
+  label: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number().int().min(0),
+  visibleToStudents: z.boolean(),
+});
+export type ReferenceFileView = z.infer<typeof ReferenceFileViewSchema>;
+
+/** Show or hide a reference file from students (API Spec REF-02). It is not a criteria change. */
+export const UpdateReferenceFileSchema = z.strictObject({ visibleToStudents: z.boolean() });
+export type UpdateReferenceFile = z.infer<typeof UpdateReferenceFileSchema>;
+
+export const ReferenceFileParamsSchema = z.object({ fileId: z.uuid() });
+
+/** A link to a reference file, good for five minutes (API Spec REF-04). */
+export const ReferenceFileLinkSchema = z.object({ url: z.string(), expiresAt: z.iso.datetime() });
+export type ReferenceFileLink = z.infer<typeof ReferenceFileLinkSchema>;
+
 export const AssignmentDetailSchema = AssignmentSummarySchema.extend({
   instructions: z.string().nullable(),
   criteriaText: z.string(),
+  /** The instructor sees every file; a student only the ones marked visible. */
+  referenceFiles: z.array(ReferenceFileViewSchema),
 });
 export type AssignmentDetail = z.infer<typeof AssignmentDetailSchema>;
 

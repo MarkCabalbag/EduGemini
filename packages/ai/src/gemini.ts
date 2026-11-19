@@ -12,13 +12,15 @@ export type GradeFile = {
 export type GradeInput = {
   assignment: { title: string; instructions: string | null; criteriaText: string; scoringFormat: ScoringFormat; maxScore: number };
   studentFiles: GradeFile[];
+  /** The instructor's reference files (ASG-07), sent before the student's files and labeled as reference material. */
+  referenceFiles?: GradeFile[];
 };
 
 /**
- * Why a Gemini call failed, in the classes the pipeline acts on (TRD §10.7). Transient errors are retried; the other three
- * are about the instructor's key and are not.
+ * Why a Gemini call failed, in the classes the pipeline acts on (TRD §10.7). Transient errors are retried. The three about the
+ * instructor's key, and `FILE_QUALITY` (a file the provider cannot read), are not: the work goes to manual review at once.
  */
-export type GeminiErrorKind = 'TRANSIENT' | 'KEY_INVALID' | 'KEY_API_DISABLED' | 'QUOTA';
+export type GeminiErrorKind = 'TRANSIENT' | 'KEY_INVALID' | 'KEY_API_DISABLED' | 'QUOTA' | 'FILE_QUALITY';
 
 export class GeminiError extends Error {
   constructor(
@@ -30,7 +32,7 @@ export class GeminiError extends Error {
   }
 }
 
-/** The one place the app talks to Gemini. `GEMINI_MODE` picks the fake or the live one (TRD §11, API Spec C.1). */
+/** The one place the app talks to Gemini. The app uses the live adapter; tests use the fake (TRD §11, §16.2a, API Spec C.1). */
 export type GeminiAdapter = {
   /** The model that answers, stored with every result (PRD §9.6). */
   readonly model: string;

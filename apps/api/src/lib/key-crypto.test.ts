@@ -56,15 +56,22 @@ describe('key encryption (Backend Schema §12.5)', () => {
     const stored = encryptKey(API_KEY, secret);
     const wrongSize = randomBytes(16);
     const failures = [
-      ...BROKEN.map(([, change]) => () => decryptKey(change(stored), secret)),
+      ...BROKEN.map(
+        ([, change]) =>
+          () =>
+            decryptKey(change(stored), secret),
+      ),
       () => decryptKey(stored, randomBytes(32)),
       () => decryptKey(stored, wrongSize),
       () => encryptKey(API_KEY, wrongSize),
     ];
-    const leaks = [API_KEY, ...[secret, wrongSize, stored.ciphertext, stored.iv, stored.authTag].flatMap((b) => [
-      Buffer.from(b).toString('hex'),
-      Buffer.from(b).toString('base64'),
-    ])];
+    const leaks = [
+      API_KEY,
+      ...[secret, wrongSize, stored.ciphertext, stored.iv, stored.authTag].flatMap((b) => [
+        Buffer.from(b).toString('hex'),
+        Buffer.from(b).toString('base64'),
+      ]),
+    ];
     for (const run of failures) {
       let error: unknown;
       try {

@@ -1,9 +1,22 @@
-import type { AssignmentSummary } from '@edugemini/shared';
+import type { AssignmentSummary, GradeView } from '@edugemini/shared';
 
 /** How an assignment is scored, in words: "50 points", "Percentage", "Letter and number". */
 export function scoringText({ scoringFormat, maxScore }: Pick<AssignmentSummary, 'scoringFormat' | 'maxScore'>): string {
   if (scoringFormat === 'POINTS') return `${maxScore} points`;
   return scoringFormat === 'PERCENTAGE' ? 'Percentage' : 'Letter and number';
+}
+
+/** A grade in the assignment's format (PRD §9.4): "42 / 50", "84%", "B+ (87)". Without a letter yet (AI-05), a letter assignment reads "87 / 100". */
+export function gradeScoreText({ scoringFormat, score, maxScore, letter, percentage }: GradeView): string {
+  if (scoringFormat === 'PERCENTAGE') return `${percentage}%`;
+  if (scoringFormat === 'LETTER_NUMERIC' && letter) return `${letter} (${score})`;
+  return `${score} / ${maxScore}`;
+}
+
+/** Resubmissions a student has left, in words; null is Unlimited (PRD FR-SUB-09). */
+export function attemptsLeftText(attemptsLeft: number | null): string {
+  if (attemptsLeft === null) return 'Unlimited resubmissions';
+  return `${attemptsLeft} ${attemptsLeft === 1 ? 'resubmission' : 'resubmissions'} left`;
 }
 
 /** The resubmission limit in words; null is Unlimited (PRD FR-ASG-10). */

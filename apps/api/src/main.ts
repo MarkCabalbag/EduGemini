@@ -2,20 +2,19 @@ import { PrismaClient } from '@prisma/client';
 import { createApp } from './app';
 import { warmUpPasswordHashing } from './auth/password';
 import { createGemini } from './lib/create-gemini';
-import { createStorage } from './lib/create-storage';
 import { getEnv } from './lib/env';
 import { createGradingSender } from './jobs/grade-submission.job';
 import { startJobs } from './jobs';
 import { createLogger } from './lib/logger';
 import { createPacer } from './lib/pacing';
-import { devFilesRouter } from './routes/dev-files';
+import { createSupabaseStorage } from './lib/supabase-storage';
 import { keyRouter } from './routes/key';
 import { uploadsRouter } from './routes/uploads';
 
 const env = getEnv();
 const logger = createLogger(env.LOG_LEVEL, env.NODE_ENV);
 const prisma = new PrismaClient({ datasourceUrl: env.DATABASE_URL });
-const storage = createStorage(env);
+const storage = createSupabaseStorage({ url: env.SUPABASE_URL, serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY });
 
 // The worker runs in this process (TRD §3). It starts first, without being awaited, because finalize sends grading jobs through
 // it: a finalize that arrives while it is still starting waits for it. Without the pg-boss schema (`pnpm db:boss:init`) it fails
@@ -44,8 +43,6 @@ const app = createApp({
   routers: [
     keyRouter({ db: prisma, env }),
     uploadsRouter({ db: prisma, storage, bucket: env.STORAGE_BUCKET, enqueueGrading: createGradingSender(bossReady, logger) }),
-    // Opens the links the local storage signs. Not registered with Supabase storage (env.ts refuses local in production).
-    ...(env.STORAGE_DRIVER === 'local' ? [devFilesRouter({ dir: env.STORAGE_LOCAL_DIR, secret: env.SESSION_SECRET })] : []),
   ],
 });
 

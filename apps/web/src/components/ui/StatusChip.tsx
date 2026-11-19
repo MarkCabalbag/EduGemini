@@ -1,6 +1,7 @@
-import { CircleCheck, Info, Loader } from 'lucide-react';
+import { CircleCheck, Info, Loader, Sparkles } from 'lucide-react';
 
 const TONES = {
+  ai: { icon: Sparkles, colors: 'bg-ai-bg text-ai-fg' },
   approved: { icon: CircleCheck, colors: 'bg-approved-bg text-approved-fg' },
   pending: { icon: Loader, colors: 'bg-pending-bg text-pending-fg' },
   info: { icon: Info, colors: 'bg-info-bg text-info-fg' },

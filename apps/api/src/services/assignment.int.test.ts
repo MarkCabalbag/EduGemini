@@ -26,7 +26,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const db = createTestDb();
 
 // A fresh app per test: the in-memory rate limits start empty each time.
-const build = () => createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
+const build = () =>
+  createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
 type TestApp = ReturnType<typeof build>;
 
 /** A user with a live session, made straight in the database so no password has to be hashed. */
@@ -398,12 +399,19 @@ describe('edit a published assignment (API Spec ASG-04, EG-ASG-05)', () => {
   const published = { status: 'PUBLISHED', publishedAt: new Date() } as const;
 
   /** A student approved in the class, with a submission handed in `minutesAgo` minutes ago. The submission is made straight in the database. */
-  async function submitted(classId: string, assignmentId: string, minutesAgo: number, overrides: Partial<Prisma.SubmissionUncheckedUpdateInput> = {}) {
+  async function submitted(
+    classId: string,
+    assignmentId: string,
+    minutesAgo: number,
+    overrides: Partial<Prisma.SubmissionUncheckedUpdateInput> = {},
+  ) {
     const who = await signedInUser(`submitted-${++seeded}`, 'STUDENT');
     await db.enrollment.create({ data: { classId, studentId: who.user.id, status: 'ACTIVE' } });
     const at = new Date(Date.now() - minutesAgo * 60_000);
     const submission = await db.submission.create({ data: { assignmentId, studentId: who.user.id } });
-    const version = await db.submissionVersion.create({ data: { submissionId: submission.id, versionNo: 1, status: 'STORED', storedAt: at } });
+    const version = await db.submissionVersion.create({
+      data: { submissionId: submission.id, versionNo: 1, status: 'STORED', storedAt: at },
+    });
     await db.submission.update({
       where: { id: submission.id },
       data: { currentVersionId: version.id, state: 'QUEUED', firstSubmittedAt: at, latestSubmittedAt: at, ...overrides },
@@ -488,7 +496,9 @@ describe('edit a published assignment (API Spec ASG-04, EG-ASG-05)', () => {
 
     const res = await patch(owner.cookie, row.id, { maxResubmissions: 1 });
     expect(res.status).toBe(200);
-    expect((await db.submission.findFirstOrThrow({ where: { assignmentId: row.id, studentId: handedIn.user.id } })).resubmissionsUsed).toBe(3);
+    expect((await db.submission.findFirstOrThrow({ where: { assignmentId: row.id, studentId: handedIn.user.id } })).resubmissionsUsed).toBe(
+      3,
+    );
     expect((await mine(handedIn, row.id)).attemptsLeft).toBe(0);
   });
 

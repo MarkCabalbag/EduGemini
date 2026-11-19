@@ -8,10 +8,10 @@ import { Checkbox } from '../components/ui/Checkbox';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { PageLoading } from '../components/ui/Skeleton';
-import { StatusChip } from '../components/ui/StatusChip';
 import { useClasses } from '../hooks/use-classes';
 import { classMeta } from '../lib/class-meta';
 import { errorTextOf } from '../lib/error-text';
+import { PAPER_HEADING } from '../lib/paper';
 
 function CreateClassLink() {
   return (
@@ -22,16 +22,18 @@ function CreateClassLink() {
   );
 }
 
-/** The whole card is one link to the class (UX Brief §9.3). */
+/**
+ * The whole card is one link to the class (UX Brief §9.3), drawn as a card on the paper (index.css, .paper-card). An
+ * archived class carries "Archived" in the teacher's hand, still as words.
+ */
 function ClassCard({ cls }: { cls: ClassSummary }) {
   const meta = classMeta(cls);
   return (
-    <Link
-      to={`/classes/${cls.id}`}
-      className="block rounded-lg border border-border bg-surface p-4 shadow-raised hover:border-input-border"
-    >
-      <h2 className="text-title font-semibold">{cls.name}</h2>
-      {cls.status === 'ARCHIVED' && <StatusChip tone="info">Archived</StatusChip>}
+    <Link to={`/classes/${cls.id}`} className="paper-card min-h-[108px]">
+      <h2 className={`truncate text-title leading-9 font-bold ${cls.status === 'ARCHIVED' ? 'pr-24' : ''}`}>{cls.name}</h2>
+      {cls.status === 'ARCHIVED' && (
+        <span className="absolute top-3 right-4 -rotate-[4deg] font-hand text-2xl leading-9 text-[var(--margin-red)]">Archived</span>
+      )}
       {meta && <p className="text-muted">{meta}</p>}
     </Link>
   );
@@ -46,10 +48,10 @@ export function ClassList() {
   const firstTime = isEmpty && !showArchived; // the empty state has a Create class button of its own
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-[18px] pl-6 leading-9 sm:pl-12">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-[18px]">
         <title>My classes · EduGemini</title>
-        <h1 className="text-display font-semibold">My classes</h1>
+        <h1 className={PAPER_HEADING}>My classes</h1>
         <div className="flex flex-wrap items-center gap-4">
           {/* Always shown: an instructor who archived their only class has no active ones, and still needs a way back to it. */}
           <Checkbox label="Show archived" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
@@ -68,7 +70,7 @@ export function ClassList() {
       )}
       {isEmpty && showArchived && <p className="text-muted">No archived classes.</p>}
       {items.length > 0 && (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid gap-x-6 gap-y-[18px] sm:grid-cols-2 lg:grid-cols-3">
           {items.map((cls) => (
             <li key={cls.id}>
               <ClassCard cls={cls} />

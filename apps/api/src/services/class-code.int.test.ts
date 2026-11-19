@@ -30,7 +30,8 @@ const EMAIL_END = `-${randomUUID().slice(0, 8)}@example.test`;
 const db = createTestDb();
 
 // A fresh app per test: the in-memory rate limits start empty each time.
-const build = () => createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
+const build = () =>
+  createApp({ env: { APP_URL, STORAGE_BUCKET: 'test-bucket' }, logger: createLogger('silent', 'test'), db, checkDb: async () => {} });
 
 /** A user with a live session, made straight in the database so no password has to be hashed. */
 async function signedInUser(name: string, role: Role) {

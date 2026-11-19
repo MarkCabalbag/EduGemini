@@ -10,7 +10,13 @@ import { limit, limiters, RULES } from './rate-limit';
 const APP_URL = 'http://localhost:5173';
 
 function appWith(...routers: Router[]) {
-  return createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db: unusedDb, checkDb: async () => {}, routers });
+  return createApp({
+    env: { APP_URL, STORAGE_BUCKET: 'test-bucket' },
+    logger: createLogger('silent', 'test'),
+    db: unusedDb,
+    checkDb: async () => {},
+    routers,
+  });
 }
 
 const post = (app: ReturnType<typeof appWith>, path: string, body: object = {}) =>
@@ -31,7 +37,11 @@ describe('rate limits (API Spec A12)', () => {
 
   it('answers 429 RATE_LIMITED with Retry-After and RateLimit headers once the limit is passed', async () => {
     const router = Router();
-    router.post('/ping', limit({ windowMs: 60_000, limit: 2 }, () => 'k'), (_req, res) => void res.json({ ok: true }));
+    router.post(
+      '/ping',
+      limit({ windowMs: 60_000, limit: 2 }, () => 'k'),
+      (_req, res) => void res.json({ ok: true }),
+    );
     const app = appWith(router);
 
     expect((await post(app, '/api/ping')).status).toBe(200);
@@ -62,7 +72,8 @@ describe('rate limits (API Spec A12)', () => {
     const router = Router();
     router.post('/signin', limiters.signInByEmailAndIp(), (_req, res) => void res.status(401).json({}));
     const app = appWith(router);
-    const from = (ip: string) => request(app).post('/api/signin').set('Origin', APP_URL).set('X-Forwarded-For', ip).send({ email: 'ada@example.com' });
+    const from = (ip: string) =>
+      request(app).post('/api/signin').set('Origin', APP_URL).set('X-Forwarded-For', ip).send({ email: 'ada@example.com' });
 
     for (let i = 0; i < RULES.signInByEmailAndIp.limit; i++) await from('203.0.113.5');
     expect((await from('203.0.113.5')).status).toBe(429); // the attacker's network is blocked

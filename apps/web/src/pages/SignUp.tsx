@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useLocation } from 'react-router';
 import { MIN_PASSWORD_LENGTH, SignUpSchema, TERMS_VERSION } from '@edugemini/shared';
+import { MarkedScriptPage } from '../components/MarkedScriptPage';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { Checkbox } from '../components/ui/Checkbox';
@@ -10,6 +11,7 @@ import { RadioGroup } from '../components/ui/RadioGroup';
 import { TextField } from '../components/ui/TextField';
 import { useSignUp } from '../hooks/use-auth';
 import { showApiError } from '../lib/form-errors';
+import { PAPER_HEADING } from '../lib/paper';
 
 const ROLES = [
   { value: 'STUDENT', label: 'I am a Student' },
@@ -39,17 +41,29 @@ export function SignUp() {
   });
 
   return (
-    <div className="max-w-md space-y-6">
+    <MarkedScriptPage>
       <title>Create your account · EduGemini</title>
-      <h1 className="text-display font-semibold">Create your account</h1>
-      {formError && <Alert>{formError}</Alert>}
-      <form onSubmit={onSubmit} noValidate className="space-y-4">
+      <h1 className={PAPER_HEADING}>Create your account</h1>
+      {formError && (
+        <div className="mb-[18px]">
+          <Alert>{formError}</Alert>
+        </div>
+      )}
+      <form onSubmit={onSubmit} noValidate className="space-y-[18px]">
         <TextField label="First name" autoComplete="given-name" {...register('firstName')} error={errors.firstName?.message} />
         <TextField label="Last name" autoComplete="family-name" {...register('lastName')} error={errors.lastName?.message} />
-        <TextField label="Email" type="email" autoComplete="email" {...register('email')} error={errors.email?.message} />
+        <TextField
+          label="Email"
+          type="email"
+          autoComplete="username"
+          spellCheck={false}
+          {...register('email')}
+          error={errors.email?.message}
+        />
         <TextField
           label="Password"
           type="password"
+          revealable
           autoComplete="new-password"
           helper={`At least ${MIN_PASSWORD_LENGTH} characters`}
           {...register('password')}
@@ -60,12 +74,12 @@ export function SignUp() {
           label={
             <>
               I accept the{' '}
-              <Link to="/terms" target="_blank" className="text-primary underline">
+              <Link to="/terms" target="_blank" className="text-primary underline underline-offset-4">
                 Terms
                 <span className="sr-only"> (opens in a new tab)</span>
               </Link>{' '}
               and{' '}
-              <Link to="/privacy" target="_blank" className="text-primary underline">
+              <Link to="/privacy" target="_blank" className="text-primary underline underline-offset-4">
                 Privacy Notice
                 <span className="sr-only"> (opens in a new tab)</span>
               </Link>
@@ -80,12 +94,12 @@ export function SignUp() {
           Create account
         </Button>
       </form>
-      <p>
+      <p className="mt-[18px]">
         Already have an account?{' '}
-        <Link to="/signin" state={location.state} className="font-semibold text-primary underline">
+        <Link to="/signin" state={location.state} className="font-semibold text-primary underline underline-offset-4">
           Sign in
         </Link>
       </p>
-    </div>
+    </MarkedScriptPage>
   );
 }

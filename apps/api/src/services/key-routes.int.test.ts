@@ -18,7 +18,13 @@ const db = createTestDb();
 
 // A fresh app per request: the in-memory rate limits start empty each time.
 const build = () =>
-  createApp({ env: { APP_URL }, logger: createLogger('silent', 'test'), db, checkDb: async () => {}, routers: [keyRouter({ db, env: ENV })] });
+  createApp({
+    env: { APP_URL, STORAGE_BUCKET: 'test-bucket' },
+    logger: createLogger('silent', 'test'),
+    db,
+    checkDb: async () => {},
+    routers: [keyRouter({ db, env: ENV })],
+  });
 
 /** A user with a live session, made straight in the database so no password has to be hashed. */
 async function signedInUser(name: string, role: Role) {
@@ -37,8 +43,14 @@ async function signedInUser(name: string, role: Role) {
 type TestUser = Awaited<ReturnType<typeof signedInUser>>;
 
 const newApiKey = () => `AIza${randomBytes(18).toString('hex')}`;
-const read = (cookie?: string) => (cookie ? request(build()).get('/api/me/key').set('Cookie', cookie) : request(build()).get('/api/me/key'));
-const put = (cookie: string, body: unknown) => request(build()).put('/api/me/key').set('Origin', APP_URL).set('Cookie', cookie).send(body as object);
+const read = (cookie?: string) =>
+  cookie ? request(build()).get('/api/me/key').set('Cookie', cookie) : request(build()).get('/api/me/key');
+const put = (cookie: string, body: unknown) =>
+  request(build())
+    .put('/api/me/key')
+    .set('Origin', APP_URL)
+    .set('Cookie', cookie)
+    .send(body as object);
 const remove = (cookie: string) => request(build()).delete('/api/me/key').set('Origin', APP_URL).set('Cookie', cookie);
 const rowOf = (user: TestUser) => db.instructorKey.findUnique({ where: { instructorId: user.user.id } });
 
@@ -67,7 +79,13 @@ describe('GET /api/me/key (KEY-01)', () => {
     const res = await read(ada.cookie);
 
     expect(res.status).toBe(200);
-    expect(KeyStatusSchema.parse(res.body)).toEqual({ connected: false, status: null, last4: null, lastSuccessAt: null, disclosureAckAt: null });
+    expect(KeyStatusSchema.parse(res.body)).toEqual({
+      connected: false,
+      status: null,
+      last4: null,
+      lastSuccessAt: null,
+      disclosureAckAt: null,
+    });
   });
 
   it('gives the last four characters and the acknowledgement time, never the key', async () => {
@@ -138,7 +156,7 @@ describe('PUT /api/me/key (KEY-02)', () => {
     expect(await db.instructorKey.count({ where: { instructorId: ada.user.id } })).toBe(1);
   });
 
-  it('trims the key, so the last four characters are the key\'s own', async () => {
+  it("trims the key, so the last four characters are the key's own", async () => {
     const apiKey = newApiKey();
 
     const res = await put(ada.cookie, { apiKey: `  ${apiKey}\n`, disclosureAcknowledged: true });
@@ -175,14 +193,18 @@ describe('PUT /api/me/key (KEY-02)', () => {
   });
 
   it('is refused from another origin', async () => {
-    const res = await request(build()).put('/api/me/key').set('Origin', 'http://evil.example').set('Cookie', ada.cookie).send({ apiKey: newApiKey(), disclosureAcknowledged: true });
+    const res = await request(build())
+      .put('/api/me/key')
+      .set('Origin', 'http://evil.example')
+      .set('Cookie', ada.cookie)
+      .send({ apiKey: newApiKey(), disclosureAcknowledged: true });
 
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('CSRF_ORIGIN');
     expect(await rowOf(ada)).toBeNull();
   });
 
-  it('leaves another instructor\'s key alone', async () => {
+  it("leaves another instructor's key alone", async () => {
     const benKey = newApiKey();
     await put(ben.cookie, { apiKey: benKey, disclosureAcknowledged: true });
 
@@ -204,7 +226,7 @@ describe('DELETE /api/me/key (KEY-03)', () => {
     expect((await put(ada.cookie, { apiKey: newApiKey() })).status).toBe(400);
   });
 
-  it('answers 204 when there is no key, and leaves another instructor\'s key alone', async () => {
+  it("answers 204 when there is no key, and leaves another instructor's key alone", async () => {
     const benKey = newApiKey();
     await put(ben.cookie, { apiKey: benKey, disclosureAcknowledged: true });
 

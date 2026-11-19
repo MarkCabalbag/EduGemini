@@ -95,24 +95,24 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('the bell in the header', () => {
+describe('Notifications in the header', () => {
   it('shows the unread count, and links to the notification center', async () => {
     rows = [item(1), item(2), item(3, { readAt: new Date().toISOString() })];
     renderAt('/classes');
 
-    const bell = await screen.findByRole('link', { name: 'Notifications, 2 unread' });
+    const link = await screen.findByRole('link', { name: 'Notifications, 2 unread' });
 
-    expect(bell.getAttribute('href')).toBe('/notifications');
-    expect(within(bell).getByText('2')).toBeTruthy();
+    expect(link.getAttribute('href')).toBe('/notifications');
+    expect(within(link).getByText('2')).toBeTruthy();
   });
 
   it('shows no number when nothing is unread', async () => {
     rows = [item(1, { readAt: new Date().toISOString() })];
     renderAt('/classes');
 
-    const bell = await screen.findByRole('link', { name: 'Notifications' });
+    const link = await screen.findByRole('link', { name: 'Notifications' });
 
-    expect(bell.textContent).toBe('');
+    expect(link.textContent).toBe('Notifications'); // the word alone, no circled number
   });
 
   it('is not there for a signed-out visitor, and asks for nothing', async () => {
@@ -166,7 +166,7 @@ describe('the notification center (App Flow §10)', () => {
     renderAt('/notifications');
 
     expect(await screen.findByRole('heading', { name: 'Notifications' })).toBeTruthy();
-    const items = await screen.findAllByRole('listitem');
+    const items = await within(screen.getByRole('main')).findAllByRole('listitem'); // the header's nav is a list too
     expect(items).toHaveLength(2);
 
     const first = items[0]!;
@@ -174,17 +174,17 @@ describe('the notification center (App Flow §10)', () => {
     expect(within(first).getByText('Unread:')).toBeTruthy(); // said in words too, not only by the bold text and the dot
     expect(within(first).getByText('Biology 101')).toBeTruthy();
     expect(within(first).getByText('2 hours ago')).toBeTruthy();
-    expect(first.querySelector('.bg-primary')).not.toBeNull(); // the dot
+    expect(first.querySelector('.notif-row-dot.is-unread')).not.toBeNull(); // the red dot in the margin
 
     const second = items[1]!;
     expect(within(second).getByText('Join request approved or declined').className).not.toContain('font-semibold');
     expect(within(second).queryByText('Unread:')).toBeNull();
-    expect(second.querySelector('.bg-primary')).toBeNull();
+    expect(second.querySelector('.notif-row-dot.is-unread')).toBeNull();
     expect(within(second).getByText('5 hours ago')).toBeTruthy();
     expect(screen.getByText('1 unread')).toBeTruthy();
   });
 
-  it("says \"You're all caught up.\" when there is nothing", async () => {
+  it('says "You\'re all caught up." when there is nothing', async () => {
     renderAt('/notifications');
 
     expect(await screen.findByText("You're all caught up.")).toBeTruthy();
@@ -217,7 +217,7 @@ describe('the notification center (App Flow §10)', () => {
     expect(callsTo('POST', '/notifications/read-all')).toHaveLength(1);
     expect(screen.queryByText('Unread:')).toBeNull();
     expect(screen.queryByText(/unread$/)).toBeNull();
-    expect(await screen.findByRole('link', { name: 'Notifications' })).toBeTruthy(); // the bell lost its number too
+    expect(await screen.findByRole('link', { name: 'Notifications' })).toBeTruthy(); // the header link lost its number too
   });
 
   it('says why when marking all read fails, and keeps the list', async () => {
@@ -288,5 +288,90 @@ describe('the notification center (App Flow §10)', () => {
 
       expect(await screen.findByRole('heading', { name: "We couldn't find that page." })).toBeTruthy();
     });
+  });
+});
+
+describe('the notifications sheet under the header word', () => {
+  const openSheet = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.hover(await screen.findByRole('link', { name: /^Notifications/ }));
+    return screen.findByRole('region', { name: 'Latest notifications' });
+  };
+
+  it('opens on hover with the newest five, and the word still links to the page', async () => {
+    const user = userEvent.setup();
+    rows = [1, 2, 3, 4, 5, 6].map((n) => item(n, { title: `Note ${n}`, readAt: n > 2 ? new Date().toISOString() : null }));
+    renderAt('/classes');
+
+    const sheet = await openSheet(user);
+
+    expect(await within(sheet).findByText('Note 1')).toBeTruthy();
+    expect(within(sheet).getByText('Note 5')).toBeTruthy();
+    expect(within(sheet).queryByText('Note 6')).toBeNull();
+    expect(within(sheet).getByText('2 new')).toBeTruthy();
+    expect(within(sheet).getAllByText('Unread:')).toHaveLength(2);
+    expect(within(sheet).getByRole('link', { name: 'See all notifications' }).getAttribute('href')).toBe('/notifications');
+    expect(screen.getByRole('link', { name: 'Notifications, 2 unread' }).getAttribute('href')).toBe('/notifications');
+  });
+
+  it('marks one read when it is opened, and closes', async () => {
+    const user = userEvent.setup();
+    rows = [item(1, { title: 'New assignment published', link: '/terms' })];
+    renderAt('/classes');
+
+    const sheet = await openSheet(user);
+    await user.click(await within(sheet).findByRole('link', { name: /New assignment published/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Terms of Use' })).toBeTruthy();
+    await waitFor(() => expect(callsTo('POST', `/notifications/${rows[0]!.id}/read`)).toHaveLength(1));
+    expect(screen.queryByRole('region', { name: 'Latest notifications' })).toBeNull();
+  });
+
+  it('marks all read from the sheet', async () => {
+    const user = userEvent.setup();
+    rows = [item(1), item(2)];
+    renderAt('/classes');
+
+    const sheet = await openSheet(user);
+    await user.click(await within(sheet).findByRole('button', { name: 'Mark all read' }));
+
+    await waitFor(() => expect(callsTo('POST', '/notifications/read-all')).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Notifications' })).toBeTruthy());
+  });
+
+  it('opens by keyboard focus too, and Escape closes it with focus left on the word', async () => {
+    const user = userEvent.setup();
+    rows = [item(1, { title: 'Keyboard note' })];
+    renderAt('/classes');
+
+    const word = await screen.findByRole('link', { name: 'Notifications, 1 unread' });
+    word.focus();
+    const sheet = await screen.findByRole('region', { name: 'Latest notifications' });
+    expect(await within(sheet).findByText('Keyboard note')).toBeTruthy();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('region', { name: 'Latest notifications' })).toBeNull();
+    expect(document.activeElement).toBe(word);
+  });
+
+  it('closes on Escape after a pointer opened it, with no focus inside (WCAG 1.4.13)', async () => {
+    const user = userEvent.setup();
+    rows = [item(1)];
+    renderAt('/classes');
+
+    await openSheet(user);
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('region', { name: 'Latest notifications' })).toBeNull();
+  });
+
+  it('says "All caught up" when there is nothing', async () => {
+    const user = userEvent.setup();
+    rows = [];
+    renderAt('/classes');
+
+    const sheet = await openSheet(user);
+
+    expect(await within(sheet).findByText('All caught up')).toBeTruthy();
   });
 });

@@ -1,19 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdtemp, open, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { PrismaClient } from '@prisma/client';
-import { LIMITS, SNIFF_BYTES, sniffFileType, type FileView } from '@edugemini/shared';
+import { LIMITS, sniffFileType, type FileView } from '@edugemini/shared';
 import { AppError } from '../lib/app-error';
 import { lockSubmission } from '../lib/lock';
 import { countPdfPages } from '../lib/pdf-pages';
 import { isUniqueViolation } from '../lib/prisma-errors';
-import { measure, type StorageAdapter } from '../lib/storage';
+import { measure, queueDeletions, readHead, type StorageAdapter } from '../lib/storage';
 import type { Actor } from '../policy/policy';
-import { ownVersion, queueDeletions, toFileView } from './submission-service';
+import { ownVersion, toFileView } from './submission-service';
 
 /** One file in a student's open upload: send it, or take it out (API Spec SUB-03, SUB-04). */
 
@@ -24,16 +24,6 @@ function firstFreeOrdinal(files: { ordinal: number }[]): number {
     if (!used.has(ordinal)) return ordinal;
   }
   throw new AppError('FILE_LIMIT', { details: { limit: 'files' } });
-}
-
-async function readHead(path: string): Promise<Buffer> {
-  const file = await open(path);
-  try {
-    const { buffer, bytesRead } = await file.read(Buffer.alloc(SNIFF_BYTES), 0, SNIFF_BYTES, 0);
-    return buffer.subarray(0, bytesRead);
-  } finally {
-    await file.close();
-  }
 }
 
 /**
@@ -117,7 +107,8 @@ export async function removeFile(db: PrismaClient, bucket: string, actor: Actor,
 
   await db.$transaction(async (tx) => {
     await lockSubmission(tx, submissionId);
-    const version = await tx.submissionVersion.findUniqueOrThrow({ where: { id: versionId }, include: { files: { where: { clientFileId } } } });
+    const version = await tx.submissionVersion.findUnique({ where: { id: versionId }, include: { files: { where: { clientFileId } } } });
+    if (!version) throw new AppError('NOT_FOUND'); // cancelled (SUB-06) after this request began
     if (version.status !== 'UPLOADING') throw new AppError('UPLOAD_NOT_OPEN');
     const [file] = version.files;
     if (!file) return;

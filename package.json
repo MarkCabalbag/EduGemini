@@ -8,19 +8,36 @@
   },
   "scripts": {
     "postinstall": "pnpm --filter @edugemini/api db:generate",
+    "prepare": "husky",
+    "dev:api": "pnpm --filter @edugemini/api dev",
+    "dev:web": "pnpm --filter @edugemini/web dev",
+    "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "knip": "knip",
     "test": "vitest run --project unit",
     "test:int": "vitest run --project integration",
-    "build": "pnpm -r --if-present build",
-    "db:boss:init": "pnpm --filter @edugemini/api db:boss:init",
-    "dev:api": "pnpm --filter @edugemini/api dev",
-    "dev:web": "pnpm --filter @edugemini/web dev"
+    "test:e2e": "pnpm --filter @edugemini/e2e test",
+    "db:boss:init": "pnpm --filter @edugemini/api db:boss:init"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,css,yaml,yml}": "prettier --write"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.15.0",
+    "eslint-config-prettier": "^10.1.8",
     "globals": "^17.14.0",
+    "husky": "9.1.7",
+    "knip": "6.46.1",
+    "lint-staged": "17.6.1",
+    "prettier": "3.10.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.2",
     "vitest": "^5.1.0"

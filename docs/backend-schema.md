@@ -1223,7 +1223,7 @@ Prisma's diff cannot represent CHECK constraints, deferrable composite foreign k
 
 - Never accept a generated `DROP` for an object listed in Section 7 or Appendix B. Remove that statement from the migration before applying it.
 - Use `prisma migrate deploy` (which applies existing migration files and never generates new ones) for production.
-- At scaffold time, check the pinned Prisma version's behavior on the `edugemini-test` project, and record the result here.
+- Checked 2026-11-17 on the `edugemini-test` project with Prisma 6.19.3 (`prisma migrate dev --create-only` after adding a scratch column; nothing applied, the file and the column discarded). Prisma **does** propose to drop SQL-owned objects: the three deferrable foreign keys `grade_results_version_fk`, `submissions_active_grade_fk` and `submissions_current_version_fk`, and the index `announcements_stream_idx`. It did not mention the CHECK constraints. So every `migrate dev` needs `--create-only`, and the `DROP CONSTRAINT` and `DROP INDEX` lines must be removed from the file by hand before it is applied.
 
 ### 13.4 Backup
 
@@ -1308,7 +1308,7 @@ Neither decision changes the schema beyond the `status = REPLACED` value defined
 | 3 | Should archived classes appear in the review queue? | No. Archived classes are read-only (FR-CLS-06), so their items are excluded. The instructor can still open them from the class page | Decided 2026-11-15 |
 | 4 | Retention period for `audit_logs` | 12 months. The daily retention sweep deletes older rows (Section 10.9) | Decided 2026-11-15 |
 | 5 | Does Supabase's free tier include backups? | Unknown. Plan a scripted `pg_dump` (Section 13.4) either way | Verify at scaffold |
-| 6 | Does the pinned Prisma version drop SQL-owned objects on `migrate dev`? | Assume yes until tested. Test at scaffold on the test project (Section 13.3) | Verify at scaffold |
+| 6 | Does the pinned Prisma version drop SQL-owned objects on `migrate dev`? | Yes: three foreign keys and one index (Section 13.3). Remove those `DROP` lines by hand from every generated migration | Verified 2026-11-17 |
 | 7 | Can the project create a runtime role on the free tier? | Yes. The init migration created `app_runtime` on the free tier, and the API connects as it | Verified 2026-11-15 |
 | 8 | What happens to a deleted announcement? | It is deleted completely, with its attachment rows and files. No tombstone (Section 10.6) | Decided 2026-11-15 |
 

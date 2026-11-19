@@ -21,10 +21,10 @@ type Props = {
 /** The frame of one wizard step: the problem with the whole form, the step's fields, Back and Continue. */
 export function StepForm({ onSubmit, saving, formError, onBack, submitLabel = 'Continue', children }: Props) {
   return (
-    <form onSubmit={onSubmit} noValidate className="space-y-4">
+    <form onSubmit={onSubmit} noValidate className="space-y-[18px]">
       {formError && <Alert>{formError}</Alert>}
       {children}
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-[18px] pt-[18px]">
         {onBack && (
           <Button type="button" variant="secondary" onClick={onBack}>
             Back

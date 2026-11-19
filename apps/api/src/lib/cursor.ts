@@ -4,7 +4,7 @@ import { AppError } from './app-error';
 /** A position in a list ordered by a time, then by id. The cursor is the last row of the page, so it cannot go stale. */
 export type Position = { at: Date; id: string };
 
-export const encodeCursor = ({ at, id }: Position) => Buffer.from(`${at.getTime()}:${id}`).toString('base64url');
+const encodeCursor = ({ at, id }: Position) => Buffer.from(`${at.getTime()}:${id}`).toString('base64url');
 
 export function decodeCursor(cursor: string): Position {
   const [ms, id] = Buffer.from(cursor, 'base64url').toString().split(':');

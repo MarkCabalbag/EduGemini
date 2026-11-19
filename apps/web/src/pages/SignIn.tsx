@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useLocation } from 'react-router';
 import { SignInSchema } from '@edugemini/shared';
+import { MarkedScriptPage } from '../components/MarkedScriptPage';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { TextField } from '../components/ui/TextField';
@@ -25,15 +26,27 @@ export function SignIn() {
   });
 
   return (
-    <div className="max-w-md space-y-6">
+    <MarkedScriptPage>
       <title>Sign in · EduGemini</title>
-      <h1 className="text-display font-semibold">Sign in</h1>
-      {formError && <Alert>{formError}</Alert>}
-      <form onSubmit={onSubmit} noValidate className="space-y-4">
-        <TextField label="Email" type="email" autoComplete="email" {...register('email')} error={errors.email?.message} />
+      <h1 className="text-[2.5rem] leading-[72px] font-bold tracking-tight">Sign in</h1>
+      {formError && (
+        <div className="mb-[18px]">
+          <Alert>{formError}</Alert>
+        </div>
+      )}
+      <form onSubmit={onSubmit} noValidate className="space-y-[18px]">
+        <TextField
+          label="Email"
+          type="email"
+          autoComplete="username"
+          spellCheck={false}
+          {...register('email')}
+          error={errors.email?.message}
+        />
         <TextField
           label="Password"
           type="password"
+          revealable
           autoComplete="current-password"
           {...register('password')}
           error={errors.password?.message}
@@ -42,12 +55,12 @@ export function SignIn() {
           Sign in
         </Button>
       </form>
-      <p>
+      <p className="mt-[18px]">
         New here?{' '}
-        <Link to="/signup" state={location.state} className="font-semibold text-primary underline">
+        <Link to="/signup" state={location.state} className="font-semibold text-primary underline underline-offset-4">
           Create an account
         </Link>
       </p>
-    </div>
+    </MarkedScriptPage>
   );
 }

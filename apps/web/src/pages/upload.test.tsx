@@ -49,6 +49,7 @@ const assignment: AssignmentDetail = {
   maxResubmissions: 3,
   acceptLate: true,
   criteriaVersion: 1,
+  referenceFiles: [],
 };
 
 const PDF_BYTES = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
@@ -65,6 +66,7 @@ let mine: StudentSubmission;
 let mineAnswer: () => Response;
 let finalizeAnswer: (call: Call) => Response | Promise<Response>;
 let removeAnswer: (call: Call) => Response | Promise<Response>;
+let cancelAnswer: (call: Call) => Response | Promise<Response>;
 
 const callsTo = (method: string, pathStart: string) => calls.filter((c) => c.method === method && c.path.startsWith(pathStart));
 const input = () => screen.getByLabelText('Add photos or PDF');
@@ -84,7 +86,13 @@ const version = { id: VERSION_ID, versionNo: 1, status: 'UPLOADING', createdAt: 
 const draftOf = (names: string[]) => ({
   ...version,
   status: 'UPLOADING' as const,
-  files: names.map((name, i) => ({ ...fileView(i + 1), clientFileId: `earlier-file-${i + 1}`, displayName: name, sizeBytes: 2048, status: 'STORED' as const })),
+  files: names.map((name, i) => ({
+    ...fileView(i + 1),
+    clientFileId: `earlier-file-${i + 1}`,
+    displayName: name,
+    sizeBytes: 2048,
+    status: 'STORED' as const,
+  })),
 });
 
 const submission = (overrides: Partial<StudentSubmission> = {}): StudentSubmission => ({
@@ -96,6 +104,8 @@ const submission = (overrides: Partial<StudentSubmission> = {}): StudentSubmissi
   firstSubmittedAt: null,
   latestSubmittedAt: null,
   files: [],
+  grade: null,
+  instructorComment: null,
   draftVersion: null,
   ...overrides,
 });
@@ -117,6 +127,7 @@ beforeEach(() => {
   mineAnswer = () => Response.json(mine);
   finalizeAnswer = () => Response.json(submitted(['a.pdf']));
   removeAnswer = () => new Response(null, { status: 204 });
+  cancelAnswer = () => new Response(null, { status: 204 });
 
   vi.stubGlobal('XMLHttpRequest', FakeXhr); // files go by XMLHttpRequest, which hands each request to the fetch below
   vi.stubGlobal(
@@ -135,6 +146,7 @@ beforeEach(() => {
       if (method === 'POST' && path === `/assignments/${ASSIGNMENT_ID}/versions`) return openUpload();
       if (method === 'PUT' && path.startsWith(`/versions/${VERSION_ID}/files/`)) return sendFile(call);
       if (method === 'DELETE' && path.startsWith(`/versions/${VERSION_ID}/files/`)) return removeAnswer(call);
+      if (method === 'DELETE' && path === `/versions/${VERSION_ID}`) return cancelAnswer(call);
       return failure(404, 'NOT_FOUND');
     }),
   );
@@ -211,7 +223,9 @@ describe('the student upload control', () => {
 
   it('refuses a file that is not a PDF, JPG or PNG when it is chosen, whatever it is called', async () => {
     await openPage();
-    const docx = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2])], 'essay.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const docx = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2])], 'essay.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
     const fakePdf = new File(['just some text'], 'essay.pdf', { type: 'application/pdf' });
     fireEvent.change(input(), { target: { files: [docx, fakePdf] } });
 
@@ -248,7 +262,7 @@ describe('the student upload control', () => {
     expect(screen.getByRole('button', { name: 'Remove essay.pdf' })).toBeTruthy();
   });
 
-  it('shows the server\'s own message for a file it cannot read', async () => {
+  it("shows the server's own message for a file it cannot read", async () => {
     sendFile = () => failure(422, 'FILE_ERROR', undefined, { failureCode: 'PASSWORD' });
     await openPage();
     await userEvent.upload(input(), pdf());
@@ -547,12 +561,14 @@ describe('when late submissions are closed', () => {
     expect(screen.queryByRole('heading', { name: 'Your files' })).toBeNull();
   });
 
-  it('still shows the receipt to a student who submitted before it closed', async () => {
+  it('still shows the receipt to a student who submitted before it closed, with the reason there is no Resubmit', async () => {
     mine = { ...submitted(['essay.pdf']), closed: true };
     renderAt(`/assignments/${ASSIGNMENT_ID}`);
 
     expect(await screen.findByText('essay.pdf')).toBeTruthy();
+    expect(screen.getByText('Late submissions are closed for this assignment.')).toBeTruthy();
     expect(screen.queryByText('Closed')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Resubmit/ })).toBeNull();
   });
 
   it('shows nothing to upload in an archived class, closed or not', async () => {
@@ -563,5 +579,186 @@ describe('when late submissions are closed', () => {
     await screen.findByText('Archived');
     expect(screen.queryByText('Closed')).toBeNull();
     expect(screen.queryByLabelText('Add photos or PDF')).toBeNull();
+  });
+});
+
+describe('resubmitting', () => {
+  const open = () => renderAt(`/assignments/${ASSIGNMENT_ID}`);
+  const resubmitButton = (name: string | RegExp = /^Resubmit/) => screen.findByRole('button', { name });
+  /** A student who has submitted once and has `left` resubmissions (null is Unlimited). */
+  const submittedWith = (left: number | null, overrides: Partial<StudentSubmission> = {}): StudentSubmission => ({
+    ...submitted(['essay.pdf']),
+    attemptsLeft: left,
+    unlimited: left === null,
+    ...overrides,
+  });
+
+  it('says how many resubmissions are left at the top, before the first submission too', async () => {
+    mine = submission({ attemptsLeft: 3 });
+    open();
+    expect(await screen.findByText('3 resubmissions left')).toBeTruthy();
+  });
+
+  it.each([
+    [1, '1 resubmission left'],
+    [0, '0 resubmissions left'],
+    [null, 'Unlimited resubmissions'],
+  ])('says %s left as "%s"', async (left, text) => {
+    mine = submittedWith(left);
+    open();
+    expect(await screen.findByText(text)).toBeTruthy();
+  });
+
+  it('shows no count in an archived class', async () => {
+    archived = true;
+    mine = submittedWith(2);
+    open();
+    await screen.findByText('Archived');
+    await screen.findByText('essay.pdf');
+    expect(screen.queryByText('2 resubmissions left')).toBeNull();
+  });
+
+  it('offers Resubmit with the attempts left under the receipt, and plain Resubmit when they are unlimited', async () => {
+    mine = submittedWith(2);
+    open();
+    expect(await resubmitButton('Resubmit (2 left)')).toBeTruthy();
+    expect(screen.getByText('essay.pdf')).toBeTruthy();
+    cleanup();
+
+    mine = submittedWith(null);
+    open();
+    expect(await resubmitButton('Resubmit')).toBeTruthy();
+  });
+
+  it('offers Resubmit while the first submission is still being graded', async () => {
+    mine = submittedWith(3, { state: 'GRADING' });
+    open();
+    expect(await resubmitButton()).toBeTruthy();
+  });
+
+  it('offers Resubmit under an AI-generated result', async () => {
+    mine = submittedWith(3, { state: 'AI_GENERATED' });
+    open();
+    expect(await resubmitButton()).toBeTruthy();
+  });
+
+  it('opens the upload control for the new files without opening an upload on the server, and keeps the receipt', async () => {
+    mine = submittedWith(2);
+    open();
+    await userEvent.click(await resubmitButton());
+
+    expect(await screen.findByRole('heading', { name: 'Your new files' })).toBeTruthy();
+    expect(screen.getByText('essay.pdf')).toBeTruthy(); // the earlier submission stays until the new one is submitted
+    expect(screen.queryByRole('button', { name: /^Resubmit/ })).toBeNull();
+    expect(callsTo('POST', `/assignments/${ASSIGNMENT_ID}/versions`)).toHaveLength(0);
+  });
+
+  it('cancels before any file is sent without calling the server', async () => {
+    mine = submittedWith(2);
+    open();
+    await userEvent.click(await resubmitButton());
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+    expect(await resubmitButton('Resubmit (2 left)')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Your new files' })).toBeNull();
+    expect(callsTo('DELETE', '/versions/')).toHaveLength(0);
+  });
+
+  it('cancels after a file was sent by deleting the open upload, and the receipt stays', async () => {
+    mine = submittedWith(2);
+    open();
+    await userEvent.click(await resubmitButton());
+    await userEvent.upload(input(), pdf('second.pdf'));
+    await screen.findByText('Uploaded');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(await resubmitButton('Resubmit (2 left)')).toBeTruthy();
+    expect(calls.filter((c) => c.method === 'DELETE' && c.path === `/versions/${VERSION_ID}`)).toHaveLength(1);
+    expect(screen.getByText('essay.pdf')).toBeTruthy();
+    expect(screen.queryByText('second.pdf')).toBeNull();
+  });
+
+  it('does not find the cancelled upload again in the answer it already had', async () => {
+    mine = submittedWith(2, { draftVersion: draftOf(['second.pdf']) });
+    open();
+    expect(await screen.findByRole('heading', { name: 'Your new files' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(await resubmitButton('Resubmit (2 left)')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Your new files' })).toBeNull();
+  });
+
+  it('keeps the upload and says why when the cancel fails', async () => {
+    cancelAnswer = () => failure(409, 'UPLOAD_NOT_OPEN');
+    mine = submittedWith(2, { draftVersion: draftOf(['second.pdf']) });
+    open();
+    await screen.findByRole('heading', { name: 'Your new files' });
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Your new files' })).toBeTruthy();
+  });
+
+  it('cannot be cancelled while a file is still on its way', async () => {
+    sendFile = () => new Promise<Response>(() => {}); // never answers
+    mine = submittedWith(2);
+    open();
+    await userEvent.click(await resubmitButton());
+    await userEvent.upload(input(), pdf('second.pdf'));
+    await screen.findByText('Uploading…');
+
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows the upload of a resubmission that was left open, with its stored files, after a reload', async () => {
+    mine = submittedWith(2, { draftVersion: draftOf(['second.pdf']) });
+    open();
+
+    expect(await screen.findByRole('heading', { name: 'Your new files' })).toBeTruthy();
+    expect(screen.getByText('second.pdf')).toBeTruthy();
+    expect(screen.getByText('Uploaded')).toBeTruthy();
+    expect(callsTo('POST', `/assignments/${ASSIGNMENT_ID}/versions`)).toHaveLength(0);
+  });
+
+  it('submits the new files and goes back to the receipt with one attempt fewer', async () => {
+    mine = submittedWith(2);
+    finalizeAnswer = () => Response.json({ ...submitted(['second.pdf']), attemptsLeft: 1, unlimited: false });
+    open();
+    await userEvent.click(await resubmitButton());
+    await userEvent.upload(input(), pdf('second.pdf'));
+    await screen.findByText('Uploaded');
+    await userEvent.click(screen.getByRole('button', { name: 'Submit files' }));
+
+    expect(await resubmitButton('Resubmit (1 left)')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Your new files' })).toBeNull();
+    expect(screen.getByText('second.pdf')).toBeTruthy();
+    expect(screen.getByText('1 resubmission left')).toBeTruthy();
+  });
+
+  it('replaces the button with the reason when no resubmissions are left', async () => {
+    mine = submittedWith(0);
+    open();
+
+    expect(await screen.findByText("You've used all your resubmissions. Your instructor can give you more.")).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Resubmit/ })).toBeNull();
+  });
+
+  it('offers no Resubmit and no count when the grade is approved', async () => {
+    mine = submittedWith(3, { state: 'INSTRUCTOR_APPROVED' });
+    open();
+
+    await screen.findByText('essay.pdf');
+    expect(screen.queryByRole('button', { name: /Resubmit/ })).toBeNull();
+    expect(screen.queryByText('3 resubmissions left')).toBeNull();
+  });
+
+  it('offers no Resubmit in an archived class', async () => {
+    archived = true;
+    mine = submittedWith(3);
+    open();
+
+    await screen.findByText('Archived');
+    await screen.findByText('essay.pdf');
+    expect(screen.queryByRole('button', { name: /Resubmit/ })).toBeNull();
   });
 });

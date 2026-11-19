@@ -3,6 +3,7 @@ import { Router } from 'express';
 import {
   ClassParamsSchema,
   CreateClassSchema,
+  DeleteClassSchema,
   EnrolledQuerySchema,
   JoinSchema,
   ListClassesQuerySchema,
@@ -12,10 +13,22 @@ import { refuseInstructor, requireAction } from '../middleware/authorize';
 import { limiters } from '../middleware/rate-limit';
 import { requireAuth } from '../middleware/session';
 import { validate, validated } from '../middleware/validate';
-import { archiveClass, createClass, disableCode, getClass, listClasses, regenerateCode, restoreClass, updateClass } from '../services/class-service';
+import {
+  archiveClass,
+  createClass,
+  deleteClass,
+  deletionImpact,
+  disableCode,
+  getClass,
+  listClasses,
+  regenerateCode,
+  restoreClass,
+  updateClass,
+} from '../services/class-service';
 import { joinClass, listEnrollments } from '../services/join-service';
 
-type ClassDeps = { db: PrismaClient; appUrl: string };
+/** `bucket` is the storage bucket whose objects a deleted class leaves for the storage outbox. */
+type ClassDeps = { db: PrismaClient; appUrl: string; bucket: string };
 
 // What each route accepts, named once so `validate` and `validated` cannot drift apart.
 const create = { body: CreateClassSchema };
@@ -23,30 +36,24 @@ const list = { query: ListClassesQuerySchema };
 const enrolled = { query: EnrolledQuerySchema };
 const one = { params: ClassParamsSchema };
 const edit = { params: ClassParamsSchema, body: UpdateClassSchema };
+const remove = { params: ClassParamsSchema, body: DeleteClassSchema };
 const join = { body: JoinSchema };
 
 /**
- * Create, list, get, edit, archive and restore a class, regenerate or disable its code, join one by code, and a student's
- * Enrolled list (API Spec CLS-01 to CLS-06, CLS-08, CLS-09, JOIN-01, JOIN-03). The join link preview is in join-link.ts. Needs the session, so it is mounted
+ * Create, list, get, edit, archive, restore and delete a class, preview a deletion, regenerate or disable its code, join one by
+ * code, and a student's Enrolled list (API Spec CLS-01 to CLS-09, CLS-11, JOIN-01, JOIN-03). The join link preview is in join-link.ts. Needs the session, so it is mounted
  * after loadSession.
  * The role check comes first on every route but get-one, so a role that cannot use them cannot tell they exist. The
  * services check again, and decide whether a class is the caller's own.
  */
-export function classesRouter({ db, appUrl }: ClassDeps): Router {
+export function classesRouter({ db, appUrl, bucket }: ClassDeps): Router {
   const router = Router();
 
   // The creation limit comes after validation, so a request with errors does not use it up.
-  router.post(
-    '/classes',
-    requireAuth,
-    requireAction('class.create'),
-    validate(create),
-    limiters.classCreateByUser(),
-    async (req, res) => {
-      const { body } = validated(res, create);
-      res.status(201).json(await createClass(db, req.auth!.user, body, appUrl));
-    },
-  );
+  router.post('/classes', requireAuth, requireAction('class.create'), validate(create), limiters.classCreateByUser(), async (req, res) => {
+    const { body } = validated(res, create);
+    res.status(201).json(await createClass(db, req.auth!.user, body, appUrl));
+  });
 
   router.get('/classes', requireAuth, requireAction('class.list'), validate(list), async (req, res) => {
     const { query } = validated(res, list);
@@ -68,6 +75,17 @@ export function classesRouter({ db, appUrl }: ClassDeps): Router {
   router.patch('/classes/:classId', requireAuth, requireAction('class.list'), validate(edit), async (req, res) => {
     const { params, body } = validated(res, edit);
     res.json(await updateClass(db, req.auth!.user, params.classId, body, appUrl));
+  });
+
+  router.delete('/classes/:classId', requireAuth, requireAction('class.list'), validate(remove), async (req, res) => {
+    const { params, body } = validated(res, remove);
+    await deleteClass(db, bucket, req.auth!.user, params.classId, body.confirmation);
+    res.status(204).end();
+  });
+
+  router.get('/classes/:classId/deletion-impact', requireAuth, requireAction('class.list'), validate(one), async (req, res) => {
+    const { params } = validated(res, one);
+    res.json(await deletionImpact(db, req.auth!.user, params.classId));
   });
 
   router.post('/classes/:classId/archive', requireAuth, requireAction('class.list'), validate(one), async (req, res) => {

@@ -1,12 +1,13 @@
 import { useId, type ComponentProps } from 'react';
 import { FieldError } from './FieldError';
 
-type Props = ComponentProps<'select'> & { label: string; error?: string; helper?: string };
+type Props = ComponentProps<'select'> & { label: string; error?: string; helper?: string; describedBy?: string };
 
 /** A labelled drop-down, the browser's own so it works with a keyboard and a screen reader. Same rules as TextField (UX Brief §7, §12). */
-export function SelectField({ label, error, helper, children, ...select }: Props) {
+export function SelectField({ label, error, helper, describedBy: extraDescribedBy, children, ...select }: Props) {
   const id = useId();
-  const describedBy = [error ? `${id}-error` : null, helper ? `${id}-helper` : null].filter(Boolean).join(' ');
+  // `extraDescribedBy` names a note the page draws itself, such as one that runs under two fields.
+  const describedBy = [error ? `${id}-error` : null, helper ? `${id}-helper` : null, extraDescribedBy].filter(Boolean).join(' ');
   return (
     <div>
       <label htmlFor={id} className="mb-1 block font-semibold">

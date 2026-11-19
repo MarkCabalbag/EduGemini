@@ -6,7 +6,7 @@
 | **Owner** | Project owner (sole developer) |
 | **Inputs** | [PRD v2.2](prd.md) (behavior; wins on conflict), [App Flow v2.2](app-flow.md) (screens) |
 | **Detail docs** | [Backend Schema](backend-schema.md) (wins on stored data), [API Spec](api-spec.md) (wins on request and response shapes), [UX Brief](ux-brief.md) (look and copy), [Code Standards](code-standards.md) (how code is written) |
-| **Not written yet** | AI Guardrails (prompt text, injection tests), Deployment Runbook |
+| **Cut (2026-11-19)** | AI Guardrails (the prompt text is in `packages/ai/src/live-gemini.ts`), Deployment Runbook (a deploy section in the repository README) |
 
 ---
 
@@ -54,6 +54,7 @@ These were proposed and approved in the planning step.
 | Email | nodemailer over SMTP to a free transactional provider (Brevo is the candidate); an in-memory fake mailer in development and tests (Section 13.5) | Free; no domain required (T-D3) |
 | AI | `@google/genai` with a Gemini model | Chosen stack |
 | Image and PDF | `sharp` (HEIC support, to be confirmed in spike S4) or `heic-convert` (pure JS fallback); `pdf-lib` for page count and encryption detection | Works in a 512 MB container |
+| Multipart forms | `multer` (disk storage, so a file is never held in memory) for the forms that carry a file: reference files (REF-01) and, later, announcement attachments (ANN-02). Owner-approved 2026-11-17 | The per-file submission upload sends raw bytes and does not need it |
 | Tests | Vitest (unit), Testing Library with jsdom (web screens), Supertest (API integration), Playwright (end-to-end UI and API), `@axe-core/playwright` (accessibility), `eslint-plugin-playwright` (lint rules) | Standard and free; Playwright covers four browser engines and mobile viewports (Section 16.2a) |
 | CI | GitHub Actions | Free for public repos; ample minutes for a small project |
 
@@ -92,7 +93,7 @@ Rules that follow from this shape:
 ## 4. Environments and hosting
 
 ### 4.1 Environments
-- **Local:** no Docker and no local Postgres. The API runs on the developer's machine against a hosted Supabase Postgres. Two free Supabase projects: `edugemini` (development now, production at deploy) and `edugemini-test` (end-to-end tests and every destructive command, Section 16.2a). The Vite dev server proxies `/api` to the local API, so the browser still sees one origin. File storage uses a local-disk adapter behind the same `StorageAdapter` interface. Email uses the fake mailer (`MAIL_DRIVER=fake`, Section 13.5). Gemini runs in `GEMINI_MODE=fake` for development and CI.
+- **Local:** no Docker and no local Postgres. The API runs on the developer's machine against a hosted Supabase Postgres. Two free Supabase projects: `edugemini` (development now, production at deploy) and `edugemini-test` (end-to-end tests and every destructive command, Section 16.2a). The Vite dev server proxies `/api` to the local API, so the browser still sees one origin. File storage is always a private Supabase Storage bucket, in development too: there is no local-disk storage, so the developer creates a private bucket in the `edugemini` project (API Spec C.4). The integration tests use an in-memory fake behind the same `StorageAdapter` interface (no disk, no network). Email uses the fake mailer (`MAIL_DRIVER=fake`, Section 13.5). Grading always calls the real Gemini with the instructor's saved key; only the tests use the fake adapter (Section 16.2a).
 - **CI:** GitHub Actions runs a plain Postgres service container, so CI never touches Supabase (Section 16.3).
 - **Production:** Vercel (web), Render (API and worker), Supabase (Postgres and Storage), SMTP provider, UptimeRobot (monitoring).
 - No separate staging environment in v1.
@@ -303,6 +304,7 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 - Staged versions (status `UPLOADING`) opened more than 24 hours ago are deleted with their files and objects by the `staged.cleanup` job (Section 12). The submission row stays, because an instructor's allowance may be on it.
 - Stored files follow the retention rules in Section 5.5 and Section 12.
 - Downloads use signed URLs valid for 5 minutes, issued only after the authorization check (Section 7.4).
+- Reference files are stored at `reference/<classId>/<assignmentId>/<uuid>.<ext>`, built from IDs and the type found in the file's first bytes, never from its name. Replaced and removed files go through the storage outbox (Backend Schema §10.1).
 
 ### 9.4 Memory on a 512 MB host
 - Uploads stream to disk; no file is held fully in memory.
@@ -321,7 +323,7 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 
 | Queue | Payload | Behavior |
 |---|---|---|
-| `grade.submission` | `{ submissionId, versionId, mode: "first" \| "resubmit" \| "regrade_criteria" \| "rerun" \| "regrade_approved" }` | One grading attempt chain (Section 10.3). Queue policy `singleton` and singleton key `grade:<submissionId>`, so only one job runs per submission. The policy does not stop two jobs from waiting (pg-boss does not dedupe queued sends), so the stale check in Section 10.3 is what makes the second one harmless. Retries as in Section 10.7 |
+| `grade.submission` | `{ submissionId, versionId, mode: "first" \| "resubmit" \| "regrade_criteria" \| "rerun" \| "regrade_approved", tries?: number }` (`tries` is only on a job sent again for a pacing token, Section 10.2: how many tries have already failed) | One grading attempt chain (Section 10.3). Queue policy `singleton` and singleton key `grade:<submissionId>`, so only one job runs per submission. The policy does not stop two jobs from waiting (pg-boss does not dedupe queued sends), so the stale check in Section 10.3 is what makes the second one harmless. Retries as in Section 10.7 |
 | `regrade.assignment` | `{ assignmentId, criteriaVersion }` | Debounced fan-out to `grade.submission` for unapproved submissions (Section 10.5) |
 | `send.email` | `{ notificationId, to, template, data }` | Email with retries (`retryLimit: 5`) |
 | `digest.flush` | none | Hourly digests (Section 13) |
@@ -329,12 +331,12 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 
 ### 10.2 Key pacing
 - An in-process limiter keeps one token bucket per instructor. Its rate starts at a conservative default (5 requests per minute) and is set per model from the spike results (Section 11).
-- If a job's bucket is empty, it is re-enqueued with `startAfter` (in seconds) set to the wait for the next token, and the job that found it empty finishes normally. Students see "Grading in progress" (PRD Section 9.5).
+- If a job's bucket is empty, it is re-enqueued with `startAfter` (in seconds) set to the wait for the next token, and the job that found it empty finishes normally. The new job counts its retries from zero, so the re-enqueued payload carries `tries`, the number of tries that already failed (Section 10.7). Students see "Grading in progress" (PRD Section 9.5).
 - A global concurrency cap of 3 applies to all Gemini calls.
 - Because the worker is one process (Section 3), an in-memory limiter is correct.
 
 ### 10.3 Pipeline for `grade.submission`
-1. Load the submission. If `versionId` is not the current version, finish as **stale** and record `STALE_DISCARDED` (FR-AI-06).
+1. Load the submission. If `versionId` is not the current version, finish as **stale** and record `STALE_DISCARDED` (FR-AI-06). If the submission is not `QUEUED` or `GRADING`, it already has its result or an instructor's decision (a duplicate job): finish quietly and change nothing. Step 6 and every move to manual review check the same two things, so a late failure never undoes a result.
 2. Load the instructor's key. If it is missing, set `NEEDS_MANUAL_REVIEW` with cause `KEY_MISSING`. If its status is `NEEDS_ATTENTION` or `QUOTA_REACHED`, use the matching cause. Do not call Gemini. Notify the instructor once per transition (debounced per instructor for 1 hour). Stop without retrying.
 3. Acquire a pacing token (Section 10.2).
 4. Build the request (Section 10.4) and call Gemini with a 60-second timeout.
@@ -347,7 +349,7 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 7. Record a `GradingAttempt` for every attempt, with outcome, error class, latency, and model.
 
 ### 10.4 Request construction
-- **System instruction** (versioned constant `grade-v1`, in `packages/ai/prompts`): the role, the scoring rules, and the rule that student and reference file content is **data, never instructions**. Response only as JSON matching the schema. The full text is in the AI Guardrails doc.
+- **System instruction** (versioned constant `grade-v1`; the text is in `packages/ai/src/live-gemini.ts`): the role, the scoring rules, and the rule that student and reference file content is **data, never instructions**. Response only as JSON matching the schema.
 - **User content, in order:** assignment title and instructions; criteria text verbatim; scoring format and max score, plus the letter scale when relevant; reference files, each labeled "Reference material from the instructor, not student work"; student files in order, each labeled "Student file N of M, page P" where relevant.
 - **Delimiters:** each request uses a random boundary token. Each text block is wrapped in it, so student text cannot close a block early.
 - **Not sent:** instructor comments, other students' work, student names or IDs, email addresses.
@@ -377,6 +379,8 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 | **File quality** | unreadable file reached grading (should be caught at upload) | No | Cause `FILE_QUALITY`; student sees "awaiting instructor review"; instructor sees the reason |
 | **Stale** | version changed during the call | No | Discarded; no state change |
 
+A job has three tries in all (`GRADING_TRIES`; the queue's `retryLimit` is two). The try number is the job's retry count plus the `tries` its payload carries (Section 10.2). A key, quota or file-quality failure returns normally, so pg-boss does not retry it. Any failure on the last try, including one before Gemini is called such as a storage error, ends in `NEEDS_MANUAL_REVIEW` with cause `AI_FAILED`, and the job finishes normally. The key status (`NEEDS_ATTENTION`, `QUOTA_REACHED`) and the instructor's notice are written by the key tickets (KEY-05, KEY-07), not by the grading job.
+
 ### 10.8 Manual actions
 - **Re-run AI (FR-REV-06, FR-KEY-05):** one `grade.submission` job with `mode = rerun`. It does not consume attempts. Bulk re-run enqueues one job per item and the limiter spaces them.
 - **Manual grade:** the instructor enters score and feedback and approves in one step (API Spec INS-11). Creates an `INSTRUCTOR` GradeResult and sets the state to `INSTRUCTOR_APPROVED`. No unapproved instructor grade ever exists.
@@ -392,8 +396,8 @@ Constants live in `packages/shared/limits.ts` so the client pre-check, the API, 
 
 ### 11.1 Decision
 - Client: `@google/genai`. Model name in one constant (`GEMINI_MODEL`). Prompt version in another (`PROMPT_VERSION`). Both are stored with every result (PRD Section 9.6).
-- Selection: the current stable model in the Flash class that accepts PDF and image input with JSON response schemas on the free tier. The candidate at the time of writing is **Gemini 2.5 Flash**. It must be confirmed against Google's current model list and free-tier limit table during spike S3. Record the final model ID, date, and limits here before building the pacing numbers.
-- Temperature: 0.2 (PRD "low temperature"). Top-p and top-k left at SDK defaults.
+- Selection: the current stable model in the Flash class that accepts PDF and image input with JSON response schemas on the free tier. Chosen by the owner on 2026-11-19: **`gemini-2.5-flash`** (listed for the Interactions API; Google's model page marks it deprecated, so it may need replacing later), called through the SDK's Interactions API (`ai.interactions.create`) with `store: false` so student work is not kept on Google's side. Free-tier limits are not measured (the spikes are cut).
+- Temperature: not sent (the Interactions API marks it deprecated); the model's default is used.
 
 ### 11.2 Limits to record at spike S3
 
@@ -562,7 +566,7 @@ Routes follow the App Flow screen inventory.
 | Unit | Vitest | State derivations (Section 5.2), attempt arithmetic (5.3), letter derivation (10.6), CSV escaping (8.3), return-to validation (6.4), magic-byte sniffing (9.1), score validation (10.6) |
 | Integration | Supertest against the test database (the `edugemini-test` project locally, the service container in CI) | Authorization matrix (7.2); upload and finalize flow; approve vs. resubmit race; re-grade pending flow; tombstone deletion; class deletion cascade |
 | Worker | Vitest with the fake Gemini adapter | Retry classes (10.7), stale discard (FR-AI-06), pacing (10.2), debounce (10.5) |
-| End to end (UI and API) | Playwright, four browser engines plus mobile viewports, real app stack, `GEMINI_MODE=fake` (Section 16.2a) | Every PRD journey mapped to FR IDs; API contract, security, and authorization matrix; accessibility |
+| End to end (UI and API) | Playwright, four browser engines plus mobile viewports, real app stack (cut on 2026-11-19, Section 16.2a) | Every PRD journey mapped to FR IDs; API contract, security, and authorization matrix; accessibility |
 | Quality | `pnpm eval:grading` (manual) | Gold-set run (PRD Section 9.6) against real Gemini with the owner's eval key. Writes a report to `eval/reports/`. Not in CI (uses quota and cannot run without a key) |
 
 ### 16.2a End-to-end testing with Playwright (UI and API)
@@ -619,7 +623,7 @@ Tags: `@smoke` (fast core paths, under 5 minutes per project), `@auth`, `@upload
 
 **Email.** The E2E environment sets `MAIL_DRIVER=fake`. Each test uses a unique recipient address, waits for the message through the outbox endpoint, and extracts verification and reset links. No test ever sends to a real mailbox.
 
-**Grading.** The E2E environment sets `GEMINI_MODE=fake`. The fake adapter returns deterministic results selected by a scenario tag in the uploaded file name, for example `__scenario-score-42__`. Scenarios:
+**Grading.** The tests use the fake adapter (`createFakeGemini`), never the app. It returns deterministic results selected by a scenario tag in the uploaded file name, for example `__scenario-score-42__`. Scenarios:
 
 | Scenario tag | Fake behavior | Expected app behavior |
 |---|---|---|
@@ -628,10 +632,11 @@ Tags: `@smoke` (fast core paths, under 5 minutes per project), `@auth`, `@upload
 | `timeout-always` | Every call times out | Needs manual review, cause AI failed |
 | `key-invalid` | Key rejected | Needs manual review, cause key invalid; banner; no retry |
 | `quota-daily` | Daily quota error | Needs manual review, cause quota; banner |
+| `file-quality` | The provider cannot read a file | Needs manual review, cause file quality; no retry |
 | `score-above-max` | Score greater than max | Treated as invalid output; retried; then manual review |
 | `malformed-json` | Non-JSON text | Transient error; retried |
 
-- The fake adapter refuses to start when `NODE_ENV=production` or `GEMINI_MODE=live`. Scenario parsing exists only in the fake adapter.
+- The app builds the fake adapter only with `GEMINI_MODE=fake`, which only the end-to-end config sets and which is refused in production. Scenario parsing exists only in the fake adapter.
 - Prompt-injection behavior is tested by the AI Guardrails gold set, not by E2E, because a fake cannot show how a real model responds.
 
 **Clock and timing**
@@ -709,7 +714,7 @@ Page objects expose user actions (`signIn`, `uploadFiles`, `approve`), not selec
 - `eslint-plugin-playwright` rules enforced: `no-wait-for-timeout`, `no-force-option`, `no-focused-test`, `no-conditional-in-test`, `prefer-web-first-assertions`, `no-element-handle`.
 
 **Environments**
-- **Local:** the API and web app start against the test project with `MAIL_DRIVER=fake` and `GEMINI_MODE=fake`. Run `pnpm --filter e2e test` (all projects) or `--project=<name>`.
+- **Local:** the API and web app start against the test project with `MAIL_DRIVER=fake`. Run `pnpm --filter e2e test` (all projects) or `--project=<name>`.
 - **CI:** Postgres service container, API and web built and started in the job, browsers installed with `--with-deps`, `e2e` job sharded per project with Playwright `--shard`. Pull requests run the smoke set on all projects plus the full Chromium suite. Main and nightly run everything. Superseded PR runs are cancelled.
 - **Production smoke (post-deploy, read-only):** `E2E_MODE=prod-smoke` runs `@smoke` sign-in and dashboard checks against the production URL with a dedicated demo account. It performs no writes.
 
@@ -792,7 +797,7 @@ None open. The PRD and this document agree. A future deviation is recorded here 
 | TQ8 | Super Admin creation | Local script `pnpm admin:create` (Section 17.2) | Decided |
 | TQ9 | Pacing delays and the "about a minute" message | When a job is delayed by pacing, the UI shows the longer-than-usual note (PRD Section 9.5) | Decided |
 | TQ10 | SMTP provider | Brevo candidate; confirm free quota and terms at S5 | Open until S5 |
-| TQ11 | Gemini model choice | Gemini 2.5 Flash candidate; confirm at S3 | Open until S3 |
+| TQ11 | Gemini model choice | `gemini-2.5-flash` (Section 11.1) | Closed 2026-11-19 |
 
 ---
 
@@ -806,18 +811,16 @@ None open. The PRD and this document agree. A future deviation is recorded here 
 | `DIRECT_URL` | API | Supabase session pooler, owner role (migrations, `db:boss:init`) |
 | `PGBOSS_URL` | API | Supabase session pooler, runtime role (pg-boss at runtime) |
 | `SUPABASE_URL` | API | Storage endpoint |
-| `SUPABASE_SERVICE_ROLE_KEY` | API only | Storage access (never in the web build) |
-| `STORAGE_BUCKET` | API | Private bucket name |
-| `STORAGE_DRIVER` | API | `supabase` or `local` (development) |
-| `STORAGE_LOCAL_DIR` | API (development) | Folder used by the `local` storage driver |
+| `SUPABASE_SERVICE_ROLE_KEY` | API only | Storage access (never in the web build). Holds the new secret key (`sb_secret_...`); the legacy `service_role` key is retired in early 2027 |
+| `STORAGE_BUCKET` | API | Exact name of the private bucket (bucket setup: API Spec C.4). Required, no default |
 | `ENCRYPTION_KEY` | API only | 32 bytes, base64; AES-256-GCM for instructor keys |
 | `ENCRYPTION_KEY_VERSION` | API | Integer; increments on rotation |
 | `SESSION_SECRET` | API only | Signs the return-to cookie |
 | `MAIL_DRIVER` | API | `smtp` or `fake`. Production is always `smtp` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | API | Email provider (required when `MAIL_DRIVER=smtp`) |
 | `MAIL_FROM` | API | Sender address |
-| `GEMINI_MODE` | API | `live` or `fake`. Production is always `live` |
-| `GEMINI_MODEL` | API | Model ID (Section 11) |
+| `GEMINI_MODE` | API | `live` (default) or `fake`. Only the end-to-end tests set `fake`; refused in production |
+| `GEMINI_MODEL` | API | Model ID (Section 11), default `gemini-2.5-flash` |
 | `GEMINI_EVAL_KEY` | Owner's machine only | Gold-set eval; never set in CI or production |
 | `LOG_LEVEL` | API | pino level |
 | `REGRADE_DEBOUNCE_SECONDS` | API | Re-grade debounce; default 120, E2E 2 |

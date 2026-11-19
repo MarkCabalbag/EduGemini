@@ -13,7 +13,15 @@ const BATCH_SIZE = 500;
  * object counts as gone). A failure is written on its row and the others go on. A row that failed stays pending and is tried
  * again on the next run, after the rows that have failed less often, so one bad row cannot hold up the rest.
  */
-export async function runStorageCleanup({ db, storage, logger }: { db: PrismaClient; storage: StorageAdapter; logger: Logger }): Promise<void> {
+export async function runStorageCleanup({
+  db,
+  storage,
+  logger,
+}: {
+  db: PrismaClient;
+  storage: StorageAdapter;
+  logger: Logger;
+}): Promise<void> {
   const pending = await db.storageDeletion.findMany({
     where: { completedAt: null },
     orderBy: [{ attempts: 'asc' }, { requestedAt: 'asc' }],
@@ -25,7 +33,10 @@ export async function runStorageCleanup({ db, storage, logger }: { db: PrismaCli
     try {
       await storage.remove(row.bucket, [row.objectPath]);
       if (await storage.exists(row.bucket, row.objectPath)) throw new Error('The object is still there after it was removed.');
-      await db.storageDeletion.update({ where: { id: row.id }, data: { completedAt: new Date(), attempts: { increment: 1 }, lastError: null } });
+      await db.storageDeletion.update({
+        where: { id: row.id },
+        data: { completedAt: new Date(), attempts: { increment: 1 }, lastError: null },
+      });
       deleted++;
     } catch (error) {
       const lastError = error instanceof Error ? error.message : String(error);

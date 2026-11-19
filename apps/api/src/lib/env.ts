@@ -18,17 +18,14 @@ const EnvSchema = z
     DIRECT_URL: postgresUrl,
     PGBOSS_URL: postgresUrl,
 
-    // Storage
-    STORAGE_DRIVER: z.enum(['supabase', 'local']).default('local'),
-    STORAGE_LOCAL_DIR: z.string().min(1).default('.storage'),
-    STORAGE_BUCKET: z.string().min(1).default('edugemini'),
-    SUPABASE_URL: url.optional(),
-    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+    // Storage: files always go to a private Supabase Storage bucket (API Spec C.4). The bucket has no default, so a wrong name
+    // cannot go unnoticed: the name must be the one created in the dashboard.
+    STORAGE_BUCKET: z.string().min(1),
+    SUPABASE_URL: url,
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 
     // Secrets
-    ENCRYPTION_KEY: z
-      .string()
-      .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64 encoded'),
+    ENCRYPTION_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64 encoded'),
     ENCRYPTION_KEY_VERSION: z.coerce.number().int().min(1).default(1),
     SESSION_SECRET: z.string().min(32, 'must be at least 32 characters'),
 
@@ -40,8 +37,9 @@ const EnvSchema = z
     SMTP_USER: z.string().min(1).optional(),
     SMTP_PASS: z.string().min(1).optional(),
 
-    // Gemini (TRD §11). The model is a candidate until spike S3.
-    GEMINI_MODE: z.enum(['live', 'fake']).default('fake'),
+    // Gemini (TRD §11). The app grades with the live model. `fake` exists only for the end-to-end tests, which start the API
+    // themselves (apps/e2e/playwright.config.ts); it is refused in production.
+    GEMINI_MODE: z.enum(['live', 'fake']).default('live'),
     GEMINI_MODEL: z.string().min(1).default('gemini-2.5-flash'),
 
     REGRADE_DEBOUNCE_SECONDS: z.coerce.number().int().min(0).default(120),
@@ -54,7 +52,6 @@ const EnvSchema = z
         }
       }
     };
-    if (e.STORAGE_DRIVER === 'supabase') need(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'], 'STORAGE_DRIVER=supabase');
     if (e.MAIL_DRIVER === 'smtp') need(['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'], 'MAIL_DRIVER=smtp');
     if (e.NODE_ENV === 'production') {
       const forbid = (bad: boolean, name: keyof typeof e, message: string) => {
@@ -62,7 +59,6 @@ const EnvSchema = z
       };
       forbid(e.MAIL_DRIVER === 'fake', 'MAIL_DRIVER', 'the fake mailer is not allowed in production');
       forbid(e.GEMINI_MODE === 'fake', 'GEMINI_MODE', 'the fake Gemini adapter is not allowed in production');
-      forbid(e.STORAGE_DRIVER === 'local', 'STORAGE_DRIVER', 'local storage is not allowed in production');
     }
   });
 

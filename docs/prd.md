@@ -619,6 +619,8 @@ The Must/Should/Could priorities in Section 7 are also proposals, sized for one 
 
 Milestones are sequenced by dependency. Dates are not fixed; set them after the TRD estimate.
 
+**Portfolio scope (2026-11-19):** v1 is cut down to the core loop (class, assignment, submit, Gemini grade, instructor approve) and a deploy. The milestones below are kept as the full plan; what is built and what is cut is in [feature-tickets.md, Portfolio scope](feature-tickets.md#portfolio-scope-owners-call-2026-11-19).
+
 | Phase | Scope | Exit criteria |
 |---|---|---|
 | **M0: Foundations** | Auth and terms acceptance, roles, classes with attestation (edit and delete), class codes and join link, join approval, assignments (late policy, resubmission limit, reference files with visibility), file upload and storage | An instructor and a student can complete steps 1 to 4 of the core flow |

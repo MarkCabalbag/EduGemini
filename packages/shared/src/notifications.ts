@@ -15,7 +15,10 @@ export type ListNotificationsQuery = z.infer<typeof ListNotificationsQuerySchema
 export const NotificationParamsSchema = z.object({ notificationId: z.uuid() });
 
 /** A relative in-app path: it starts with `/` and not `//` (Backend Schema §4.20). */
-export const RelativeLinkSchema = z.string().max(512).regex(/^\/(?!\/)/);
+export const RelativeLinkSchema = z
+  .string()
+  .max(512)
+  .regex(/^\/(?!\/)/);
 
 /** What a row keeps besides its link: the short labels its copy needs, never grades, feedback or file names (Backend Schema §4.20). */
 export const NotificationPayloadSchema = z.object({ className: z.string().optional() });
