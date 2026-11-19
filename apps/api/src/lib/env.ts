@@ -11,6 +11,8 @@ const EnvSchema = z
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     APP_URL: url,
+    // Render sets this to the service's public address. When it is present the API pings itself to stay awake (lib/keep-alive.ts).
+    RENDER_EXTERNAL_URL: url.optional(),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
     // Database (TRD §4.3)

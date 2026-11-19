@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { createApp } from './app';
 import { warmUpPasswordHashing } from './auth/password';
 import { createGemini } from './lib/create-gemini';
+import { startKeepAlive } from './lib/keep-alive';
 import { getEnv } from './lib/env';
 import { createGradingSender } from './jobs/grade-submission.job';
 import { startJobs } from './jobs';
@@ -49,6 +50,9 @@ const app = createApp({
 warmUpPasswordHashing().catch((error: unknown) => logger.error({ event: 'password.warmup_failed', err: error }));
 
 const server = app.listen(env.PORT, () => logger.info({ event: 'server.listening', port: env.PORT }));
+
+// On Render the service sleeps after 15 quiet minutes; pinging its own public address keeps it awake.
+if (env.RENDER_EXTERNAL_URL) startKeepAlive(env.RENDER_EXTERNAL_URL, logger);
 
 const boss = await bossReady;
 
